@@ -1,74 +1,52 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
-type Claims struct {
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	jwt.RegisteredClaims
+type User struct {
+	ID    string
+	Email string
+	Role  string
 }
 
-var jwtKey = []byte("your_secret_key_here")
-
-func GenerateToken(username, role string) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
-	claims := &Claims{
-		Username: username,
-		Role:     role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtKey)
-}
-
-func AuthMiddleware(next http.Handler) http.Handler {
+func Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header missing", http.StatusUnauthorized)
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims := &Claims{}
+		tokenParts := strings.Split(authHeader, " ")
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
 
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return jwtKey, nil
-		})
-
-		if err != nil || !token.Valid {
+		token := tokenParts[1]
+		user, err := validateToken(token)
+		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		if time.Until(claims.ExpiresAt.Time) < 0 {
-			http.Error(w, "Token expired", http.StatusUnauthorized)
-			return
-		}
-
-		r.Header.Set("X-Username", claims.Username)
-		r.Header.Set("X-Role", claims.Role)
-		next.ServeHTTP(w, r)
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func AdminOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role := r.Header.Get("X-Role")
-		if role != "admin" {
-			http.Error(w, "Admin access required", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func validateToken(token string) (*User, error) {
+	// This is a placeholder for actual token validation logic
+	// In production, this would verify JWT signature and claims
+	if token == "valid_token_example" {
+		return &User{
+			ID:    "user123",
+			Email: "user@example.com",
+			Role:  "admin",
+		}, nil
+	}
+	return nil, fmt.Errorf("invalid token")
 }
