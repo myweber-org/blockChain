@@ -123,4 +123,43 @@ func ValidateConfig(config *Config) error {
 		return errors.New("database name is required")
 	}
 	return nil
+}package config
+
+import (
+	"os"
+	"strconv"
+)
+
+type Config struct {
+	ServerPort int
+	DebugMode  bool
+	MaxWorkers int
+}
+
+func LoadConfig() (*Config, error) {
+	cfg := &Config{
+		ServerPort: 8080,
+		DebugMode:  false,
+		MaxWorkers: 10,
+	}
+
+	if portStr := os.Getenv("SERVER_PORT"); portStr != "" {
+		if port, err := strconv.Atoi(portStr); err == nil {
+			cfg.ServerPort = port
+		}
+	}
+
+	if debugStr := os.Getenv("DEBUG_MODE"); debugStr != "" {
+		if debug, err := strconv.ParseBool(debugStr); err == nil {
+			cfg.DebugMode = debug
+		}
+	}
+
+	if workersStr := os.Getenv("MAX_WORKERS"); workersStr != "" {
+		if workers, err := strconv.Atoi(workersStr); err == nil {
+			cfg.MaxWorkers = workers
+		}
+	}
+
+	return cfg, nil
 }
