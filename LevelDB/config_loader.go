@@ -96,4 +96,61 @@ func overrideFromEnv(cfg *Config) {
     if val := os.Getenv("DEBUG_MODE"); val != "" {
         cfg.Server.DebugMode = (val == "true" || val == "1")
     }
+}package config
+
+import (
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Config struct {
+	Server struct {
+		Host string `yaml:"host" env:"SERVER_HOST"`
+		Port int    `yaml:"port" env:"SERVER_PORT"`
+	} `yaml:"server"`
+	Database struct {
+		URL      string `yaml:"url" env:"DB_URL"`
+		PoolSize int    `yaml:"pool_size" env:"DB_POOL_SIZE"`
+	} `yaml:"database"`
+	LogLevel string `yaml:"log_level" env:"LOG_LEVEL"`
+}
+
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	cfg.overrideFromEnv()
+	return &cfg, nil
+}
+
+func (c *Config) overrideFromEnv() {
+	overrideString(&c.Server.Host, "SERVER_HOST")
+	overrideInt(&c.Server.Port, "SERVER_PORT")
+	overrideString(&c.Database.URL, "DB_URL")
+	overrideInt(&c.Database.PoolSize, "DB_POOL_SIZE")
+	overrideString(&c.LogLevel, "LOG_LEVEL")
+}
+
+func overrideString(field *string, envVar string) {
+	if val := os.Getenv(envVar); val != "" {
+		*field = val
+	}
+}
+
+func overrideInt(field *int, envVar string) {
+	if val := os.Getenv(envVar); val != "" {
+		var tmp int
+		if _, err := fmt.Sscanf(val, "%d", &tmp); err == nil {
+			*field = tmp
+		}
+	}
 }
