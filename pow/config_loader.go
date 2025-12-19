@@ -134,4 +134,93 @@ func LoadConfig(filename string) (*Config, error) {
     }
 
     return &config, nil
+}package config
+
+import (
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Name     string `yaml:"name"`
+	SSLMode  string `yaml:"ssl_mode"`
+}
+
+type ServerConfig struct {
+	Port         int    `yaml:"port"`
+	ReadTimeout  int    `yaml:"read_timeout"`
+	WriteTimeout int    `yaml:"write_timeout"`
+	Environment  string `yaml:"environment"`
+}
+
+type AppConfig struct {
+	Database DatabaseConfig `yaml:"database"`
+	Server   ServerConfig   `yaml:"server"`
+	LogLevel string         `yaml:"log_level"`
+}
+
+func LoadConfig(configPath string) (*AppConfig, error) {
+	if configPath == "" {
+		configPath = getDefaultConfigPath()
+	}
+
+	data, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config AppConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML config: %w", err)
+	}
+
+	if err := validateConfig(&config); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return &config, nil
+}
+
+func getDefaultConfigPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "./config.yaml"
+	}
+	return filepath.Join(homeDir, ".app", "config.yaml")
+}
+
+func validateConfig(config *AppConfig) error {
+	if config.Database.Host == "" {
+		return errors.New("database host is required")
+	}
+	if config.Database.Port <= 0 || config.Database.Port > 65535 {
+		return errors.New("database port must be between 1 and 65535")
+	}
+	if config.Server.Port <= 0 || config.Server.Port > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
+	if config.LogLevel == "" {
+		config.LogLevel = "info"
+	}
+	return nil
+}
+
+func (c *AppConfig) GetDSN() string {
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		c.Database.Host,
+		c.Database.Port,
+		c.Database.Username,
+		c.Database.Password,
+		c.Database.Name,
+		c.Database.SSLMode,
+	)
 }
