@@ -18,23 +18,26 @@ type DatabaseConfig struct {
 
 type ServerConfig struct {
     Port         int    `yaml:"port" env:"SERVER_PORT"`
+    DebugMode    bool   `yaml:"debug" env:"DEBUG_MODE"`
+    LogLevel     string `yaml:"log_level" env:"LOG_LEVEL"`
     ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
     WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug_mode" env:"DEBUG_MODE"`
 }
 
-type Config struct {
+type AppConfig struct {
     Database DatabaseConfig `yaml:"database"`
     Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
+    Version  string         `yaml:"version"`
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-    var cfg Config
+func LoadConfig(configPath string) (*AppConfig, error) {
+    if configPath == "" {
+        configPath = "config.yaml"
+    }
 
     absPath, err := filepath.Abs(configPath)
     if err != nil {
-        return nil, fmt.Errorf("invalid config path: %w", err)
+        return nil, fmt.Errorf("failed to get absolute path: %w", err)
     }
 
     data, err := os.ReadFile(absPath)
@@ -42,115 +45,47 @@ func LoadConfig(configPath string) (*Config, error) {
         return nil, fmt.Errorf("failed to read config file: %w", err)
     }
 
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
+    var config AppConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
         return nil, fmt.Errorf("failed to parse YAML: %w", err)
     }
 
-    overrideFromEnv(&cfg)
+    overrideFromEnv(&config)
 
-    return &cfg, nil
+    return &config, nil
 }
 
-func overrideFromEnv(cfg *Config) {
-    if val := os.Getenv("LOG_LEVEL"); val != "" {
-        cfg.LogLevel = val
-    }
-
-    if val := os.Getenv("DB_HOST"); val != "" {
-        cfg.Database.Host = val
-    }
-    if val := os.Getenv("DB_PORT"); val != "" {
-        var port int
-        if _, err := fmt.Sscanf(val, "%d", &port); err == nil {
-            cfg.Database.Port = port
-        }
-    }
-    if val := os.Getenv("DB_USER"); val != "" {
-        cfg.Database.Username = val
-    }
-    if val := os.Getenv("DB_PASS"); val != "" {
-        cfg.Database.Password = val
-    }
-    if val := os.Getenv("DB_NAME"); val != "" {
-        cfg.Database.Name = val
-    }
-
-    if val := os.Getenv("SERVER_PORT"); val != "" {
-        var port int
-        if _, err := fmt.Sscanf(val, "%d", &port); err == nil {
-            cfg.Server.Port = port
-        }
-    }
-    if val := os.Getenv("READ_TIMEOUT"); val != "" {
-        var timeout int
-        if _, err := fmt.Sscanf(val, "%d", &timeout); err == nil {
-            cfg.Server.ReadTimeout = timeout
-        }
-    }
-    if val := os.Getenv("WRITE_TIMEOUT"); val != "" {
-        var timeout int
-        if _, err := fmt.Sscanf(val, "%d", &timeout); err == nil {
-            cfg.Server.WriteTimeout = timeout
-        }
-    }
-    if val := os.Getenv("DEBUG_MODE"); val != "" {
-        cfg.Server.DebugMode = (val == "true" || val == "1")
-    }
-}package config
-
-import (
-	"os"
-	"strings"
-
-	"gopkg.in/yaml.v2"
-)
-
-type Config struct {
-	Server struct {
-		Host string `yaml:"host" env:"SERVER_HOST"`
-		Port int    `yaml:"port" env:"SERVER_PORT"`
-	} `yaml:"server"`
-	Database struct {
-		URL      string `yaml:"url" env:"DB_URL"`
-		PoolSize int    `yaml:"pool_size" env:"DB_POOL_SIZE"`
-	} `yaml:"database"`
-	LogLevel string `yaml:"log_level" env:"LOG_LEVEL"`
-}
-
-func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-
-	cfg.overrideFromEnv()
-	return &cfg, nil
-}
-
-func (c *Config) overrideFromEnv() {
-	overrideString(&c.Server.Host, "SERVER_HOST")
-	overrideInt(&c.Server.Port, "SERVER_PORT")
-	overrideString(&c.Database.URL, "DB_URL")
-	overrideInt(&c.Database.PoolSize, "DB_POOL_SIZE")
-	overrideString(&c.LogLevel, "LOG_LEVEL")
+func overrideFromEnv(config *AppConfig) {
+    overrideString(&config.Database.Host, "DB_HOST")
+    overrideInt(&config.Database.Port, "DB_PORT")
+    overrideString(&config.Database.Username, "DB_USER")
+    overrideString(&config.Database.Password, "DB_PASS")
+    overrideString(&config.Database.Name, "DB_NAME")
+    
+    overrideInt(&config.Server.Port, "SERVER_PORT")
+    overrideBool(&config.Server.DebugMode, "DEBUG_MODE")
+    overrideString(&config.Server.LogLevel, "LOG_LEVEL")
+    overrideInt(&config.Server.ReadTimeout, "READ_TIMEOUT")
+    overrideInt(&config.Server.WriteTimeout, "WRITE_TIMEOUT")
 }
 
 func overrideString(field *string, envVar string) {
-	if val := os.Getenv(envVar); val != "" {
-		*field = val
-	}
+    if val := os.Getenv(envVar); val != "" {
+        *field = val
+    }
 }
 
 func overrideInt(field *int, envVar string) {
-	if val := os.Getenv(envVar); val != "" {
-		var tmp int
-		if _, err := fmt.Sscanf(val, "%d", &tmp); err == nil {
-			*field = tmp
-		}
-	}
+    if val := os.Getenv(envVar); val != "" {
+        var temp int
+        if _, err := fmt.Sscanf(val, "%d", &temp); err == nil {
+            *field = temp
+        }
+    }
+}
+
+func overrideBool(field *bool, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val == "true" || val == "1" || val == "yes"
+    }
 }
