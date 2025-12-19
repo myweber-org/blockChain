@@ -108,3 +108,115 @@ func main() {
         os.Exit(1)
     }
 }
+package main
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+)
+
+const keySize = 32
+
+func generateKey() ([]byte, error) {
+	key := make([]byte, keySize)
+	_, err := rand.Read(key)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func encryptData(plaintext []byte, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+func decryptData(ciphertext []byte, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return plaintext, nil
+}
+
+func saveToFile(filename string, data []byte) error {
+	return os.WriteFile(filename, data, 0644)
+}
+
+func readFromFile(filename string) ([]byte, error) {
+	return os.ReadFile(filename)
+}
+
+func main() {
+	key, err := generateKey()
+	if err != nil {
+		fmt.Printf("Error generating key: %v\n", err)
+		return
+	}
+
+	originalText := []byte("This is a secret message that needs encryption")
+	fmt.Printf("Original text: %s\n", originalText)
+
+	encrypted, err := encryptData(originalText, key)
+	if err != nil {
+		fmt.Printf("Encryption error: %v\n", err)
+		return
+	}
+
+	err = saveToFile("encrypted.dat", encrypted)
+	if err != nil {
+		fmt.Printf("Error saving file: %v\n", err)
+		return
+	}
+
+	savedData, err := readFromFile("encrypted.dat")
+	if err != nil {
+		fmt.Printf("Error reading file: %v\n", err)
+		return
+	}
+
+	decrypted, err := decryptData(savedData, key)
+	if err != nil {
+		fmt.Printf("Decryption error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Decrypted text: %s\n", decrypted)
+	fmt.Printf("Encryption/decryption successful\n")
+}
