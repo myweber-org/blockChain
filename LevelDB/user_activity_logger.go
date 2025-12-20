@@ -7,94 +7,43 @@ import (
 )
 
 type ActivityLogger struct {
-	handler http.Handler
+	Logger *log.Logger
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+func NewActivityLogger(logger *log.Logger) *ActivityLogger {
+	return &ActivityLogger{Logger: logger}
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	al.handler.ServeHTTP(w, r)
-	duration := time.Since(start)
-
-	log.Printf(
-		"Method: %s | Path: %s | Duration: %v | User-Agent: %s",
-		r.Method,
-		r.URL.Path,
-		duration,
-		r.UserAgent(),
-	)
-}
-package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLog struct {
-	UserID    string
-	Endpoint  string
-	Method    string
-	Timestamp time.Time
-	IPAddress string
-}
-
-var activityChannel = make(chan ActivityLog, 100)
-
-func init() {
-	go processActivityLogs()
-}
-
-func ActivityLogger(next http.Handler) http.Handler {
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
-		userID := extractUserID(r)
-		ip := r.RemoteAddr
-
-		activity := ActivityLog{
-			UserID:    userID,
-			Endpoint:  r.URL.Path,
-			Method:    r.Method,
-			Timestamp: start,
-			IPAddress: ip,
+		
+		recorder := &responseRecorder{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
 		}
-
-		select {
-		case activityChannel <- activity:
-		default:
-			log.Println("Activity log buffer full, dropping entry")
-		}
-
-		next.ServeHTTP(w, r)
+		
+		next.ServeHTTP(recorder, r)
+		
+		duration := time.Since(start)
+		
+		al.Logger.Printf(
+			"Method: %s | Path: %s | Status: %d | Duration: %v | User-Agent: %s",
+			r.Method,
+			r.URL.Path,
+			recorder.statusCode,
+			duration,
+			r.UserAgent(),
+		)
 	})
 }
 
-func extractUserID(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); auth != "" {
-		return parseToken(auth)
-	}
-	return "anonymous"
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
 }
 
-func parseToken(token string) string {
-	if len(token) > 10 {
-		return token[:8] + "..."
-	}
-	return token
-}
-
-func processActivityLogs() {
-	for activity := range activityChannel {
-		log.Printf("ACTIVITY: User=%s %s %s from %s at %v",
-			activity.UserID,
-			activity.Method,
-			activity.Endpoint,
-			activity.IPAddress,
-			activity.Timestamp.Format(time.RFC3339))
-	}
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.statusCode = code
+	rr.ResponseWriter.WriteHeader(code)
 }
