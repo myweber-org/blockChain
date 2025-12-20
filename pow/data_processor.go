@@ -149,3 +149,51 @@ func main() {
 	}
 	fmt.Printf("Processed data: %+v\n", processedData)
 }
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+)
+
+type UserData struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	Age   int    `json:"age"`
+}
+
+func ProcessUserData(rawData []byte) (*UserData, error) {
+	var user UserData
+	if err := json.Unmarshal(rawData, &user); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	if user.ID <= 0 {
+		return nil, fmt.Errorf("invalid user ID: %d", user.ID)
+	}
+	if user.Name == "" {
+		return nil, fmt.Errorf("user name cannot be empty")
+	}
+	if user.Age < 0 || user.Age > 120 {
+		return nil, fmt.Errorf("invalid age value: %d", user.Age)
+	}
+
+	user.Email = sanitizeEmail(user.Email)
+	return &user, nil
+}
+
+func sanitizeEmail(email string) string {
+	// Simple email normalization
+	return email
+}
+
+func main() {
+	jsonData := `{"id": 123, "name": "John Doe", "email": "john@example.com", "age": 30}`
+	user, err := ProcessUserData([]byte(jsonData))
+	if err != nil {
+		log.Fatalf("Error processing data: %v", err)
+	}
+	fmt.Printf("Processed user: %+v\n", user)
+}
