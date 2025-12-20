@@ -89,4 +89,87 @@ func main() {
 	for _, r := range cleaned {
 		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
 	}
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID   int
+	Name string
+	Age  int
+}
+
+type DataCleaner struct {
+	records []DataRecord
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		records: make([]DataRecord, 0),
+	}
+}
+
+func (dc *DataCleaner) AddRecord(record DataRecord) {
+	dc.records = append(dc.records, record)
+}
+
+func (dc *DataCleaner) RemoveDuplicates() []DataRecord {
+	seen := make(map[string]bool)
+	result := make([]DataRecord, 0)
+
+	for _, record := range dc.records {
+		key := fmt.Sprintf("%d-%s-%d", record.ID, strings.ToLower(record.Name), record.Age)
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, record)
+		}
+	}
+
+	dc.records = result
+	return result
+}
+
+func (dc *DataCleaner) ValidateRecords() (valid []DataRecord, invalid []DataRecord) {
+	valid = make([]DataRecord, 0)
+	invalid = make([]DataRecord, 0)
+
+	for _, record := range dc.records {
+		if record.ID > 0 && record.Name != "" && record.Age >= 0 && record.Age <= 120 {
+			valid = append(valid, record)
+		} else {
+			invalid = append(invalid, record)
+		}
+	}
+
+	return valid, invalid
+}
+
+func (dc *DataCleaner) GetRecordCount() int {
+	return len(dc.records)
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+
+	cleaner.AddRecord(DataRecord{ID: 1, Name: "John", Age: 25})
+	cleaner.AddRecord(DataRecord{ID: 2, Name: "Alice", Age: 30})
+	cleaner.AddRecord(DataRecord{ID: 1, Name: "John", Age: 25})
+	cleaner.AddRecord(DataRecord{ID: 3, Name: "", Age: 35})
+	cleaner.AddRecord(DataRecord{ID: 4, Name: "Bob", Age: 150})
+
+	fmt.Printf("Initial records: %d\n", cleaner.GetRecordCount())
+
+	cleaner.RemoveDuplicates()
+	fmt.Printf("After deduplication: %d\n", cleaner.GetRecordCount())
+
+	valid, invalid := cleaner.ValidateRecords()
+	fmt.Printf("Valid records: %d\n", len(valid))
+	fmt.Printf("Invalid records: %d\n", len(invalid))
+
+	for _, record := range valid {
+		fmt.Printf("Valid: %+v\n", record)
+	}
 }
