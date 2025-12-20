@@ -228,3 +228,202 @@ func main() {
 
 	fmt.Println("Log rotation test completed. Check app.log.* files.")
 }
+package main
+
+import (
+	"compress/gzip"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+const (
+	maxFileSize = 10 * 1024 * 1024 // 10MB
+	backupCount = 5
+)
+
+type RotatingLogger struct {
+	mu         sync.Mutex
+	file       *os.File
+	size       int64
+	basePath   string
+	currentDay string
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+	rl := &RotatingLogger{
+		basePath: path,
+	}
+	if err := rl.rotateIfNeeded(); err != nil {
+		return nil, err
+	}
+	return rl, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if err := rl.rotateIfNeeded(); err != nil {
+		return 0, err
+	}
+
+	n, err := rl.file.Write(p)
+	if err == nil {
+		rl.size += int64(n)
+	}
+	return n, err
+}
+
+func (rl *RotatingLogger) rotateIfNeeded() error {
+	now := time.Now()
+	currentDay := now.Format("2006-01-02")
+
+	if rl.file == nil || rl.size >= maxFileSize || rl.currentDay != currentDay {
+		if rl.file != nil {
+			rl.file.Close()
+			if err := rl.compressOldLog(); err != nil {
+				log.Printf("Failed to compress old log: %v", err)
+			}
+			if err := rl.cleanupOldBackups(); err != nil {
+				log.Printf("Failed to cleanup old backups: %v", err)
+			}
+		}
+
+		newPath := rl.getLogPath(now)
+		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+			return fmt.Errorf("create log directory: %w", err)
+		}
+
+		file, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return fmt.Errorf("stat log file: %w", err)
+		}
+
+		rl.file = file
+		rl.size = info.Size()
+		rl.currentDay = currentDay
+	}
+	return nil
+}
+
+func (rl *RotatingLogger) getLogPath(t time.Time) string {
+	if rl.file != nil && rl.size < maxFileSize && rl.currentDay == t.Format("2006-01-02") {
+		return rl.file.Name()
+	}
+
+	base := filepath.Base(rl.basePath)
+	ext := filepath.Ext(rl.basePath)
+	name := base[:len(base)-len(ext)]
+
+	for i := 0; i < 1000; i++ {
+		var suffix string
+		if i > 0 {
+			suffix = fmt.Sprintf(".%d", i)
+		}
+		path := filepath.Join(
+			filepath.Dir(rl.basePath),
+			t.Format("2006-01-02"),
+			fmt.Sprintf("%s%s%s", name, suffix, ext),
+		)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return path
+		}
+	}
+	return rl.basePath
+}
+
+func (rl *RotatingLogger) compressOldLog() error {
+	if rl.file == nil {
+		return nil
+	}
+
+	oldPath := rl.file.Name()
+	compressedPath := oldPath + ".gz"
+
+	src, err := os.Open(oldPath)
+	if err != nil {
+		return fmt.Errorf("open source file: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.Create(compressedPath)
+	if err != nil {
+		return fmt.Errorf("create compressed file: %w", err)
+	}
+	defer dst.Close()
+
+	gz := gzip.NewWriter(dst)
+	defer gz.Close()
+
+	if _, err := io.Copy(gz, src); err != nil {
+		return fmt.Errorf("compress data: %w", err)
+	}
+
+	if err := os.Remove(oldPath); err != nil {
+		return fmt.Errorf("remove old file: %w", err)
+	}
+
+	return nil
+}
+
+func (rl *RotatingLogger) cleanupOldBackups() error {
+	dir := filepath.Dir(rl.basePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read log directory: %w", err)
+	}
+
+	var backupDirs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			backupDirs = append(backupDirs, entry.Name())
+		}
+	}
+
+	if len(backupDirs) > backupCount {
+		for i := 0; i < len(backupDirs)-backupCount; i++ {
+			oldDir := filepath.Join(dir, backupDirs[i])
+			if err := os.RemoveAll(oldDir); err != nil {
+				return fmt.Errorf("remove old backup %s: %w", oldDir, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.file != nil {
+		return rl.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("./logs/app.log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	log.SetOutput(logger)
+
+	for i := 0; i < 100; i++ {
+		log.Printf("Log entry %d: Application is running normally", i)
+		time.Sleep(100 * time.Millisecond)
+	}
+}
