@@ -1,46 +1,87 @@
-package data_processor
+package main
 
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
-// ValidateJSONString checks if the provided string is valid JSON.
-func ValidateJSONString(input string) (bool, error) {
-	var js interface{}
-	err := json.Unmarshal([]byte(input), &js)
-	if err != nil {
-		return false, fmt.Errorf("invalid JSON: %w", err)
-	}
-	return true, nil
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Active    bool   `json:"active"`
+	Tags      []string `json:"tags"`
 }
 
-// ExtractStringField safely extracts a string field from a map.
-func ExtractStringField(data map[string]interface{}, key string) (string, error) {
-	val, exists := data[key]
-	if !exists {
-		return "", fmt.Errorf("key '%s' not found", key)
-	}
-
-	strVal, ok := val.(string)
-	if !ok {
-		return "", fmt.Errorf("value for key '%s' is not a string", key)
-	}
-
-	return strings.TrimSpace(strVal), nil
+func ValidateEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
 }
 
-// FlattenMapToString flattens a map into a single string for logging.
-func FlattenMapToString(m map[string]string) string {
-	var builder strings.Builder
-	first := true
-	for k, v := range m {
-		if !first {
-			builder.WriteString(", ")
+func SanitizeUsername(username string) string {
+	username = strings.TrimSpace(username)
+	username = strings.ToLower(username)
+	return username
+}
+
+func TransformProfile(profile UserProfile) (UserProfile, error) {
+	if profile.Age < 0 || profile.Age > 120 {
+		return profile, fmt.Errorf("invalid age: %d", profile.Age)
+	}
+
+	if !ValidateEmail(profile.Email) {
+		return profile, fmt.Errorf("invalid email format: %s", profile.Email)
+	}
+
+	profile.Username = SanitizeUsername(profile.Username)
+
+	if len(profile.Tags) > 10 {
+		profile.Tags = profile.Tags[:10]
+	}
+
+	return profile, nil
+}
+
+func ProcessUserData(jsonData []byte) ([]byte, error) {
+	var profiles []UserProfile
+	if err := json.Unmarshal(jsonData, &profiles); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	var validProfiles []UserProfile
+	for _, profile := range profiles {
+		transformed, err := TransformProfile(profile)
+		if err != nil {
+			fmt.Printf("Skipping profile ID %d: %v\n", profile.ID, err)
+			continue
 		}
-		builder.WriteString(fmt.Sprintf("%s: %s", k, v))
-		first = false
+		validProfiles = append(validProfiles, transformed)
 	}
-	return builder.String()
+
+	result, err := json.MarshalIndent(validProfiles, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	return result, nil
+}
+
+func main() {
+	sampleData := `[
+		{"id":1,"username":"  JohnDoe  ","email":"john@example.com","age":25,"active":true,"tags":["golang","backend"]},
+		{"id":2,"username":"JaneSmith","email":"invalid-email","age":150,"active":false,"tags":["frontend","design","test","extra"]},
+		{"id":3,"username":"Bob","email":"bob@test.org","age":30,"active":true,"tags":[]}
+	]`
+
+	processed, err := ProcessUserData([]byte(sampleData))
+	if err != nil {
+		fmt.Printf("Error processing data: %v\n", err)
+		return
+	}
+
+	fmt.Println("Processed user profiles:")
+	fmt.Println(string(processed))
 }
