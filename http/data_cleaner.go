@@ -152,4 +152,39 @@ func main() {
     }
 
     fmt.Println("Data cleaning completed successfully")
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"strings"
+)
+
+func CleanCSVData(reader io.Reader, writer io.Writer) error {
+	csvReader := csv.NewReader(reader)
+	csvWriter := csv.NewWriter(writer)
+	defer csvWriter.Flush()
+
+	for {
+		record, err := csvReader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read error: %w", err)
+		}
+
+		cleanedRecord := make([]string, len(record))
+		for i, field := range record {
+			cleanedField := strings.TrimSpace(field)
+			cleanedField = strings.ToLower(cleanedField)
+			cleanedRecord[i] = cleanedField
+		}
+
+		if err := csvWriter.Write(cleanedRecord); err != nil {
+			return fmt.Errorf("write error: %w", err)
+		}
+	}
+	return nil
 }
