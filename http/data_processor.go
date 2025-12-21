@@ -111,3 +111,19 @@ func main() {
 	fmt.Println("Original:", input)
 	fmt.Println("Filtered and Doubled:", output)
 }
+package data_processor
+
+func FilterAndTransform(numbers []int, threshold int, transformFunc func(int) int) []int {
+	var result []int
+	for _, num := range numbers {
+		if num > threshold {
+			transformed := transformFunc(num)
+			result = append(result, transformed)
+		}
+	}
+	return result
+}
+
+func DoubleValue(x int) int {
+	return x * 2
+}
