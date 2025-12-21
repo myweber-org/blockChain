@@ -84,4 +84,139 @@ func main() {
 
 	fmt.Println("Processed user profiles:")
 	fmt.Println(string(processed))
+}package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
+	Valid bool
+}
+
+func ParseCSVFile(filepath string) ([]DataRecord, error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := []DataRecord{}
+	lineNumber := 0
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if lineNumber == 0 {
+			lineNumber++
+			continue
+		}
+
+		record, err := parseRow(row, lineNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, record)
+		lineNumber++
+	}
+
+	if len(records) == 0 {
+		return nil, errors.New("no valid data records found")
+	}
+
+	return records, nil
+}
+
+func parseRow(row []string, lineNum int) (DataRecord, error) {
+	if len(row) < 4 {
+		return DataRecord{}, fmt.Errorf("invalid column count at line %d", lineNum)
+	}
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid ID at line %d: %w", lineNum, err)
+	}
+
+	name := strings.TrimSpace(row[1])
+	if name == "" {
+		return DataRecord{}, fmt.Errorf("empty name at line %d", lineNum)
+	}
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid value at line %d: %w", lineNum, err)
+	}
+
+	valid := strings.ToLower(strings.TrimSpace(row[3])) == "true"
+
+	return DataRecord{
+		ID:    id,
+		Name:  name,
+		Value: value,
+		Valid: valid,
+	}, nil
+}
+
+func ValidateRecords(records []DataRecord) ([]DataRecord, []DataRecord) {
+	valid := []DataRecord{}
+	invalid := []DataRecord{}
+
+	for _, record := range records {
+		if record.Valid && record.Value >= 0 {
+			valid = append(valid, record)
+		} else {
+			invalid = append(invalid, record)
+		}
+	}
+
+	return valid, invalid
+}
+
+func CalculateAverage(records []DataRecord) float64 {
+	if len(records) == 0 {
+		return 0.0
+	}
+
+	total := 0.0
+	for _, record := range records {
+		total += record.Value
+	}
+
+	return total / float64(len(records))
+}
+
+func GenerateReport(valid, invalid []DataRecord) string {
+	report := strings.Builder{}
+	report.WriteString(fmt.Sprintf("Data Processing Report\n"))
+	report.WriteString(fmt.Sprintf("======================\n"))
+	report.WriteString(fmt.Sprintf("Valid records: %d\n", len(valid)))
+	report.WriteString(fmt.Sprintf("Invalid records: %d\n", len(invalid)))
+	report.WriteString(fmt.Sprintf("Average value: %.2f\n", CalculateAverage(valid)))
+
+	if len(invalid) > 0 {
+		report.WriteString("\nInvalid Records:\n")
+		for _, record := range invalid {
+			report.WriteString(fmt.Sprintf("  ID: %d, Name: %s, Value: %.2f\n", 
+				record.ID, record.Name, record.Value))
+		}
+	}
+
+	return report.String()
 }
