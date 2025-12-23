@@ -61,3 +61,38 @@ func main() {
 		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
 	}
 }
+package datautils
+
+import (
+	"strings"
+	"unicode"
+)
+
+// SanitizeCSVField cleans common formatting issues from CSV-imported strings
+func SanitizeCSVField(input string) string {
+	// Trim surrounding whitespace
+	trimmed := strings.TrimSpace(input)
+	
+	// Remove surrounding quotes if present
+	if len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+		trimmed = trimmed[1 : len(trimmed)-1]
+	}
+	
+	// Replace multiple internal spaces with single space
+	var result strings.Builder
+	result.Grow(len(trimmed))
+	prevSpace := false
+	for _, r := range trimmed {
+		if unicode.IsSpace(r) {
+			if !prevSpace {
+				result.WriteRune(' ')
+				prevSpace = true
+			}
+		} else {
+			result.WriteRune(r)
+			prevSpace = false
+		}
+	}
+	
+	return result.String()
+}
