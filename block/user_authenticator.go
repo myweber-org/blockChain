@@ -791,4 +791,57 @@ func AuthMiddleware(secretKey string) func(http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
+}package middleware
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+)
+
+type AuthMiddleware struct {
+	secretKey string
+}
+
+func NewAuthMiddleware(secret string) *AuthMiddleware {
+	return &AuthMiddleware{secretKey: secret}
+}
+
+func (am *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
+
+		token := parts[1]
+		if !am.isValidToken(token) {
+			http.Error(w, "Invalid or expired token", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (am *AuthMiddleware) isValidToken(token string) bool {
+	// Simplified token validation logic
+	// In production, use proper JWT validation library
+	return len(token) > 10 && strings.HasPrefix(token, "valid_")
+}
+
+func (am *AuthMiddleware) GenerateToken(userID string) (string, error) {
+	// Simplified token generation
+	// In production, use proper JWT generation
+	if userID == "" {
+		return "", fmt.Errorf("userID cannot be empty")
+	}
+	return "valid_" + userID + "_token", nil
 }
