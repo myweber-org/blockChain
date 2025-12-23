@@ -196,4 +196,78 @@ func main() {
 		log.Fatalf("Error processing data: %v", err)
 	}
 	fmt.Printf("Processed user: %+v\n", user)
+}package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    string
+	Value string
+}
+
+type Processor interface {
+	Process(DataRecord) (DataRecord, error)
+}
+
+type Validator struct{}
+
+func (v Validator) Process(record DataRecord) (DataRecord, error) {
+	if record.ID == "" {
+		return record, errors.New("empty ID field")
+	}
+	if len(record.Value) < 3 {
+		return record, errors.New("value too short")
+	}
+	return record, nil
+}
+
+type Transformer struct{}
+
+func (t Transformer) Process(record DataRecord) (DataRecord, error) {
+	record.Value = strings.ToUpper(record.Value)
+	return record, nil
+}
+
+type Pipeline struct {
+	processors []Processor
+}
+
+func (p *Pipeline) AddProcessor(proc Processor) {
+	p.processors = append(p.processors, proc)
+}
+
+func (p *Pipeline) Execute(record DataRecord) (DataRecord, error) {
+	var err error
+	for _, proc := range p.processors {
+		record, err = proc.Process(record)
+		if err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
+
+func main() {
+	pipeline := &Pipeline{}
+	pipeline.AddProcessor(Validator{})
+	pipeline.AddProcessor(Transformer{})
+
+	testRecords := []DataRecord{
+		{ID: "001", Value: "test"},
+		{ID: "", Value: "data"},
+		{ID: "003", Value: "ab"},
+	}
+
+	for _, record := range testRecords {
+		result, err := pipeline.Execute(record)
+		if err != nil {
+			fmt.Printf("Error processing %v: %v\n", record.ID, err)
+		} else {
+			fmt.Printf("Processed: ID=%s, Value=%s\n", result.ID, result.Value)
+		}
+	}
 }
