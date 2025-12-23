@@ -294,4 +294,49 @@ func main() {
     window := 3
     averages := MovingAverage(sampleData, window)
     fmt.Printf("Moving averages (window=%d): %v\n", window, averages)
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
+
+func TransformString(input string) string {
+	return strings.ToUpper(strings.TrimSpace(input))
+}
+
+func ConvertToJSON(data map[string]interface{}) (string, error) {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(jsonData), nil
+}
+
+func main() {
+	email := "test@example.com"
+	fmt.Printf("Email validation result: %v\n", ValidateEmail(email))
+
+	str := "  hello world  "
+	fmt.Printf("Transformed string: '%s'\n", TransformString(str))
+
+	sampleData := map[string]interface{}{
+		"name":  "John Doe",
+		"age":   30,
+		"email": "john@example.com",
+	}
+	jsonStr, err := ConvertToJSON(sampleData)
+	if err != nil {
+		fmt.Printf("Error converting to JSON: %v\n", err)
+	} else {
+		fmt.Printf("JSON output:\n%s\n", jsonStr)
+	}
 }
