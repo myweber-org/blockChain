@@ -171,4 +171,47 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(start)
 	log.Printf("Activity: %s %s | User-Agent: %s | Client-IP: %s | Duration: %v",
 		r.Method, requestPath, userAgent, clientIP, duration)
+}package main
+
+import (
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+)
+
+type ActivityLogger struct {
+    handler http.Handler
+}
+
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    start := time.Now()
+    al.handler.ServeHTTP(w, r)
+    duration := time.Since(start)
+    
+    log.Printf("[%s] %s %s %s %v",
+        time.Now().Format(time.RFC3339),
+        r.Method,
+        r.URL.Path,
+        r.RemoteAddr,
+        duration,
+    )
+}
+
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+    return &ActivityLogger{handler: handler}
+}
+
+func mainHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Request processed at %s", time.Now().Format(time.RFC3339))
+}
+
+func main() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", mainHandler)
+    
+    wrappedHandler := NewActivityLogger(mux)
+    
+    log.Println("Starting server on :8080")
+    log.Fatal(http.ListenAndServe(":8080", wrappedHandler))
 }
