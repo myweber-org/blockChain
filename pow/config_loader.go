@@ -131,4 +131,58 @@ func overrideFromEnv(cfg *Config) {
     if val := os.Getenv("LOG_OUTPUT"); val != "" {
         cfg.Logging.Output = val
     }
+}package config
+
+import (
+	"os"
+	"strings"
+)
+
+type Config struct {
+	DatabaseURL string
+	APIKey      string
+	DebugMode   bool
+}
+
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	content := string(data)
+	content = expandEnvVars(content)
+
+	lines := strings.Split(content, "\n")
+	cfg := &Config{}
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		switch key {
+		case "DATABASE_URL":
+			cfg.DatabaseURL = value
+		case "API_KEY":
+			cfg.APIKey = value
+		case "DEBUG_MODE":
+			cfg.DebugMode = value == "true"
+		}
+	}
+
+	return cfg, nil
+}
+
+func expandEnvVars(s string) string {
+	return os.Expand(s, func(key string) string {
+		if val, exists := os.LookupEnv(key); exists {
+			return val
+		}
+		return ""
+	})
 }
