@@ -466,4 +466,94 @@ func overrideFromEnv(config *AppConfig) {
     if val := os.Getenv("LOG_LEVEL"); val != "" {
         config.LogLevel = val
     }
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type AppConfig struct {
+    ServerPort   int
+    DatabaseURL  string
+    LogLevel     string
+    FeatureFlags map[string]bool
+}
+
+func LoadConfig() (*AppConfig, error) {
+    cfg := &AppConfig{
+        ServerPort:   getEnvAsInt("SERVER_PORT", 8080),
+        DatabaseURL:  getEnv("DATABASE_URL", "postgres://localhost:5432/app"),
+        LogLevel:     getEnv("LOG_LEVEL", "info"),
+        FeatureFlags: parseFeatureFlags(getEnv("FEATURE_FLAGS", "")),
+    }
+
+    if err := validateConfig(cfg); err != nil {
+        return nil, err
+    }
+
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    if value, exists := os.LookupEnv(key); exists {
+        return value
+    }
+    return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+    strValue := getEnv(key, "")
+    if strValue == "" {
+        return defaultValue
+    }
+    
+    intValue, err := strconv.Atoi(strValue)
+    if err != nil {
+        return defaultValue
+    }
+    return intValue
+}
+
+func parseFeatureFlags(flagsStr string) map[string]bool {
+    flags := make(map[string]bool)
+    if flagsStr == "" {
+        return flags
+    }
+
+    pairs := strings.Split(flagsStr, ",")
+    for _, pair := range pairs {
+        parts := strings.Split(pair, "=")
+        if len(parts) == 2 {
+            flags[strings.TrimSpace(parts[0])] = strings.ToLower(strings.TrimSpace(parts[1])) == "true"
+        }
+    }
+    return flags
+}
+
+func validateConfig(cfg *AppConfig) error {
+    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+        return &ConfigError{Field: "ServerPort", Message: "port must be between 1 and 65535"}
+    }
+    
+    if cfg.DatabaseURL == "" {
+        return &ConfigError{Field: "DatabaseURL", Message: "database URL cannot be empty"}
+    }
+    
+    validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+    if !validLogLevels[strings.ToLower(cfg.LogLevel)] {
+        return &ConfigError{Field: "LogLevel", Message: "invalid log level"}
+    }
+    
+    return nil
+}
+
+type ConfigError struct {
+    Field   string
+    Message string
+}
+
+func (e *ConfigError) Error() string {
+    return "config error: " + e.Field + " - " + e.Message
 }
