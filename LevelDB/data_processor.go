@@ -418,4 +418,72 @@ func main() {
     fmt.Printf("Processed %d records\n", len(records))
     fmt.Printf("Average value: %.2f\n", avg)
     fmt.Printf("Maximum value: %.2f\n", max)
+}package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type UserData struct {
+	Username string
+	Email    string
+	Bio      string
+}
+
+func SanitizeInput(input string) string {
+	// Remove leading/trailing whitespace
+	trimmed := strings.TrimSpace(input)
+	// Replace multiple spaces with a single space
+	re := regexp.MustCompile(`\s+`)
+	return re.ReplaceAllString(trimmed, " ")
+}
+
+func ValidateEmail(email string) bool {
+	// Basic email validation regex
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
+
+func ValidateUsername(username string) bool {
+	// Username must be 3-20 alphanumeric characters
+	if len(username) < 3 || len(username) > 20 {
+		return false
+	}
+	pattern := `^[a-zA-Z0-9_]+$`
+	matched, _ := regexp.MatchString(pattern, username)
+	return matched
+}
+
+func ProcessUserData(data UserData) (UserData, error) {
+	// Sanitize all string fields
+	data.Username = SanitizeInput(data.Username)
+	data.Email = SanitizeInput(data.Email)
+	data.Bio = SanitizeInput(data.Bio)
+
+	// Validate critical fields
+	if !ValidateUsername(data.Username) {
+		return data, &ValidationError{Field: "username", Message: "invalid username format"}
+	}
+
+	if !ValidateEmail(data.Email) {
+		return data, &ValidationError{Field: "email", Message: "invalid email format"}
+	}
+
+	// Truncate bio if too long
+	if len(data.Bio) > 500 {
+		data.Bio = data.Bio[:497] + "..."
+	}
+
+	return data, nil
+}
+
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return e.Field + ": " + e.Message
 }
