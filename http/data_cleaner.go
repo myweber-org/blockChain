@@ -448,3 +448,121 @@ func main() {
 			record.ID, record.Name, record.Email, record.Valid)
 	}
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    string
+	Email string
+	Phone string
+}
+
+type DataCleaner struct {
+	records map[string]DataRecord
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		records: make(map[string]DataRecord),
+	}
+}
+
+func (dc *DataCleaner) AddRecord(record DataRecord) bool {
+	if !dc.isValidRecord(record) {
+		return false
+	}
+
+	key := dc.generateKey(record)
+	if _, exists := dc.records[key]; exists {
+		return false
+	}
+
+	dc.records[key] = record
+	return true
+}
+
+func (dc *DataCleaner) isValidRecord(record DataRecord) bool {
+	if record.ID == "" || record.Email == "" {
+		return false
+	}
+	if !strings.Contains(record.Email, "@") {
+		return false
+	}
+	return true
+}
+
+func (dc *DataCleaner) generateKey(record DataRecord) string {
+	return fmt.Sprintf("%s|%s", record.ID, strings.ToLower(record.Email))
+}
+
+func (dc *DataCleaner) LoadFromCSV(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = 3
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		record := DataRecord{
+			ID:    strings.TrimSpace(row[0]),
+			Email: strings.TrimSpace(row[1]),
+			Phone: strings.TrimSpace(row[2]),
+		}
+
+		dc.AddRecord(record)
+	}
+
+	return nil
+}
+
+func (dc *DataCleaner) GetUniqueRecords() []DataRecord {
+	var result []DataRecord
+	for _, record := range dc.records {
+		result = append(result, record)
+	}
+	return result
+}
+
+func (dc *DataCleaner) Count() int {
+	return len(dc.records)
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+
+	sampleData := []DataRecord{
+		{"001", "user@example.com", "1234567890"},
+		{"002", "admin@test.org", "0987654321"},
+		{"001", "user@example.com", "5555555555"},
+		{"003", "invalid-email", "1111111111"},
+		{"004", "another@domain.com", "2222222222"},
+	}
+
+	for _, record := range sampleData {
+		if added := cleaner.AddRecord(record); added {
+			fmt.Printf("Added: %+v\n", record)
+		} else {
+			fmt.Printf("Skipped duplicate/invalid: %+v\n", record)
+		}
+	}
+
+	fmt.Printf("Total unique records: %d\n", cleaner.Count())
+}
