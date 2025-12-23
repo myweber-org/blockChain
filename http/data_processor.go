@@ -127,3 +127,60 @@ func FilterAndTransform(numbers []int, threshold int, transformFunc func(int) in
 func DoubleValue(x int) int {
 	return x * 2
 }
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "strings"
+)
+
+// ValidateJSONString checks if a string is valid JSON.
+func ValidateJSONString(s string) bool {
+    var js interface{}
+    return json.Unmarshal([]byte(s), &js) == nil
+}
+
+// PrettyPrintJSON takes a JSON string and returns a formatted version.
+func PrettyPrintJSON(s string) (string, error) {
+    var data interface{}
+    err := json.Unmarshal([]byte(s), &data)
+    if err != nil {
+        return "", err
+    }
+    pretty, err := json.MarshalIndent(data, "", "  ")
+    if err != nil {
+        return "", err
+    }
+    return string(pretty), nil
+}
+
+// ExtractJSONField extracts the value of a top-level field from a JSON string.
+func ExtractJSONField(s, field string) (string, error) {
+    var data map[string]interface{}
+    err := json.Unmarshal([]byte(s), &data)
+    if err != nil {
+        return "", err
+    }
+    value, exists := data[field]
+    if !exists {
+        return "", fmt.Errorf("field '%s' not found", field)
+    }
+    result, err := json.Marshal(value)
+    if err != nil {
+        return "", err
+    }
+    return strings.Trim(string(result), `"`), nil
+}
+
+func main() {
+    // Example usage
+    jsonStr := `{"name":"Alice","age":30,"active":true}`
+    fmt.Println("Valid JSON?", ValidateJSONString(jsonStr))
+
+    pretty, _ := PrettyPrintJSON(jsonStr)
+    fmt.Println("Pretty JSON:\n", pretty)
+
+    name, _ := ExtractJSONField(jsonStr, "name")
+    fmt.Println("Extracted name:", name)
+}
