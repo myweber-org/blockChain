@@ -135,4 +135,53 @@ type responseRecorder struct {
 func (rr *responseRecorder) WriteHeader(code int) {
 	rr.statusCode = code
 	rr.ResponseWriter.WriteHeader(code)
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "time"
+)
+
+type ActivityLog struct {
+    Timestamp time.Time `json:"timestamp"`
+    UserID    string    `json:"user_id"`
+    Action    string    `json:"action"`
+    Details   string    `json:"details,omitempty"`
+}
+
+func logActivity(userID, action, details string) ActivityLog {
+    log := ActivityLog{
+        Timestamp: time.Now().UTC(),
+        UserID:    userID,
+        Action:    action,
+        Details:   details,
+    }
+    return log
+}
+
+func saveLogToFile(log ActivityLog, filename string) error {
+    file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    return encoder.Encode(log)
+}
+
+func main() {
+    log := logActivity("user123", "LOGIN", "User logged in from web browser")
+    
+    err := saveLogToFile(log, "activity_logs.json")
+    if err != nil {
+        fmt.Printf("Error saving log: %v\n", err)
+        return
+    }
+    
+    fmt.Printf("Activity logged: %s performed %s at %s\n", 
+        log.UserID, log.Action, log.Timestamp.Format(time.RFC3339))
 }
