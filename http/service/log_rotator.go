@@ -150,4 +150,110 @@ func main() {
 	}
 
 	logger.compressOldLogs()
+}package main
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+const (
+    maxFileSize = 1024 * 1024
+    maxBackups  = 5
+)
+
+type LogRotator struct {
+    filePath string
+    file     *os.File
+    size     int64
+}
+
+func NewLogRotator(path string) (*LogRotator, error) {
+    file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &LogRotator{
+        filePath: path,
+        file:     file,
+        size:     info.Size(),
+    }, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+    if lr.size+int64(len(p)) > maxFileSize {
+        if err := lr.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := lr.file.Write(p)
+    lr.size += int64(n)
+    return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+    if err := lr.file.Close(); err != nil {
+        return err
+    }
+
+    for i := maxBackups - 1; i >= 0; i-- {
+        oldPath := lr.backupPath(i)
+        newPath := lr.backupPath(i + 1)
+
+        if _, err := os.Stat(oldPath); err == nil {
+            if err := os.Rename(oldPath, newPath); err != nil {
+                return err
+            }
+        }
+    }
+
+    if err := os.Rename(lr.filePath, lr.backupPath(0)); err != nil && !os.IsNotExist(err) {
+        return err
+    }
+
+    file, err := os.OpenFile(lr.filePath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    lr.file = file
+    lr.size = 0
+    return nil
+}
+
+func (lr *LogRotator) backupPath(index int) string {
+    if index == 0 {
+        return lr.filePath + ".1"
+    }
+    return fmt.Sprintf("%s.%d", lr.filePath, index+1)
+}
+
+func (lr *LogRotator) Close() error {
+    return lr.file.Close()
+}
+
+func main() {
+    rotator, err := NewLogRotator("app.log")
+    if err != nil {
+        panic(err)
+    }
+    defer rotator.Close()
+
+    for i := 0; i < 100; i++ {
+        msg := fmt.Sprintf("[%s] Log entry %d\n", time.Now().Format(time.RFC3339), i)
+        if _, err := rotator.Write([]byte(msg)); err != nil {
+            panic(err)
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
 }
