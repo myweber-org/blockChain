@@ -533,4 +533,126 @@ func main() {
         logger.Write([]byte(msg))
         time.Sleep(10 * time.Millisecond)
     }
+}package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+type RotatingLogger struct {
+	filePath     string
+	maxSize      int64
+	currentSize  int64
+	file         *os.File
+	rotationCount int
+}
+
+func NewRotatingLogger(path string, maxSizeMB int) (*RotatingLogger, error) {
+	maxSize := int64(maxSizeMB) * 1024 * 1024
+	
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	
+	return &RotatingLogger{
+		filePath:    path,
+		maxSize:     maxSize,
+		currentSize: info.Size(),
+		file:        file,
+	}, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+	if rl.currentSize+int64(len(p)) > rl.maxSize {
+		if err := rl.rotate(); err != nil {
+			return 0, err
+		}
+	}
+	
+	n, err := rl.file.Write(p)
+	if err == nil {
+		rl.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+	rl.file.Close()
+	
+	rl.rotationCount++
+	timestamp := time.Now().Format("20060102_150405")
+	ext := filepath.Ext(rl.filePath)
+	base := strings.TrimSuffix(rl.filePath, ext)
+	archivePath := fmt.Sprintf("%s_%s_%d%s", base, timestamp, rl.rotationCount, ext)
+	
+	if err := os.Rename(rl.filePath, archivePath); err != nil {
+		return err
+	}
+	
+	file, err := os.OpenFile(rl.filePath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	
+	rl.file = file
+	rl.currentSize = 0
+	
+	go rl.compressArchive(archivePath)
+	
+	return nil
+}
+
+func (rl *RotatingLogger) compressArchive(path string) {
+	src, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer src.Close()
+	
+	destPath := path + ".gz"
+	dest, err := os.Create(destPath)
+	if err != nil {
+		return
+	}
+	defer dest.Close()
+	
+	gzWriter := NewGzipWriter(dest)
+	defer gzWriter.Close()
+	
+	io.Copy(gzWriter, src)
+	
+	os.Remove(path)
+}
+
+func (rl *RotatingLogger) Close() error {
+	return rl.file.Close()
+}
+
+func main() {
+	logger, err := NewRotatingLogger("app.log", 10)
+	if err != nil {
+		fmt.Printf("Failed to create logger: %v\n", err)
+		return
+	}
+	defer logger.Close()
+	
+	for i := 0; i < 1000; i++ {
+		message := fmt.Sprintf("Log entry %d: %s\n", i, time.Now().Format(time.RFC3339))
+		logger.Write([]byte(message))
+		time.Sleep(10 * time.Millisecond)
+	}
+	
+	fmt.Println("Log rotation test completed")
 }
