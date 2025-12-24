@@ -444,4 +444,99 @@ type ConfigError struct {
 
 func (e *ConfigError) Error() string {
 	return "config error: " + e.Field + " - " + e.Message
+}package config
+
+import (
+    "fmt"
+    "os"
+    "strings"
+
+    "gopkg.in/yaml.v2"
+)
+
+type Config struct {
+    Server struct {
+        Port    int    `yaml:"port"`
+        Host    string `yaml:"host"`
+        Timeout int    `yaml:"timeout"`
+    } `yaml:"server"`
+    Database struct {
+        Host     string `yaml:"host"`
+        Port     int    `yaml:"port"`
+        Name     string `yaml:"name"`
+        User     string `yaml:"user"`
+        Password string `yaml:"password"`
+    } `yaml:"database"`
+    Logging struct {
+        Level  string `yaml:"level"`
+        Output string `yaml:"output"`
+    } `yaml:"logging"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+    config := &Config{}
+
+    file, err := os.ReadFile(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    if err := yaml.Unmarshal(file, config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    overrideFromEnv(config)
+
+    return config, nil
+}
+
+func overrideFromEnv(config *Config) {
+    if port := os.Getenv("SERVER_PORT"); port != "" {
+        fmt.Sscanf(port, "%d", &config.Server.Port)
+    }
+    if host := os.Getenv("SERVER_HOST"); host != "" {
+        config.Server.Host = host
+    }
+    if timeout := os.Getenv("SERVER_TIMEOUT"); timeout != "" {
+        fmt.Sscanf(timeout, "%d", &config.Server.Timeout)
+    }
+
+    if dbHost := os.Getenv("DB_HOST"); dbHost != "" {
+        config.Database.Host = dbHost
+    }
+    if dbPort := os.Getenv("DB_PORT"); dbPort != "" {
+        fmt.Sscanf(dbPort, "%d", &config.Database.Port)
+    }
+    if dbName := os.Getenv("DB_NAME"); dbName != "" {
+        config.Database.Name = dbName
+    }
+    if dbUser := os.Getenv("DB_USER"); dbUser != "" {
+        config.Database.User = dbUser
+    }
+    if dbPass := os.Getenv("DB_PASSWORD"); dbPass != "" {
+        config.Database.Password = dbPass
+    }
+
+    if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
+        config.Logging.Level = strings.ToUpper(logLevel)
+    }
+    if logOutput := os.Getenv("LOG_OUTPUT"); logOutput != "" {
+        config.Logging.Output = logOutput
+    }
+}
+
+func (c *Config) Validate() error {
+    if c.Server.Port <= 0 || c.Server.Port > 65535 {
+        return fmt.Errorf("invalid server port: %d", c.Server.Port)
+    }
+    if c.Server.Host == "" {
+        return fmt.Errorf("server host cannot be empty")
+    }
+    if c.Database.Host == "" {
+        return fmt.Errorf("database host cannot be empty")
+    }
+    if c.Database.Name == "" {
+        return fmt.Errorf("database name cannot be empty")
+    }
+    return nil
 }
