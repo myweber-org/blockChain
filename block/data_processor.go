@@ -285,4 +285,53 @@ func main() {
 	}
 
 	fmt.Printf("Successfully processed %s to %s\n", inputFile, outputFile)
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type Record struct {
+	ID   int
+	Name string
+	Tags []string
+}
+
+func FilterRecords(records []Record, tagFilter string) []Record {
+	var filtered []Record
+	for _, r := range records {
+		for _, tag := range r.Tags {
+			if strings.EqualFold(tag, tagFilter) {
+				filtered = append(filtered, r)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func TransformNames(records []Record) []Record {
+	for i := range records {
+		records[i].Name = strings.ToUpper(records[i].Name)
+	}
+	return records
+}
+
+func ProcessData(input []Record, filterTag string) []Record {
+	filtered := FilterRecords(input, filterTag)
+	return TransformNames(filtered)
+}
+
+func main() {
+	data := []Record{
+		{1, "alpha", []string{"backend", "go"}},
+		{2, "beta", []string{"frontend", "js"}},
+		{3, "gamma", []string{"backend", "python"}},
+	}
+
+	result := ProcessData(data, "backend")
+	for _, r := range result {
+		fmt.Printf("ID: %d, Name: %s\n", r.ID, r.Name)
+	}
 }
