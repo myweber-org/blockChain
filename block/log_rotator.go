@@ -1218,3 +1218,206 @@ func main() {
 
     fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+type RotatingLogger struct {
+	mu           sync.Mutex
+	file         *os.File
+	basePath     string
+	maxSize      int64
+	currentSize  int64
+	backupCount  int
+	compressOld  bool
+}
+
+func NewRotatingLogger(basePath string, maxSizeMB int, backupCount int, compressOld bool) (*RotatingLogger, error) {
+	maxSize := int64(maxSizeMB) * 1024 * 1024
+
+	rl := &RotatingLogger{
+		basePath:    basePath,
+		maxSize:     maxSize,
+		backupCount: backupCount,
+		compressOld: compressOld,
+	}
+
+	if err := rl.openFile(); err != nil {
+		return nil, err
+	}
+
+	return rl, nil
+}
+
+func (rl *RotatingLogger) openFile() error {
+	dir := filepath.Dir(rl.basePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create directory failed: %w", err)
+	}
+
+	file, err := os.OpenFile(rl.basePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open file failed: %w", err)
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return fmt.Errorf("stat file failed: %w", err)
+	}
+
+	rl.file = file
+	rl.currentSize = info.Size()
+	return nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.currentSize+int64(len(p)) > rl.maxSize {
+		if err := rl.rotate(); err != nil {
+			log.Printf("rotate failed: %v", err)
+		}
+	}
+
+	n, err := rl.file.Write(p)
+	if err == nil {
+		rl.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+	if rl.file != nil {
+		rl.file.Close()
+	}
+
+	for i := rl.backupCount - 1; i >= 0; i-- {
+		srcPath := rl.getBackupPath(i)
+		dstPath := rl.getBackupPath(i + 1)
+
+		if _, err := os.Stat(srcPath); err == nil {
+			if i == rl.backupCount-1 {
+				os.Remove(srcPath)
+			} else {
+				if rl.compressOld && i == 0 {
+					rl.compressFile(srcPath, dstPath+".gz")
+				} else {
+					os.Rename(srcPath, dstPath)
+				}
+			}
+		}
+	}
+
+	if _, err := os.Stat(rl.basePath); err == nil {
+		os.Rename(rl.basePath, rl.getBackupPath(0))
+	}
+
+	return rl.openFile()
+}
+
+func (rl *RotatingLogger) getBackupPath(index int) string {
+	if index == 0 {
+		return rl.basePath + ".1"
+	}
+	return fmt.Sprintf("%s.%d", rl.basePath, index)
+}
+
+func (rl *RotatingLogger) compressFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	compressor := NewGzipCompressor(dstFile)
+	_, err = io.Copy(compressor, srcFile)
+	if err != nil {
+		os.Remove(dst)
+		return err
+	}
+
+	if err := compressor.Close(); err != nil {
+		os.Remove(dst)
+		return err
+	}
+
+	os.Remove(src)
+	return nil
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.file != nil {
+		return rl.file.Close()
+	}
+	return nil
+}
+
+type GzipCompressor struct {
+	writer io.WriteCloser
+}
+
+func NewGzipCompressor(w io.Writer) *GzipCompressor {
+	return &GzipCompressor{
+		writer: &fakeCompressor{w},
+	}
+}
+
+func (g *GzipCompressor) Write(p []byte) (int, error) {
+	return g.writer.Write(p)
+}
+
+func (g *GzipCompressor) Close() error {
+	return g.writer.Close()
+}
+
+type fakeCompressor struct {
+	w io.Writer
+}
+
+func (f *fakeCompressor) Write(p []byte) (int, error) {
+	return f.w.Write(p)
+}
+
+func (f *fakeCompressor) Close() error {
+	if c, ok := f.w.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("/var/log/myapp/app.log", 10, 5, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	customLog := log.New(logger, "", log.LstdFlags)
+
+	for i := 0; i < 100; i++ {
+		customLog.Printf("Log entry %d at %s", i, time.Now().Format(time.RFC3339))
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	fmt.Println("Log rotation completed. Check /var/log/myapp/ directory.")
+}
