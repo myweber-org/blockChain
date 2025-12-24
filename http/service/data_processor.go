@@ -340,3 +340,153 @@ func main() {
 		fmt.Printf("JSON output:\n%s\n", jsonStr)
 	}
 }
+package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type DataRecord struct {
+    ID      int
+    Name    string
+    Value   float64
+    Active  bool
+}
+
+func ProcessCSVFile(inputPath string, outputPath string) error {
+    inputFile, err := os.Open(inputPath)
+    if err != nil {
+        return fmt.Errorf("failed to open input file: %w", err)
+    }
+    defer inputFile.Close()
+
+    outputFile, err := os.Create(outputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
+
+    csvReader := csv.NewReader(inputFile)
+    csvWriter := csv.NewWriter(outputFile)
+    defer csvWriter.Flush()
+
+    header, err := csvReader.Read()
+    if err != nil {
+        return fmt.Errorf("failed to read CSV header: %w", err)
+    }
+
+    if len(header) != 4 {
+        return fmt.Errorf("invalid CSV format: expected 4 columns, got %d", len(header))
+    }
+
+    if err := csvWriter.Write([]string{"ID", "Name", "Value", "Active", "Status"}); err != nil {
+        return fmt.Errorf("failed to write output header: %w", err)
+    }
+
+    lineNumber := 1
+    for {
+        record, err := csvReader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return fmt.Errorf("error reading line %d: %w", lineNumber, err)
+        }
+
+        if len(record) != 4 {
+            return fmt.Errorf("invalid data at line %d: expected 4 fields, got %d", lineNumber, len(record))
+        }
+
+        dataRec, err := parseRecord(record, lineNumber)
+        if err != nil {
+            return err
+        }
+
+        status := "VALID"
+        if dataRec.Value < 0 || dataRec.Value > 1000 {
+            status = "VALUE_OUT_OF_RANGE"
+        }
+        if !dataRec.Active && dataRec.Value > 0 {
+            status = "INACTIVE_WITH_POSITIVE_VALUE"
+        }
+
+        outputRecord := []string{
+            strconv.Itoa(dataRec.ID),
+            strings.ToUpper(dataRec.Name),
+            fmt.Sprintf("%.2f", dataRec.Value),
+            strconv.FormatBool(dataRec.Active),
+            status,
+        }
+
+        if err := csvWriter.Write(outputRecord); err != nil {
+            return fmt.Errorf("failed to write line %d: %w", lineNumber, err)
+        }
+
+        lineNumber++
+    }
+
+    return nil
+}
+
+func parseRecord(fields []string, lineNumber int) (DataRecord, error) {
+    var rec DataRecord
+    var err error
+
+    rec.ID, err = strconv.Atoi(fields[0])
+    if err != nil {
+        return DataRecord{}, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
+    }
+
+    rec.Name = strings.TrimSpace(fields[1])
+    if rec.Name == "" {
+        return DataRecord{}, fmt.Errorf("empty name at line %d", lineNumber)
+    }
+
+    rec.Value, err = strconv.ParseFloat(fields[2], 64)
+    if err != nil {
+        return DataRecord{}, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
+    }
+
+    rec.Active, err = strconv.ParseBool(fields[3])
+    if err != nil {
+        return DataRecord{}, fmt.Errorf("invalid active flag at line %d: %w", lineNumber, err)
+    }
+
+    return rec, nil
+}
+
+func ValidateCSVStructure(filePath string) (int, error) {
+    file, err := os.Open(filePath)
+    if err != nil {
+        return 0, fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    records, err := reader.ReadAll()
+    if err != nil {
+        return 0, fmt.Errorf("failed to read CSV: %w", err)
+    }
+
+    if len(records) == 0 {
+        return 0, fmt.Errorf("empty CSV file")
+    }
+
+    expectedColumns := 4
+    if len(records[0]) != expectedColumns {
+        return 0, fmt.Errorf("invalid header: expected %d columns, got %d", expectedColumns, len(records[0]))
+    }
+
+    for i := 1; i < len(records); i++ {
+        if len(records[i]) != expectedColumns {
+            return 0, fmt.Errorf("line %d: expected %d columns, got %d", i+1, expectedColumns, len(records[i]))
+        }
+    }
+
+    return len(records) - 1, nil
+}
