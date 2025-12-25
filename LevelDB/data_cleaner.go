@@ -49,3 +49,43 @@ func CleanSlice(slice []string) []string {
 	}
 	return RemoveDuplicates(cleaned)
 }
+package utils
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+func SanitizeInput(input string) string {
+	// Trim leading and trailing whitespace
+	trimmed := strings.TrimSpace(input)
+
+	// Remove any null characters
+	trimmed = strings.ReplaceAll(trimmed, "\x00", "")
+
+	// Normalize multiple spaces to single space
+	spaceRegex := regexp.MustCompile(`\s+`)
+	trimmed = spaceRegex.ReplaceAllString(trimmed, " ")
+
+	// Remove any non-printable characters except newline and tab
+	var result strings.Builder
+	for _, r := range trimmed {
+		if unicode.IsPrint(r) || r == '\n' || r == '\t' {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
+}
+
+func NormalizeWhitespace(input string) string {
+	// Replace various whitespace characters with standard space
+	whitespaceRegex := regexp.MustCompile(`[\t\n\r\f\v]+`)
+	normalized := whitespaceRegex.ReplaceAllString(input, " ")
+	
+	// Collapse multiple spaces
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	
+	return normalized
+}
