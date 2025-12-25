@@ -224,4 +224,63 @@ func main() {
 	}
 
 	fmt.Printf("%.2f %s = %.2f %s\n", amount, fromCurrency, result, toCurrency)
+}package main
+
+import (
+	"fmt"
+)
+
+type Currency string
+
+const (
+	USD Currency = "USD"
+	EUR Currency = "EUR"
+	GBP Currency = "GBP"
+)
+
+type ExchangeRates struct {
+	rates map[Currency]float64
+}
+
+func NewExchangeRates() *ExchangeRates {
+	return &ExchangeRates{
+		rates: map[Currency]float64{
+			USD: 1.0,
+			EUR: 0.85,
+			GBP: 0.73,
+		},
+	}
+}
+
+func (er *ExchangeRates) Convert(amount float64, from, to Currency) (float64, error) {
+	fromRate, ok1 := er.rates[from]
+	toRate, ok2 := er.rates[to]
+
+	if !ok1 || !ok2 {
+		return 0, fmt.Errorf("unsupported currency")
+	}
+
+	usdAmount := amount / fromRate
+	return usdAmount * toRate, nil
+}
+
+func main() {
+	rates := NewExchangeRates()
+
+	amount := 100.0
+	result, err := rates.Convert(amount, USD, EUR)
+	if err != nil {
+		fmt.Printf("Conversion error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, USD, result, EUR)
+
+	result, err = rates.Convert(amount, USD, GBP)
+	if err != nil {
+		fmt.Printf("Conversion error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, USD, result, GBP)
 }
