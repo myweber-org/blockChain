@@ -251,4 +251,37 @@ func RemoveDuplicates(input []int) []int {
 		}
 	}
 	return result
+}package csvutils
+
+import (
+	"encoding/csv"
+	"io"
+	"strings"
+)
+
+func SanitizeCSV(input io.Reader, output io.Writer) error {
+	reader := csv.NewReader(input)
+	writer := csv.NewWriter(output)
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		sanitized := make([]string, len(record))
+		for i, field := range record {
+			sanitized[i] = strings.TrimSpace(field)
+		}
+
+		if err := writer.Write(sanitized); err != nil {
+			return err
+		}
+	}
+
+	writer.Flush()
+	return writer.Error()
 }
