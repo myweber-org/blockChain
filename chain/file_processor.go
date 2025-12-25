@@ -121,4 +121,116 @@ func main() {
 	fmt.Printf("  Files processed: %d\n", processed)
 	fmt.Printf("  Errors: %d\n", errors)
 	fmt.Printf("  Time elapsed: %v\n", elapsed)
+}package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileProcessor struct {
+	InputDir  string
+	OutputDir string
+	Workers   int
+}
+
+func NewFileProcessor(inputDir, outputDir string, workers int) *FileProcessor {
+	return &FileProcessor{
+		InputDir:  inputDir,
+		OutputDir: outputDir,
+		Workers:   workers,
+	}
+}
+
+func (fp *FileProcessor) ProcessFiles() error {
+	files, err := filepath.Glob(filepath.Join(fp.InputDir, "*.txt"))
+	if err != nil {
+		return err
+	}
+
+	fileChan := make(chan string, len(files))
+	resultChan := make(chan string, len(files))
+	var wg sync.WaitGroup
+
+	for i := 0; i < fp.Workers; i++ {
+		wg.Add(1)
+		go fp.worker(i, fileChan, resultChan, &wg)
+	}
+
+	for _, file := range files {
+		fileChan <- file
+	}
+	close(fileChan)
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for result := range resultChan {
+		fmt.Println("Processed:", result)
+	}
+
+	return nil
+}
+
+func (fp *FileProcessor) worker(id int, files <-chan string, results chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for file := range files {
+		start := time.Now()
+		outputFile := filepath.Join(fp.OutputDir, fmt.Sprintf("processed_%d_%s", id, filepath.Base(file)))
+
+		if err := fp.processSingleFile(file, outputFile); err != nil {
+			results <- fmt.Sprintf("Worker %d failed on %s: %v", id, file, err)
+			continue
+		}
+
+		duration := time.Since(start)
+		results <- fmt.Sprintf("Worker %d completed %s in %v", id, file, duration)
+	}
+}
+
+func (fp *FileProcessor) processSingleFile(inputPath, outputPath string) error {
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return err
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	scanner := bufio.NewScanner(inputFile)
+	writer := bufio.NewWriter(outputFile)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		processedLine := fmt.Sprintf("PROCESSED: %s\n", line)
+		if _, err := writer.WriteString(processedLine); err != nil {
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	return writer.Flush()
+}
+
+func main() {
+	processor := NewFileProcessor("./input", "./output", 4)
+	if err := processor.ProcessFiles(); err != nil {
+		fmt.Printf("Processing error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("All files processed successfully")
 }
