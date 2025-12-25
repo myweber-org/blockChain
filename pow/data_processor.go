@@ -8,409 +8,98 @@ import (
 	"strings"
 )
 
-type DataRecord struct {
-	ID    string
-	Name  string
-	Email string
-	Valid bool
+type DataProcessor struct {
+	InputPath  string
+	OutputPath string
+	Delimiter  rune
 }
 
-func ProcessCSVFile(filePath string) ([]DataRecord, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+func NewDataProcessor(input, output string) *DataProcessor {
+	return &DataProcessor{
+		InputPath:  input,
+		OutputPath: output,
+		Delimiter:  ',',
 	}
-	defer file.Close()
+}
 
-	reader := csv.NewReader(file)
-	reader.TrimLeadingSpace = true
+func (dp *DataProcessor) ValidateRow(row []string) bool {
+	if len(row) == 0 {
+		return false
+	}
+	for _, field := range row {
+		if strings.TrimSpace(field) == "" {
+			return false
+		}
+	}
+	return true
+}
 
-	var records []DataRecord
-	headerSkipped := false
+func (dp *DataProcessor) CleanField(field string) string {
+	cleaned := strings.TrimSpace(field)
+	cleaned = strings.ToUpper(cleaned)
+	return cleaned
+}
 
+func (dp *DataProcessor) Process() error {
+	inputFile, err := os.Open(dp.InputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(dp.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	reader := csv.NewReader(inputFile)
+	reader.Comma = dp.Delimiter
+
+	writer := csv.NewWriter(outputFile)
+	writer.Comma = dp.Delimiter
+	defer writer.Flush()
+
+	headerProcessed := false
 	for {
-		row, err := reader.Read()
+		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("csv read error: %w", err)
+			return fmt.Errorf("failed to read CSV record: %w", err)
 		}
 
-		if !headerSkipped {
-			headerSkipped = true
+		if !headerProcessed {
+			if err := writer.Write(record); err != nil {
+				return fmt.Errorf("failed to write header: %w", err)
+			}
+			headerProcessed = true
 			continue
 		}
 
-		if len(row) < 3 {
+		if !dp.ValidateRow(record) {
 			continue
 		}
 
-		record := DataRecord{
-			ID:    strings.TrimSpace(row[0]),
-			Name:  strings.TrimSpace(row[1]),
-			Email: strings.TrimSpace(row[2]),
-			Valid: validateRecord(strings.TrimSpace(row[0]), strings.TrimSpace(row[2])),
+		cleanedRecord := make([]string, len(record))
+		for i, field := range record {
+			cleanedRecord[i] = dp.CleanField(field)
 		}
 
-		records = append(records, record)
-	}
-
-	return records, nil
-}
-
-func validateRecord(id, email string) bool {
-	if id == "" || email == "" {
-		return false
-	}
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
-}
-
-func FilterValidRecords(records []DataRecord) []DataRecord {
-	var validRecords []DataRecord
-	for _, record := range records {
-		if record.Valid {
-			validRecords = append(validRecords, record)
+		if err := writer.Write(cleanedRecord); err != nil {
+			return fmt.Errorf("failed to write cleaned record: %w", err)
 		}
 	}
-	return validRecords
-}
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <csv_file_path>")
-		os.Exit(1)
-	}
-
-	records, err := ProcessCSVFile(os.Args[1])
-	if err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		os.Exit(1)
-	}
-
-	validRecords := FilterValidRecords(records)
-	fmt.Printf("Total records: %d\n", len(records))
-	fmt.Printf("Valid records: %d\n", len(validRecords))
-
-	for _, record := range validRecords {
-		fmt.Printf("ID: %s, Name: %s, Email: %s\n", record.ID, record.Name, record.Email)
-	}
-}package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"regexp"
-	"strings"
-)
-
-type UserData struct {
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Age      int    `json:"age"`
-}
-
-func ValidateEmail(email string) bool {
-	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, _ := regexp.MatchString(pattern, email)
-	return matched
-}
-
-func SanitizeUsername(username string) string {
-	return strings.TrimSpace(username)
-}
-
-func ProcessUserData(rawData []byte) (*UserData, error) {
-	var data UserData
-	err := json.Unmarshal(rawData, &data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal data: %w", err)
-	}
-
-	if !ValidateEmail(data.Email) {
-		return nil, fmt.Errorf("invalid email format: %s", data.Email)
-	}
-
-	data.Username = SanitizeUsername(data.Username)
-
-	if data.Age < 0 || data.Age > 150 {
-		return nil, fmt.Errorf("age out of valid range: %d", data.Age)
-	}
-
-	return &data, nil
-}
-
-func main() {
-	rawJSON := `{"email":"test@example.com","username":"  john_doe  ","age":25}`
-	processedData, err := ProcessUserData([]byte(rawJSON))
-	if err != nil {
-		fmt.Printf("Error processing data: %v\n", err)
-		return
-	}
-	fmt.Printf("Processed data: %+v\n", processedData)
-}
-package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"log"
-)
-
-type UserData struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Age   int    `json:"age"`
-}
-
-func ProcessUserData(rawData []byte) (*UserData, error) {
-	var user UserData
-	if err := json.Unmarshal(rawData, &user); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	if user.ID <= 0 {
-		return nil, fmt.Errorf("invalid user ID: %d", user.ID)
-	}
-	if user.Name == "" {
-		return nil, fmt.Errorf("user name cannot be empty")
-	}
-	if user.Age < 0 || user.Age > 120 {
-		return nil, fmt.Errorf("invalid age value: %d", user.Age)
-	}
-
-	user.Email = sanitizeEmail(user.Email)
-	return &user, nil
-}
-
-func sanitizeEmail(email string) string {
-	// Simple email normalization
-	return email
-}
-
-func main() {
-	jsonData := `{"id": 123, "name": "John Doe", "email": "john@example.com", "age": 30}`
-	user, err := ProcessUserData([]byte(jsonData))
-	if err != nil {
-		log.Fatalf("Error processing data: %v", err)
-	}
-	fmt.Printf("Processed user: %+v\n", user)
-}package main
-
-import (
-	"errors"
-	"fmt"
-	"strings"
-)
-
-type DataRecord struct {
-	ID    string
-	Value string
-}
-
-type Processor interface {
-	Process(DataRecord) (DataRecord, error)
-}
-
-type Validator struct{}
-
-func (v Validator) Process(record DataRecord) (DataRecord, error) {
-	if record.ID == "" {
-		return record, errors.New("empty ID field")
-	}
-	if len(record.Value) < 3 {
-		return record, errors.New("value too short")
-	}
-	return record, nil
-}
-
-type Transformer struct{}
-
-func (t Transformer) Process(record DataRecord) (DataRecord, error) {
-	record.Value = strings.ToUpper(record.Value)
-	return record, nil
-}
-
-type Pipeline struct {
-	processors []Processor
-}
-
-func (p *Pipeline) AddProcessor(proc Processor) {
-	p.processors = append(p.processors, proc)
-}
-
-func (p *Pipeline) Execute(record DataRecord) (DataRecord, error) {
-	var err error
-	for _, proc := range p.processors {
-		record, err = proc.Process(record)
-		if err != nil {
-			return record, err
-		}
-	}
-	return record, nil
-}
-
-func main() {
-	pipeline := &Pipeline{}
-	pipeline.AddProcessor(Validator{})
-	pipeline.AddProcessor(Transformer{})
-
-	testRecords := []DataRecord{
-		{ID: "001", Value: "test"},
-		{ID: "", Value: "data"},
-		{ID: "003", Value: "ab"},
-	}
-
-	for _, record := range testRecords {
-		result, err := pipeline.Execute(record)
-		if err != nil {
-			fmt.Printf("Error processing %v: %v\n", record.ID, err)
-		} else {
-			fmt.Printf("Processed: ID=%s, Value=%s\n", result.ID, result.Value)
-		}
-	}
-}
-package main
-
-import (
-	"errors"
-	"strings"
-	"time"
-)
-
-type DataRecord struct {
-	ID        string
-	Value     string
-	Timestamp time.Time
-	Processed bool
-}
-
-func ValidateRecord(record DataRecord) error {
-	if record.ID == "" {
-		return errors.New("ID cannot be empty")
-	}
-	if len(record.Value) > 100 {
-		return errors.New("value exceeds maximum length")
-	}
-	if record.Timestamp.IsZero() {
-		return errors.New("timestamp must be set")
-	}
 	return nil
 }
 
-func TransformRecord(record DataRecord) DataRecord {
-	record.Value = strings.ToUpper(strings.TrimSpace(record.Value))
-	record.Processed = true
-	return record
-}
-
-func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
-	var processed []DataRecord
-	for _, record := range records {
-		if err := ValidateRecord(record); err != nil {
-			return nil, err
-		}
-		processed = append(processed, TransformRecord(record))
-	}
-	return processed, nil
-}
-
-func FilterProcessedRecords(records []DataRecord) []DataRecord {
-	var filtered []DataRecord
-	for _, record := range records {
-		if record.Processed {
-			filtered = append(filtered, record)
-		}
-	}
-	return filtered
-}
-package main
-
-import (
-	"encoding/csv"
-	"fmt"
-	"io"
-	"os"
-	"strconv"
-)
-
-type Record struct {
-	ID    int
-	Name  string
-	Value float64
-}
-
-func ProcessCSV(filename string) ([]Record, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	var records []Record
-
-	// Skip header
-	_, err = reader.Read()
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if len(row) != 3 {
-			continue
-		}
-
-		id, err := strconv.Atoi(row[0])
-		if err != nil {
-			continue
-		}
-
-		value, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			continue
-		}
-
-		record := Record{
-			ID:    id,
-			Name:  row[1],
-			Value: value,
-		}
-		records = append(records, record)
-	}
-
-	return records, nil
-}
-
-func CalculateTotal(records []Record) float64 {
-	var total float64
-	for _, r := range records {
-		total += r.Value
-	}
-	return total
-}
-
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <csv_file>")
+	processor := NewDataProcessor("input.csv", "output.csv")
+	if err := processor.Process(); err != nil {
+		fmt.Printf("Processing failed: %v\n", err)
 		os.Exit(1)
 	}
-
-	records, err := ProcessCSV(os.Args[1])
-	if err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Processed %d records\n", len(records))
-	fmt.Printf("Total value: %.2f\n", CalculateTotal(records))
+	fmt.Println("Data processing completed successfully")
 }
