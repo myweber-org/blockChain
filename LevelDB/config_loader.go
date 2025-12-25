@@ -186,4 +186,100 @@ func (c *Config) Validate() error {
         return errors.New("server port must be between 1 and 65535")
     }
     return nil
+}package config
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host" env:"DB_HOST"`
+    Port     int    `yaml:"port" env:"DB_PORT"`
+    Username string `yaml:"username" env:"DB_USER"`
+    Password string `yaml:"password" env:"DB_PASS"`
+    Name     string `yaml:"name" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+    Port         int    `yaml:"port" env:"SERVER_PORT"`
+    Debug        bool   `yaml:"debug" env:"SERVER_DEBUG"`
+    LogLevel     string `yaml:"log_level" env:"LOG_LEVEL"`
+    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
+    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
+}
+
+type Config struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var cfg Config
+    if err := yaml.Unmarshal(data, &cfg); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    overrideFromEnv(&cfg)
+    return &cfg, nil
+}
+
+func overrideFromEnv(cfg *Config) {
+    overrideString(&cfg.Database.Host, "DB_HOST")
+    overrideInt(&cfg.Database.Port, "DB_PORT")
+    overrideString(&cfg.Database.Username, "DB_USER")
+    overrideString(&cfg.Database.Password, "DB_PASS")
+    overrideString(&cfg.Database.Name, "DB_NAME")
+    
+    overrideInt(&cfg.Server.Port, "SERVER_PORT")
+    overrideBool(&cfg.Server.Debug, "SERVER_DEBUG")
+    overrideString(&cfg.Server.LogLevel, "LOG_LEVEL")
+    overrideInt(&cfg.Server.ReadTimeout, "READ_TIMEOUT")
+    overrideInt(&cfg.Server.WriteTimeout, "WRITE_TIMEOUT")
+}
+
+func overrideString(field *string, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val
+    }
+}
+
+func overrideInt(field *int, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        var intVal int
+        if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
+            *field = intVal
+        }
+    }
+}
+
+func overrideBool(field *bool, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val == "true" || val == "1" || val == "yes"
+    }
+}
+
+func FindConfigFile(filename string) (string, error) {
+    searchPaths := []string{
+        filename,
+        filepath.Join(".", filename),
+        filepath.Join("config", filename),
+        filepath.Join("/etc/app", filename),
+    }
+    
+    for _, path := range searchPaths {
+        if _, err := os.Stat(path); err == nil {
+            return path, nil
+        }
+    }
+    
+    return "", fmt.Errorf("config file %s not found in search paths", filename)
 }
