@@ -1,59 +1,33 @@
-package main
+package middleware
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
-	"os"
+	"net/http"
 	"time"
 )
 
-type Activity struct {
-	UserID    string    `json:"user_id"`
-	Action    string    `json:"action"`
-	Timestamp time.Time `json:"timestamp"`
-	Metadata  string    `json:"metadata,omitempty"`
+type ActivityLogger struct {
+	handler http.Handler
 }
 
-func NewActivity(userID, action, metadata string) *Activity {
-	return &Activity{
-		UserID:    userID,
-		Action:    action,
-		Timestamp: time.Now().UTC(),
-		Metadata:  metadata,
-	}
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
 }
 
-func (a *Activity) ToJSON() ([]byte, error) {
-	return json.MarshalIndent(a, "", "  ")
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	userID := extractUserID(r)
+	ipAddress := r.RemoteAddr
+
+	al.handler.ServeHTTP(w, r)
+
+	duration := time.Since(start)
+	log.Printf("User %s from %s accessed %s %s - Duration: %v", userID, ipAddress, r.Method, r.URL.Path, duration)
 }
 
-func LogActivity(activity *Activity, logFile string) error {
-	jsonData, err := activity.ToJSON()
-	if err != nil {
-		return fmt.Errorf("failed to marshal activity: %w", err)
+func extractUserID(r *http.Request) string {
+	if userID := r.Header.Get("X-User-ID"); userID != "" {
+		return userID
 	}
-
-	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %w", err)
-	}
-	defer file.Close()
-
-	jsonData = append(jsonData, '\n')
-	if _, err := file.Write(jsonData); err != nil {
-		return fmt.Errorf("failed to write to log file: %w", err)
-	}
-
-	return nil
-}
-
-func main() {
-	activity := NewActivity("user123", "login", "from_ip:192.168.1.100")
-	
-	if err := LogActivity(activity, "activity.log"); err != nil {
-		log.Fatalf("Failed to log activity: %v", err)
-	}
-	
-	fmt.Println("Activity logged successfully")
+	return "anonymous"
 }
