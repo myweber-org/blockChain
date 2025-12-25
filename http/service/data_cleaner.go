@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -6,46 +7,63 @@ import (
 )
 
 type DataCleaner struct {
-	seen map[string]bool
+	processedCount int
 }
 
 func NewDataCleaner() *DataCleaner {
-	return &DataCleaner{
-		seen: make(map[string]bool),
-	}
+	return &DataCleaner{processedCount: 0}
 }
 
-func (dc *DataCleaner) Normalize(input string) string {
-	return strings.ToLower(strings.TrimSpace(input))
-}
-
-func (dc *DataCleaner) IsDuplicate(item string) bool {
-	normalized := dc.Normalize(item)
-	if dc.seen[normalized] {
-		return true
-	}
-	dc.seen[normalized] = true
-	return false
-}
-
-func (dc *DataCleaner) ProcessBatch(items []string) []string {
-	var unique []string
+func (dc *DataCleaner) RemoveDuplicates(items []string) []string {
+	seen := make(map[string]bool)
+	result := []string{}
 	for _, item := range items {
-		if !dc.IsDuplicate(item) {
-			unique = append(unique, item)
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if !seen[trimmed] {
+			seen[trimmed] = true
+			result = append(result, trimmed)
 		}
 	}
-	return unique
+	dc.processedCount += len(items)
+	return result
+}
+
+func (dc *DataCleaner) ValidateEmail(email string) bool {
+	if !strings.Contains(email, "@") {
+		return false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	if parts[0] == "" || parts[1] == "" {
+		return false
+	}
+	if !strings.Contains(parts[1], ".") {
+		return false
+	}
+	return true
+}
+
+func (dc *DataCleaner) GetStats() int {
+	return dc.processedCount
 }
 
 func main() {
 	cleaner := NewDataCleaner()
 	
-	data := []string{"Apple", "apple ", " BANANA", "banana", "Cherry"}
+	data := []string{"  apple ", "banana", "apple", "", "  banana  ", "cherry"}
+	unique := cleaner.RemoveDuplicates(data)
+	fmt.Println("Unique items:", unique)
 	
-	fmt.Println("Original data:", data)
-	fmt.Println("Cleaned data:", cleaner.ProcessBatch(data))
+	emails := []string{"test@example.com", "invalid-email", "user@domain"}
+	for _, email := range emails {
+		valid := cleaner.ValidateEmail(email)
+		fmt.Printf("Email %s valid: %v\n", email, valid)
+	}
 	
-	testItem := "APPLE"
-	fmt.Printf("Is '%s' duplicate? %v\n", testItem, cleaner.IsDuplicate(testItem))
+	fmt.Printf("Total processed items: %d\n", cleaner.GetStats())
 }
