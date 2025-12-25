@@ -257,3 +257,65 @@ func main() {
 		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", record.ID, record.Email, record.Valid)
 	}
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Email string
+	Name  string
+}
+
+func deduplicateByEmail(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var result []DataRecord
+
+	for _, record := range records {
+		email := strings.ToLower(strings.TrimSpace(record.Email))
+		if !seen[email] && isValidEmail(email) {
+			seen[email] = true
+			result = append(result, record)
+		}
+	}
+	return result
+}
+
+func isValidEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func validateRecords(records []DataRecord) []DataRecord {
+	var valid []DataRecord
+	for _, record := range records {
+		if record.ID > 0 && isValidEmail(record.Email) && strings.TrimSpace(record.Name) != "" {
+			valid = append(valid, record)
+		}
+	}
+	return valid
+}
+
+func main() {
+	records := []DataRecord{
+		{1, "test@example.com", "John"},
+		{2, "TEST@example.com", "Jane"},
+		{3, "invalid-email", "Bob"},
+		{4, "another@test.org", ""},
+		{0, "valid@domain.com", "Alice"},
+	}
+
+	fmt.Println("Original records:", len(records))
+	
+	validated := validateRecords(records)
+	fmt.Println("After validation:", len(validated))
+	
+	deduplicated := deduplicateByEmail(validated)
+	fmt.Println("After deduplication:", len(deduplicated))
+	
+	for _, record := range deduplicated {
+		fmt.Printf("ID: %d, Email: %s, Name: %s\n", record.ID, record.Email, record.Name)
+	}
+}
