@@ -285,3 +285,31 @@ func SanitizeCSV(input io.Reader, output io.Writer) error {
 	writer.Flush()
 	return writer.Error()
 }
+package main
+
+import (
+	"fmt"
+	"sort"
+)
+
+func CleanData(input []string) []string {
+	seen := make(map[string]bool)
+	unique := []string{}
+
+	for _, item := range input {
+		if !seen[item] {
+			seen[item] = true
+			unique = append(unique, item)
+		}
+	}
+
+	sort.Strings(unique)
+	return unique
+}
+
+func main() {
+	data := []string{"zebra", "apple", "banana", "apple", "cherry", "banana"}
+	cleaned := CleanData(data)
+	fmt.Println("Original:", data)
+	fmt.Println("Cleaned:", cleaned)
+}
