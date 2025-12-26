@@ -377,3 +377,104 @@ func main() {
 
     fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+)
+
+const (
+	maxFileSize = 1024 * 1024 // 1MB
+	backupCount = 5
+)
+
+type LogRotator struct {
+	currentSize int64
+	file        *os.File
+	basePath    string
+}
+
+func NewLogRotator(path string) (*LogRotator, error) {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	return &LogRotator{
+		currentSize: info.Size(),
+		file:        file,
+		basePath:    path,
+	}, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if lr.currentSize+int64(len(p)) > maxFileSize {
+		if err := lr.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := lr.file.Write(p)
+	if err == nil {
+		lr.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+	lr.file.Close()
+
+	for i := backupCount - 1; i > 0; i-- {
+		oldName := fmt.Sprintf("%s.%d", lr.basePath, i)
+		newName := fmt.Sprintf("%s.%d", lr.basePath, i+1)
+
+		if _, err := os.Stat(oldName); err == nil {
+			os.Rename(oldName, newName)
+		}
+	}
+
+	if err := os.Rename(lr.basePath, lr.basePath+".1"); err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(lr.basePath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	lr.file = file
+	lr.currentSize = 0
+	return nil
+}
+
+func (lr *LogRotator) Close() error {
+	return lr.file.Close()
+}
+
+func main() {
+	rotator, err := NewLogRotator("application.log")
+	if err != nil {
+		fmt.Printf("Failed to create log rotator: %v\n", err)
+		return
+	}
+	defer rotator.Close()
+
+	for i := 0; i < 1000; i++ {
+		message := fmt.Sprintf("Log entry %d: This is a sample log message\n", i)
+		if _, err := rotator.Write([]byte(message)); err != nil {
+			fmt.Printf("Write error: %v\n", err)
+			break
+		}
+	}
+
+	fmt.Println("Log rotation test completed")
+}
