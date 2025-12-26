@@ -1,3 +1,4 @@
+
 package middleware
 
 import (
@@ -7,70 +8,41 @@ import (
 )
 
 type ActivityLogger struct {
-	handler http.Handler
+	Logger *log.Logger
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+func NewActivityLogger(logger *log.Logger) *ActivityLogger {
+	return &ActivityLogger{Logger: logger}
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	userID := extractUserID(r)
-	ipAddress := r.RemoteAddr
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		userAgent := r.UserAgent()
+		clientIP := r.RemoteAddr
 
-	al.handler.ServeHTTP(w, r)
+		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(lrw, r)
 
-	duration := time.Since(start)
-	log.Printf("User %s from %s accessed %s %s - Duration: %v", userID, ipAddress, r.Method, r.URL.Path, duration)
+		duration := time.Since(start)
+		al.Logger.Printf(
+			"Method: %s | Path: %s | Status: %d | Duration: %v | User-Agent: %s | Client-IP: %s",
+			r.Method,
+			r.URL.Path,
+			lrw.statusCode,
+			duration,
+			userAgent,
+			clientIP,
+		)
+	})
 }
 
-func extractUserID(r *http.Request) string {
-	if userID := r.Header.Get("X-User-ID"); userID != "" {
-		return userID
-	}
-	return "anonymous"
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
-	}
-	
-	al.handler.ServeHTTP(recorder, r)
-	
-	duration := time.Since(start)
-	log.Printf("%s %s %d %s %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		r.RemoteAddr,
-		duration,
-	)
-}
-
-type responseRecorder struct {
+type loggingResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
 }
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
 }
