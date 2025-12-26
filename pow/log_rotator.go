@@ -1117,3 +1117,100 @@ func main() {
 
 	fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+const (
+    maxFileSize = 10 * 1024 * 1024 // 10MB
+    timeFormat  = "2006-01-02_15-04-05"
+)
+
+type RotatingLogger struct {
+    currentFile *os.File
+    basePath    string
+    currentSize int64
+}
+
+func NewRotatingLogger(basePath string) (*RotatingLogger, error) {
+    rl := &RotatingLogger{basePath: basePath}
+    if err := rl.rotate(); err != nil {
+        return nil, err
+    }
+    return rl, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+    if rl.currentSize+int64(len(p)) > maxFileSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := rl.currentFile.Write(p)
+    if err == nil {
+        rl.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+    if rl.currentFile != nil {
+        rl.currentFile.Close()
+    }
+
+    timestamp := time.Now().Format(timeFormat)
+    filename := fmt.Sprintf("%s_%s.log", rl.basePath, timestamp)
+    filepath := filepath.Dir(filename)
+
+    if err := os.MkdirAll(filepath, 0755); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+    if err != nil {
+        return err
+    }
+
+    stat, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+
+    rl.currentFile = file
+    rl.currentSize = stat.Size()
+    return nil
+}
+
+func (rl *RotatingLogger) Close() error {
+    if rl.currentFile != nil {
+        return rl.currentFile.Close()
+    }
+    return nil
+}
+
+func main() {
+    logger, err := NewRotatingLogger("./logs/application")
+    if err != nil {
+        fmt.Printf("Failed to create logger: %v\n", err)
+        return
+    }
+    defer logger.Close()
+
+    for i := 0; i < 100; i++ {
+        message := fmt.Sprintf("Log entry %d at %s\n", i, time.Now().Format(time.RFC3339))
+        if _, err := logger.Write([]byte(message)); err != nil {
+            fmt.Printf("Write error: %v\n", err)
+        }
+        time.Sleep(100 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed")
+}
