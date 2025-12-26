@@ -1,23 +1,20 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 )
 
-type AuthMiddleware struct {
-	secretKey string
-}
+type contextKey string
 
-func NewAuthMiddleware(secretKey string) *AuthMiddleware {
-	return &AuthMiddleware{secretKey: secretKey}
-}
+const userIDKey contextKey = "userID"
 
-func (am *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
+func Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header missing", http.StatusUnauthorized)
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
 
@@ -27,18 +24,28 @@ func (am *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := parts[1]
-		if !am.isValidToken(tokenString) {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+		token := parts[1]
+		userID, err := validateToken(token)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func (am *AuthMiddleware) isValidToken(token string) bool {
-	// Token validation logic would go here
-	// For this example, we'll just check if it's not empty
-	return token != "" && len(token) > 10
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
+}
+
+func validateToken(token string) (string, error) {
+	// Simplified token validation logic
+	// In production, use a proper JWT library
+	if token == "" || len(token) < 10 {
+		return "", http.ErrNoCookie
+	}
+	return "user_" + token[:8], nil
 }
