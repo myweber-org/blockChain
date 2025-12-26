@@ -1,282 +1,55 @@
 package config
 
 import (
-    "fmt"
-    "io/ioutil"
-    "gopkg.in/yaml.v2"
-)
-
-type Config struct {
-    Server struct {
-        Host string `yaml:"host"`
-        Port int    `yaml:"port"`
-    } `yaml:"server"`
-    Database struct {
-        Host     string `yaml:"host"`
-        Username string `yaml:"username"`
-        Password string `yaml:"password"`
-        Name     string `yaml:"name"`
-    } `yaml:"database"`
-    LogLevel string `yaml:"log_level"`
-}
-
-func LoadConfig(filePath string) (*Config, error) {
-    data, err := ioutil.ReadFile(filePath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
-
-    var config Config
-    err = yaml.Unmarshal(data, &config)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
-
-    if err := validateConfig(&config); err != nil {
-        return nil, fmt.Errorf("config validation failed: %w", err)
-    }
-
-    return &config, nil
-}
-
-func validateConfig(c *Config) error {
-    if c.Server.Host == "" {
-        return fmt.Errorf("server host cannot be empty")
-    }
-    if c.Server.Port <= 0 || c.Server.Port > 65535 {
-        return fmt.Errorf("server port must be between 1 and 65535")
-    }
-    if c.Database.Host == "" {
-        return fmt.Errorf("database host cannot be empty")
-    }
-    if c.LogLevel == "" {
-        c.LogLevel = "info"
-    }
-    return nil
-}package config
-
-import (
-    "fmt"
     "os"
-    "path/filepath"
-
-    "gopkg.in/yaml.v2"
+    "strconv"
+    "strings"
 )
 
 type Config struct {
-    Server struct {
-        Host string `yaml:"host" env:"SERVER_HOST"`
-        Port int    `yaml:"port" env:"SERVER_PORT"`
-    } `yaml:"server"`
-    Database struct {
-        Host     string `yaml:"host" env:"DB_HOST"`
-        Port     int    `yaml:"port" env:"DB_PORT"`
-        Name     string `yaml:"name" env:"DB_NAME"`
-        User     string `yaml:"user" env:"DB_USER"`
-        Password string `yaml:"password" env:"DB_PASSWORD"`
-    } `yaml:"database"`
-    Logging struct {
-        Level  string `yaml:"level" env:"LOG_LEVEL"`
-        Output string `yaml:"output" env:"LOG_OUTPUT"`
-    } `yaml:"logging"`
+    ServerPort int
+    DebugMode  bool
+    DatabaseURL string
+    AllowedHosts []string
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-    var cfg Config
-
-    absPath, err := filepath.Abs(configPath)
-    if err != nil {
-        return nil, fmt.Errorf("invalid config path: %w", err)
+func Load() (*Config, error) {
+    cfg := &Config{
+        ServerPort:  getEnvAsInt("SERVER_PORT", 8080),
+        DebugMode:   getEnvAsBool("DEBUG_MODE", false),
+        DatabaseURL: getEnv("DATABASE_URL", "postgres://localhost:5432/app"),
+        AllowedHosts: getEnvAsSlice("ALLOWED_HOSTS", []string{"localhost"}, ","),
     }
-
-    data, err := os.ReadFile(absPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
-
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
-
-    overrideFromEnv(&cfg)
-
-    return &cfg, nil
+    return cfg, nil
 }
 
-func overrideFromEnv(cfg *Config) {
-    if val := os.Getenv("SERVER_HOST"); val != "" {
-        cfg.Server.Host = val
+func getEnv(key, defaultValue string) string {
+    if value, exists := os.LookupEnv(key); exists {
+        return value
     }
-    if val := os.Getenv("SERVER_PORT"); val != "" {
-        fmt.Sscanf(val, "%d", &cfg.Server.Port)
-    }
-    if val := os.Getenv("DB_HOST"); val != "" {
-        cfg.Database.Host = val
-    }
-    if val := os.Getenv("DB_PORT"); val != "" {
-        fmt.Sscanf(val, "%d", &cfg.Database.Port)
-    }
-    if val := os.Getenv("DB_NAME"); val != "" {
-        cfg.Database.Name = val
-    }
-    if val := os.Getenv("DB_USER"); val != "" {
-        cfg.Database.User = val
-    }
-    if val := os.Getenv("DB_PASSWORD"); val != "" {
-        cfg.Database.Password = val
-    }
-    if val := os.Getenv("LOG_LEVEL"); val != "" {
-        cfg.Logging.Level = val
-    }
-    if val := os.Getenv("LOG_OUTPUT"); val != "" {
-        cfg.Logging.Output = val
-    }
-}package config
-
-import (
-	"os"
-	"strings"
-)
-
-type Config struct {
-	DatabaseURL string
-	APIKey      string
-	DebugMode   bool
+    return defaultValue
 }
 
-func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	content := string(data)
-	content = expandEnvVars(content)
-
-	lines := strings.Split(content, "\n")
-	cfg := &Config{}
-
-	for _, line := range lines {
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "DATABASE_URL":
-			cfg.DatabaseURL = value
-		case "API_KEY":
-			cfg.APIKey = value
-		case "DEBUG_MODE":
-			cfg.DebugMode = value == "true"
-		}
-	}
-
-	return cfg, nil
-}
-
-func expandEnvVars(s string) string {
-	return os.Expand(s, func(key string) string {
-		if val, exists := os.LookupEnv(key); exists {
-			return val
-		}
-		return ""
-	})
-}package config
-
-import (
-    "fmt"
-    "os"
-    "path/filepath"
-
-    "gopkg.in/yaml.v2"
-)
-
-type DatabaseConfig struct {
-    Host     string `yaml:"host" env:"DB_HOST"`
-    Port     int    `yaml:"port" env:"DB_PORT"`
-    Username string `yaml:"username" env:"DB_USER"`
-    Password string `yaml:"password" env:"DB_PASS"`
-    Name     string `yaml:"name" env:"DB_NAME"`
-}
-
-type ServerConfig struct {
-    Port         int    `yaml:"port" env:"SERVER_PORT"`
-    ReadTimeout  int    `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT"`
-    WriteTimeout int    `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug_mode" env:"SERVER_DEBUG"`
-}
-
-type Config struct {
-    Database DatabaseConfig `yaml:"database"`
-    Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
-}
-
-func LoadConfig(configPath string) (*Config, error) {
-    data, err := os.ReadFile(configPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
+func getEnvAsInt(key string, defaultValue int) int {
+    valueStr := getEnv(key, "")
+    if value, err := strconv.Atoi(valueStr); err == nil {
+        return value
     }
-
-    var cfg Config
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
-
-    overrideFromEnv(&cfg)
-
-    return &cfg, nil
+    return defaultValue
 }
 
-func overrideFromEnv(cfg *Config) {
-    setFieldFromEnv(&cfg.Database.Host, "DB_HOST")
-    setFieldFromEnv(&cfg.Database.Port, "DB_PORT")
-    setFieldFromEnv(&cfg.Database.Username, "DB_USER")
-    setFieldFromEnv(&cfg.Database.Password, "DB_PASS")
-    setFieldFromEnv(&cfg.Database.Name, "DB_NAME")
-    
-    setFieldFromEnv(&cfg.Server.Port, "SERVER_PORT")
-    setFieldFromEnv(&cfg.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
-    setFieldFromEnv(&cfg.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
-    setBoolFromEnv(&cfg.Server.DebugMode, "SERVER_DEBUG")
-    
-    setFieldFromEnv(&cfg.LogLevel, "LOG_LEVEL")
+func getEnvAsBool(key string, defaultValue bool) bool {
+    valueStr := getEnv(key, "")
+    if val, err := strconv.ParseBool(valueStr); err == nil {
+        return val
+    }
+    return defaultValue
 }
 
-func setFieldFromEnv(field interface{}, envVar string) {
-    if val, exists := os.LookupEnv(envVar); exists && val != "" {
-        switch f := field.(type) {
-        case *string:
-            *f = val
-        case *int:
-            fmt.Sscanf(val, "%d", f)
-        }
+func getEnvAsSlice(key string, defaultValue []string, sep string) []string {
+    valueStr := getEnv(key, "")
+    if valueStr == "" {
+        return defaultValue
     }
-}
-
-func setBoolFromEnv(field *bool, envVar string) {
-    if val, exists := os.LookupEnv(envVar); exists {
-        *field = (val == "true" || val == "1" || val == "yes")
-    }
-}
-
-func DefaultConfigPath() string {
-    paths := []string{
-        "./config.yaml",
-        "./config.yml",
-        "/etc/app/config.yaml",
-    }
-    
-    for _, path := range paths {
-        if _, err := os.Stat(path); err == nil {
-            absPath, _ := filepath.Abs(path)
-            return absPath
-        }
-    }
-    
-    return ""
+    return strings.Split(valueStr, sep)
 }
