@@ -2,90 +2,65 @@ package config
 
 import (
     "fmt"
+    "io/ioutil"
     "os"
-    "path/filepath"
 
-    "gopkg.in/yaml.v3"
+    "gopkg.in/yaml.v2"
 )
 
 type DatabaseConfig struct {
-    Host     string `yaml:"host" env:"DB_HOST"`
-    Port     int    `yaml:"port" env:"DB_PORT"`
-    Username string `yaml:"username" env:"DB_USER"`
-    Password string `yaml:"password" env:"DB_PASS"`
-    Name     string `yaml:"name" env:"DB_NAME"`
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
 }
 
 type ServerConfig struct {
-    Port         int    `yaml:"port" env:"SERVER_PORT"`
-    ReadTimeout  int    `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT"`
-    WriteTimeout int    `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug_mode" env:"SERVER_DEBUG"`
+    Port         int            `yaml:"port"`
+    ReadTimeout  int            `yaml:"read_timeout"`
+    WriteTimeout int            `yaml:"write_timeout"`
+    Database     DatabaseConfig `yaml:"database"`
 }
 
-type AppConfig struct {
-    Database DatabaseConfig `yaml:"database"`
-    Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
-}
+func LoadConfig(path string) (*ServerConfig, error) {
+    if _, err := os.Stat(path); os.IsNotExist(err) {
+        return nil, fmt.Errorf("config file not found: %s", path)
+    }
 
-func LoadConfig(configPath string) (*AppConfig, error) {
-    data, err := os.ReadFile(configPath)
+    data, err := ioutil.ReadFile(path)
     if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
+        return nil, fmt.Errorf("failed to read config file: %v", err)
     }
 
-    var config AppConfig
+    var config ServerConfig
     if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML config: %w", err)
+        return nil, fmt.Errorf("failed to parse YAML: %v", err)
     }
 
-    overrideFromEnv(&config)
+    if err := validateConfig(&config); err != nil {
+        return nil, fmt.Errorf("config validation failed: %v", err)
+    }
 
     return &config, nil
 }
 
-func overrideFromEnv(config *AppConfig) {
-    setFieldFromEnv(&config.Database.Host, "DB_HOST")
-    setFieldFromEnv(&config.Database.Port, "DB_PORT")
-    setFieldFromEnv(&config.Database.Username, "DB_USER")
-    setFieldFromEnv(&config.Database.Password, "DB_PASS")
-    setFieldFromEnv(&config.Database.Name, "DB_NAME")
-    
-    setFieldFromEnv(&config.Server.Port, "SERVER_PORT")
-    setFieldFromEnv(&config.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
-    setFieldFromEnv(&config.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
-    setFieldFromEnv(&config.Server.DebugMode, "SERVER_DEBUG")
-    
-    setFieldFromEnv(&config.LogLevel, "LOG_LEVEL")
-}
+func validateConfig(config *ServerConfig) error {
+    if config.Port <= 0 || config.Port > 65535 {
+        return fmt.Errorf("invalid server port: %d", config.Port)
+    }
 
-func setFieldFromEnv(field interface{}, envVar string) {
-    if val := os.Getenv(envVar); val != "" {
-        switch v := field.(type) {
-        case *string:
-            *v = val
-        case *int:
-            fmt.Sscanf(val, "%d", v)
-        case *bool:
-            *v = val == "true" || val == "1"
-        }
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host cannot be empty")
     }
-}
 
-func DefaultConfigPath() string {
-    paths := []string{
-        "./config.yaml",
-        "./config/config.yaml",
-        "/etc/app/config.yaml",
+    if config.Database.Port <= 0 || config.Database.Port > 65535 {
+        return fmt.Errorf("invalid database port: %d", config.Database.Port)
     }
-    
-    for _, path := range paths {
-        if _, err := os.Stat(path); err == nil {
-            absPath, _ := filepath.Abs(path)
-            return absPath
-        }
+
+    if config.Database.Name == "" {
+        return fmt.Errorf("database name cannot be empty")
     }
-    
-    return ""
+
+    return nil
 }
