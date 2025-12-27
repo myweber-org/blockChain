@@ -1420,4 +1420,129 @@ func main() {
 	}
 
 	fmt.Println("Log rotation completed. Check /var/log/myapp/ directory.")
+}package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type LogRotator struct {
+	mu           sync.Mutex
+	currentFile  *os.File
+	filePath     string
+	maxSize      int64
+	currentSize  int64
+	rotationCount int
+}
+
+func NewLogRotator(basePath string, maxSizeMB int) (*LogRotator, error) {
+	maxSize := int64(maxSizeMB) * 1024 * 1024
+	rotator := &LogRotator{
+		filePath: basePath,
+		maxSize:  maxSize,
+	}
+
+	if err := rotator.openCurrentFile(); err != nil {
+		return nil, err
+	}
+
+	return rotator, nil
+}
+
+func (lr *LogRotator) openCurrentFile() error {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	if lr.currentFile != nil {
+		lr.currentFile.Close()
+	}
+
+	file, err := os.OpenFile(lr.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+
+	lr.currentFile = file
+	lr.currentSize = info.Size()
+	return nil
+}
+
+func (lr *LogRotator) rotateIfNeeded() error {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	if lr.currentSize < lr.maxSize {
+		return nil
+	}
+
+	backupPath := fmt.Sprintf("%s.%d.%s", lr.filePath, lr.rotationCount, time.Now().Format("20060102150405"))
+	if err := os.Rename(lr.filePath, backupPath); err != nil {
+		return err
+	}
+
+	lr.rotationCount++
+	lr.currentSize = 0
+
+	return lr.openCurrentFile()
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if err := lr.rotateIfNeeded(); err != nil {
+		return 0, err
+	}
+
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	n, err := lr.currentFile.Write(p)
+	if err == nil {
+		lr.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (lr *LogRotator) Close() error {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	if lr.currentFile != nil {
+		return lr.currentFile.Close()
+	}
+	return nil
+}
+
+func (lr *LogRotator) CleanOldLogs(maxAgeDays int) error {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	cutoffTime := time.Now().AddDate(0, 0, -maxAgeDays)
+	pattern := lr.filePath + ".*"
+
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil {
+			continue
+		}
+
+		if info.ModTime().Before(cutoffTime) {
+			os.Remove(match)
+		}
+	}
+
+	return nil
 }
