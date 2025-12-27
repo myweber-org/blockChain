@@ -2,8 +2,10 @@ package config
 
 import (
     "fmt"
-    "io/ioutil"
-    "gopkg.in/yaml.v2"
+    "io"
+    "os"
+
+    "gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -12,13 +14,26 @@ type Config struct {
         Port int    `yaml:"port"`
     } `yaml:"server"`
     Database struct {
-        ConnectionString string `yaml:"connection_string"`
-        MaxConnections   int    `yaml:"max_connections"`
+        Host     string `yaml:"host"`
+        Port     int    `yaml:"port"`
+        Name     string `yaml:"name"`
+        Username string `yaml:"username"`
+        Password string `yaml:"password"`
     } `yaml:"database"`
+    Logging struct {
+        Level string `yaml:"level"`
+        File  string `yaml:"file"`
+    } `yaml:"logging"`
 }
 
 func LoadConfig(path string) (*Config, error) {
-    data, err := ioutil.ReadFile(path)
+    file, err := os.Open(path)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open config file: %w", err)
+    }
+    defer file.Close()
+
+    data, err := io.ReadAll(file)
     if err != nil {
         return nil, fmt.Errorf("failed to read config file: %w", err)
     }
@@ -42,11 +57,11 @@ func validateConfig(c *Config) error {
     if c.Server.Port <= 0 || c.Server.Port > 65535 {
         return fmt.Errorf("server port must be between 1 and 65535")
     }
-    if c.Database.ConnectionString == "" {
-        return fmt.Errorf("database connection string cannot be empty")
+    if c.Database.Name == "" {
+        return fmt.Errorf("database name cannot be empty")
     }
-    if c.Database.MaxConnections < 1 {
-        return fmt.Errorf("database max connections must be at least 1")
+    if c.Logging.Level == "" {
+        c.Logging.Level = "info"
     }
     return nil
 }
