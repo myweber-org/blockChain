@@ -1,153 +1,58 @@
-
-package main
-
-import (
-	"regexp"
-	"strings"
-)
-
-type DataProcessor struct {
-	emailRegex *regexp.Regexp
-}
-
-func NewDataProcessor() *DataProcessor {
-	regex := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
-	return &DataProcessor{emailRegex: regex}
-}
-
-func (dp *DataProcessor) SanitizeString(input string) string {
-	input = strings.TrimSpace(input)
-	input = strings.ReplaceAll(input, "<", "&lt;")
-	input = strings.ReplaceAll(input, ">", "&gt;")
-	return input
-}
-
-func (dp *DataProcessor) ValidateEmail(email string) bool {
-	return dp.emailRegex.MatchString(email)
-}
-
-func (dp *DataProcessor) ProcessUserData(name, email string) (string, string, bool) {
-	sanitizedName := dp.SanitizeString(name)
-	sanitizedEmail := dp.SanitizeString(email)
-	isValidEmail := dp.ValidateEmail(sanitizedEmail)
-	return sanitizedName, sanitizedEmail, isValidEmail
-}
 package main
 
 import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
 
 type DataRecord struct {
-	ID        string
-	Value     float64
-	Timestamp time.Time
-	Tags      []string
+	ID    int
+	Name  string
+	Value float64
 }
 
-func ValidateRecord(record DataRecord) error {
-	if record.ID == "" {
-		return errors.New("ID cannot be empty")
+func ProcessRecord(record DataRecord) error {
+	if record.ID <= 0 {
+		return errors.New("invalid record ID")
 	}
+
+	if strings.TrimSpace(record.Name) == "" {
+		return errors.New("record name cannot be empty")
+	}
+
 	if record.Value < 0 {
-		return errors.New("value must be non-negative")
+		return errors.New("record value cannot be negative")
 	}
-	if record.Timestamp.IsZero() {
-		return errors.New("timestamp must be set")
-	}
+
+	fmt.Printf("Processing record %d: %s (%.2f)\n", record.ID, record.Name, record.Value)
 	return nil
 }
 
-func TransformRecord(record DataRecord) DataRecord {
-	transformed := record
-	transformed.Value = record.Value * 1.1
-	transformed.Tags = append(record.Tags, "processed")
-	return transformed
-}
+func ValidateRecords(records []DataRecord) ([]DataRecord, error) {
+	var validRecords []DataRecord
+	var validationErrors []string
 
-func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
-	var processed []DataRecord
 	for _, record := range records {
-		if err := ValidateRecord(record); err != nil {
-			return nil, fmt.Errorf("validation failed for record %s: %w", record.ID, err)
+		err := ProcessRecord(record)
+		if err != nil {
+			validationErrors = append(validationErrors, fmt.Sprintf("Record %d: %v", record.ID, err))
+			continue
 		}
-		processed = append(processed, TransformRecord(record))
+		validRecords = append(validRecords, record)
 	}
-	return processed, nil
+
+	if len(validationErrors) > 0 {
+		return validRecords, fmt.Errorf("validation errors: %s", strings.Join(validationErrors, "; "))
+	}
+
+	return validRecords, nil
 }
 
-func GenerateReport(records []DataRecord) string {
-	var builder strings.Builder
-	builder.WriteString("Data Processing Report\n")
-	builder.WriteString("=====================\n")
-	
-	totalValue := 0.0
+func CalculateTotal(records []DataRecord) float64 {
+	var total float64
 	for _, record := range records {
-		builder.WriteString(fmt.Sprintf("ID: %s, Value: %.2f, Tags: %v\n", 
-			record.ID, record.Value, record.Tags))
-		totalValue += record.Value
+		total += record.Value
 	}
-	
-	builder.WriteString(fmt.Sprintf("\nTotal Processed Value: %.2f\n", totalValue))
-	builder.WriteString(fmt.Sprintf("Records Processed: %d\n", len(records)))
-	return builder.String()
-}package main
-
-import (
-	"errors"
-	"strings"
-	"time"
-)
-
-type DataRecord struct {
-	ID        string
-	Value     float64
-	Timestamp time.Time
-	Tags      []string
-}
-
-func ValidateRecord(record DataRecord) error {
-	if record.ID == "" {
-		return errors.New("ID cannot be empty")
-	}
-	if record.Value < 0 {
-		return errors.New("value must be non-negative")
-	}
-	if record.Timestamp.IsZero() {
-		return errors.New("timestamp must be set")
-	}
-	return nil
-}
-
-func TransformRecord(record DataRecord, multiplier float64) DataRecord {
-	return DataRecord{
-		ID:        strings.ToUpper(record.ID),
-		Value:     record.Value * multiplier,
-		Timestamp: record.Timestamp.UTC(),
-		Tags:      append(record.Tags, "processed"),
-	}
-}
-
-func FilterRecords(records []DataRecord, minValue float64) []DataRecord {
-	var filtered []DataRecord
-	for _, r := range records {
-		if r.Value >= minValue {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
-}
-
-func CalculateAverage(records []DataRecord) float64 {
-	if len(records) == 0 {
-		return 0
-	}
-	var sum float64
-	for _, r := range records {
-		sum += r.Value
-	}
-	return sum / float64(len(records))
+	return total
 }
