@@ -183,4 +183,90 @@ func main() {
 
     name, _ := ExtractJSONField(jsonStr, "name")
     fmt.Println("Extracted name:", name)
+}package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"io"
+	"os"
+	"strconv"
+)
+
+type Record struct {
+	ID    int
+	Name  string
+	Value float64
+}
+
+func ParseCSVFile(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := []Record{}
+	lineNum := 0
+
+	for {
+		line, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		lineNum++
+
+		if len(line) != 3 {
+			return nil, errors.New("invalid column count at line " + strconv.Itoa(lineNum))
+		}
+
+		id, err := strconv.Atoi(line[0])
+		if err != nil {
+			return nil, errors.New("invalid ID at line " + strconv.Itoa(lineNum))
+		}
+
+		name := line[1]
+		if name == "" {
+			return nil, errors.New("empty name at line " + strconv.Itoa(lineNum))
+		}
+
+		value, err := strconv.ParseFloat(line[2], 64)
+		if err != nil {
+			return nil, errors.New("invalid value at line " + strconv.Itoa(lineNum))
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return records, nil
+}
+
+func ValidateRecords(records []Record) error {
+	seenIDs := make(map[int]bool)
+	for _, rec := range records {
+		if rec.ID <= 0 {
+			return errors.New("record ID must be positive: " + strconv.Itoa(rec.ID))
+		}
+		if seenIDs[rec.ID] {
+			return errors.New("duplicate ID found: " + strconv.Itoa(rec.ID))
+		}
+		seenIDs[rec.ID] = true
+	}
+	return nil
+}
+
+func CalculateTotalValue(records []Record) float64 {
+	total := 0.0
+	for _, rec := range records {
+		total += rec.Value
+	}
+	return total
 }
