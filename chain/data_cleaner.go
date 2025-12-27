@@ -6,59 +6,53 @@ import (
 	"strings"
 )
 
-type DataRecord struct {
-	ID    int
-	Email string
-	Valid bool
+type DataCleaner struct {
+	seen map[string]bool
 }
 
-func deduplicateEmails(records []DataRecord) []DataRecord {
-	seen := make(map[string]bool)
-	var unique []DataRecord
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		seen: make(map[string]bool),
+	}
+}
 
-	for _, record := range records {
-		email := strings.ToLower(strings.TrimSpace(record.Email))
-		if !seen[email] && email != "" {
-			seen[email] = true
-			record.Email = email
-			unique = append(unique, record)
+func (dc *DataCleaner) Normalize(input string) string {
+	return strings.ToLower(strings.TrimSpace(input))
+}
+
+func (dc *DataCleaner) IsDuplicate(value string) bool {
+	normalized := dc.Normalize(value)
+	if dc.seen[normalized] {
+		return true
+	}
+	dc.seen[normalized] = true
+	return false
+}
+
+func (dc *DataCleaner) ProcessBatch(items []string) []string {
+	var uniqueItems []string
+	for _, item := range items {
+		if !dc.IsDuplicate(item) {
+			uniqueItems = append(uniqueItems, item)
 		}
 	}
-	return unique
-}
-
-func validateEmailFormat(email string) bool {
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
-}
-
-func processRecords(records []DataRecord) []DataRecord {
-	validRecords := []DataRecord{}
-	for _, record := range records {
-		if validateEmailFormat(record.Email) {
-			record.Valid = true
-			validRecords = append(validRecords, record)
-		}
-	}
-	return validRecords
+	return uniqueItems
 }
 
 func main() {
-	sampleData := []DataRecord{
-		{1, "user@example.com", false},
-		{2, "USER@example.com", false},
-		{3, "test@domain.org", false},
-		{4, "invalid-email", false},
-		{5, "user@example.com", false},
+	cleaner := NewDataCleaner()
+	
+	data := []string{
+		"  Apple  ",
+		"apple",
+		"BANANA",
+		"  banana  ",
+		"Cherry",
+		"Date",
+		"date",
 	}
-
-	unique := deduplicateEmails(sampleData)
-	valid := processRecords(unique)
-
-	fmt.Printf("Original: %d records\n", len(sampleData))
-	fmt.Printf("After deduplication: %d records\n", len(unique))
-	fmt.Printf("Valid records: %d\n", len(valid))
-
-	for _, record := range valid {
-		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", record.ID, record.Email, record.Valid)
-	}
+	
+	result := cleaner.ProcessBatch(data)
+	fmt.Println("Unique items:", result)
+	fmt.Println("Total unique count:", len(result))
 }
