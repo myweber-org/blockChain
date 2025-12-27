@@ -62,4 +62,61 @@ func main() {
 	}
 
 	fmt.Printf("Successfully cleaned CSV: %s -> %s\n", inputFile, outputFile)
+}package utils
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+func CleanInputString(input string) string {
+	// Remove any non-printable characters
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return -1
+	}, input)
+
+	// Replace multiple whitespace characters with single space
+	re := regexp.MustCompile(`\s+`)
+	clean = re.ReplaceAllString(clean, " ")
+
+	// Trim leading/trailing whitespace
+	clean = strings.TrimSpace(clean)
+
+	return clean
+}
+
+func NormalizeWhitespace(text string) string {
+	// Convert all line breaks and tabs to single spaces
+	re := regexp.MustCompile(`[\t\n\r]+`)
+	normalized := re.ReplaceAllString(text, " ")
+	
+	// Collapse multiple spaces
+	re = regexp.MustCompile(`\s{2,}`)
+	normalized = re.ReplaceAllString(normalized, " ")
+	
+	return strings.TrimSpace(normalized)
+}
+
+func IsValidIdentifier(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	
+	// First character must be letter or underscore
+	if !unicode.IsLetter(rune(s[0])) && s[0] != '_' {
+		return false
+	}
+	
+	// Remaining characters must be alphanumeric or underscore
+	for _, r := range s[1:] {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	
+	return true
 }
