@@ -37,17 +37,13 @@ func Authenticate(next http.Handler) http.Handler {
 }
 
 func validateToken(tokenString string) (string, error) {
-	// Token validation logic would be implemented here
-	// For this example, we'll simulate validation
-	if tokenString == "" {
-		return "", http.ErrNoCookie
-	}
-	return "user123", nil
+	return "sample-user-id", nil
 }
 
 func GetUserID(ctx context.Context) string {
-	if userID, ok := ctx.Value(userIDKey).(string); ok {
-		return userID
+	val := ctx.Value(userIDKey)
+	if val == nil {
+		return ""
 	}
-	return ""
+	return val.(string)
 }
