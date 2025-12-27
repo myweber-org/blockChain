@@ -1,21 +1,24 @@
+
 package main
 
 import (
     "encoding/csv"
+    "errors"
     "fmt"
     "io"
     "os"
+    "strconv"
     "strings"
 )
 
 type DataRecord struct {
-    ID      string
+    ID      int
     Name    string
-    Email   string
-    Active  string
+    Value   float64
+    Active  bool
 }
 
-func ProcessCSVFile(filename string) ([]DataRecord, error) {
+func ParseCSVFile(filename string) ([]DataRecord, error) {
     file, err := os.Open(filename)
     if err != nil {
         return nil, fmt.Errorf("failed to open file: %w", err)
@@ -38,112 +41,106 @@ func ProcessCSVFile(filename string) ([]DataRecord, error) {
             return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
         }
 
-        if lineNumber == 1 {
-            continue
+        if len(row) != 4 {
+            return nil, fmt.Errorf("invalid column count at line %d: expected 4, got %d", lineNumber, len(row))
         }
 
-        if len(row) < 4 {
-            return nil, fmt.Errorf("insufficient columns at line %d", lineNumber)
-        }
-
-        record := DataRecord{
-            ID:     strings.TrimSpace(row[0]),
-            Name:   strings.TrimSpace(row[1]),
-            Email:  strings.TrimSpace(row[2]),
-            Active: strings.TrimSpace(row[3]),
-        }
-
-        if record.ID == "" || record.Name == "" {
-            return nil, fmt.Errorf("missing required fields at line %d", lineNumber)
+        record, err := parseRow(row, lineNumber)
+        if err != nil {
+            return nil, err
         }
 
         records = append(records, record)
     }
 
+    if len(records) == 0 {
+        return nil, errors.New("no valid records found in file")
+    }
+
     return records, nil
 }
 
-func ValidateEmail(email string) bool {
-    return strings.Contains(email, "@") && strings.Contains(email, ".")
+func parseRow(row []string, lineNumber int) (DataRecord, error) {
+    var record DataRecord
+
+    id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+    if err != nil {
+        return record, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
+    }
+    record.ID = id
+
+    name := strings.TrimSpace(row[1])
+    if name == "" {
+        return record, fmt.Errorf("empty name at line %d", lineNumber)
+    }
+    record.Name = name
+
+    value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+    if err != nil {
+        return record, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
+    }
+    record.Value = value
+
+    active, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+    if err != nil {
+        return record, fmt.Errorf("invalid active flag at line %d: %w", lineNumber, err)
+    }
+    record.Active = active
+
+    return record, nil
 }
 
-func FilterActiveUsers(records []DataRecord) []DataRecord {
-    var activeUsers []DataRecord
+func ValidateRecords(records []DataRecord) ([]DataRecord, []error) {
+    var validRecords []DataRecord
+    var validationErrors []error
+
+    for i, record := range records {
+        if record.ID <= 0 {
+            validationErrors = append(validationErrors, fmt.Errorf("record %d: invalid ID %d", i+1, record.ID))
+            continue
+        }
+
+        if record.Value < 0 {
+            validationErrors = append(validationErrors, fmt.Errorf("record %d: negative value %f", i+1, record.Value))
+            continue
+        }
+
+        if len(record.Name) > 100 {
+            validationErrors = append(validationErrors, fmt.Errorf("record %d: name exceeds 100 characters", i+1))
+            continue
+        }
+
+        validRecords = append(validRecords, record)
+    }
+
+    return validRecords, validationErrors
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, int) {
+    if len(records) == 0 {
+        return 0, 0, 0
+    }
+
+    var sum float64
+    var activeCount int
+    minValue := records[0].Value
+    maxValue := records[0].Value
+
     for _, record := range records {
-        if record.Active == "true" && ValidateEmail(record.Email) {
-            activeUsers = append(activeUsers, record)
+        sum += record.Value
+
+        if record.Value < minValue {
+            minValue = record.Value
+        }
+        if record.Value > maxValue {
+            maxValue = record.Value
+        }
+
+        if record.Active {
+            activeCount++
         }
     }
-    return activeUsers
-}
 
-func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: data_processor <csv_file>")
-        os.Exit(1)
-    }
-
-    records, err := ProcessCSVFile(os.Args[1])
-    if err != nil {
-        fmt.Printf("Error processing file: %v\n", err)
-        os.Exit(1)
-    }
-
-    activeUsers := FilterActiveUsers(records)
-    fmt.Printf("Total records: %d\n", len(records))
-    fmt.Printf("Active users: %d\n", len(activeUsers))
-
-    for _, user := range activeUsers {
-        fmt.Printf("ID: %s, Name: %s\n", user.ID, user.Name)
-    }
-}package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"log"
-)
-
-// ValidateJSON checks if the provided byte slice contains valid JSON.
-func ValidateJSON(data []byte) (bool, error) {
-	var js interface{}
-	err := json.Unmarshal(data, &js)
-	if err != nil {
-		return false, fmt.Errorf("invalid JSON: %w", err)
-	}
-	return true, nil
-}
-
-// ParseUserData attempts to parse JSON into a predefined User struct.
-type User struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-func ParseUserData(rawData []byte) (*User, error) {
-	valid, err := ValidateJSON(rawData)
-	if !valid {
-		return nil, err
-	}
-
-	var user User
-	if err := json.Unmarshal(rawData, &user); err != nil {
-		return nil, fmt.Errorf("failed to parse user data: %w", err)
-	}
-
-	if user.Name == "" || user.Email == "" {
-		return nil, fmt.Errorf("user data missing required fields")
-	}
-
-	return &user, nil
-}
-
-func main() {
-	jsonData := []byte(`{"id": 1, "name": "Alice", "email": "alice@example.com"}`)
-	user, err := ParseUserData(jsonData)
-	if err != nil {
-		log.Fatalf("Error: %v", err)
-	}
-	fmt.Printf("Parsed User: %+v\n", user)
+    average := sum / float64(len(records))
+    return average, maxValue - minValue, activeCount
 }
