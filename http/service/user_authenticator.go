@@ -43,4 +43,41 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		r.Header.Set("X-Role", claims.Role)
 		next.ServeHTTP(w, r)
 	})
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type Authenticator struct {
+	secretKey string
+}
+
+func NewAuthenticator(secretKey string) *Authenticator {
+	return &Authenticator{secretKey: secretKey}
+}
+
+func (a *Authenticator) ValidateToken(tokenString string) bool {
+	if tokenString == "" {
+		return false
+	}
+	
+	// Simulate token validation logic
+	// In real implementation, this would parse and verify JWT
+	validPrefix := "Bearer valid_"
+	return strings.HasPrefix(tokenString, validPrefix)
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		
+		if !a.ValidateToken(authHeader) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
 }
