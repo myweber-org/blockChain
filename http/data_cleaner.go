@@ -18,7 +18,7 @@ func removeDuplicates(input []int) []int {
 
 func main() {
 	data := []int{1, 2, 2, 3, 4, 4, 5, 6, 6, 7}
-	cleaned := removeDuplicates(data)
+	cleanedData := removeDuplicates(data)
 	fmt.Printf("Original: %v\n", data)
-	fmt.Printf("Cleaned: %v\n", cleaned)
+	fmt.Printf("Cleaned: %v\n", cleanedData)
 }
