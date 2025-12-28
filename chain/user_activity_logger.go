@@ -1,45 +1,37 @@
-package middleware
+package main
 
 import (
-	"log"
-	"net/http"
-	"time"
+    "log"
+    "net/http"
+    "time"
 )
 
 type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+    handler http.Handler
 }
 
 func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
-	}
-
-	al.handler.ServeHTTP(recorder, r)
-
-	duration := time.Since(start)
-	log.Printf(
-		"Method: %s | Path: %s | Status: %d | Duration: %v | RemoteAddr: %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-	)
+    start := time.Now()
+    al.handler.ServeHTTP(w, r)
+    duration := time.Since(start)
+    
+    log.Printf("Activity: %s %s from %s took %v", r.Method, r.URL.Path, r.RemoteAddr, duration)
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+    return &ActivityLogger{handler: handler}
 }
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+func mainHandler(w http.ResponseWriter, r *http.Request) {
+    w.Write([]byte("Request processed successfully"))
+}
+
+func main() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/api/data", mainHandler)
+    
+    wrappedMux := NewActivityLogger(mux)
+    
+    log.Println("Server starting on :8080")
+    http.ListenAndServe(":8080", wrappedMux)
 }
