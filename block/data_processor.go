@@ -41,3 +41,24 @@ func (dp *DataProcessor) ExtractDomain(email string) (string, bool) {
 func (dp *DataProcessor) NormalizeWhitespace(input string) string {
 	return dp.whitespaceRegex.ReplaceAllString(input, " ")
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+func ProcessInput(input string) (string, error) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	re := regexp.MustCompile(`[^a-zA-Z0-9\s]`)
+	cleaned := re.ReplaceAllString(trimmed, "")
+
+	reMultipleSpaces := regexp.MustCompile(`\s+`)
+	final := reMultipleSpaces.ReplaceAllString(cleaned, " ")
+
+	return strings.ToLower(final), nil
+}
