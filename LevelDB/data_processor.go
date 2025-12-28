@@ -1,106 +1,48 @@
 
-package main
+package data_processor
 
 import (
-	"encoding/csv"
+	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"strconv"
 )
 
-type DataRecord struct {
-	ID    int
-	Name  string
-	Value float64
+type ValidationError struct {
+	Field   string
+	Message string
 }
 
-func ProcessCSVFile(filename string) ([]DataRecord, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	records := []DataRecord{}
-	lineNumber := 0
-
-	for {
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
-		}
-
-		if len(row) != 3 {
-			return nil, fmt.Errorf("invalid column count at line %d", lineNumber)
-		}
-
-		id, err := strconv.Atoi(row[0])
-		if err != nil {
-			return nil, fmt.Errorf("invalid ID format at line %d: %w", lineNumber, err)
-		}
-
-		name := row[1]
-		if name == "" {
-			return nil, fmt.Errorf("empty name at line %d", lineNumber)
-		}
-
-		value, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid value format at line %d: %w", lineNumber, err)
-		}
-
-		record := DataRecord{
-			ID:    id,
-			Name:  name,
-			Value: value,
-		}
-		records = append(records, record)
-		lineNumber++
-	}
-
-	return records, nil
+func (e ValidationError) Error() string {
+	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
 }
 
-func CalculateStatistics(records []DataRecord) (float64, float64) {
-	if len(records) == 0 {
-		return 0, 0
+func ParseAndValidateJSON(rawData []byte, target interface{}) error {
+	if len(rawData) == 0 {
+		return ValidationError{Field: "data", Message: "empty input"}
 	}
 
-	var sum float64
-	var max float64 = records[0].Value
-
-	for _, record := range records {
-		sum += record.Value
-		if record.Value > max {
-			max = record.Value
-		}
+	if err := json.Unmarshal(rawData, target); err != nil {
+		return ValidationError{Field: "structure", Message: err.Error()}
 	}
 
-	average := sum / float64(len(records))
-	return average, max
+	return nil
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <csv_file>")
-		os.Exit(1)
+func ValidateStringField(value string, fieldName string, minLength int) error {
+	if len(value) < minLength {
+		return ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("must be at least %d characters", minLength),
+		}
 	}
+	return nil
+}
 
-	filename := os.Args[1]
-	records, err := ProcessCSVFile(filename)
-	if err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		os.Exit(1)
+func ValidateNumericField(value float64, fieldName string, minValue float64) error {
+	if value < minValue {
+		return ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("must be greater than %.2f", minValue),
+		}
 	}
-
-	fmt.Printf("Successfully processed %d records\n", len(records))
-	
-	avg, max := CalculateStatistics(records)
-	fmt.Printf("Average value: %.2f\n", avg)
-	fmt.Printf("Maximum value: %.2f\n", max)
+	return nil
 }
