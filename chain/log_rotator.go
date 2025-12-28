@@ -354,4 +354,131 @@ func main() {
     }
 
     fmt.Println("Log rotation test completed")
+}package main
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "strconv"
+    "time"
+)
+
+type LogRotator struct {
+    filePath   string
+    maxSize    int64
+    current    *os.File
+    currentSize int64
+}
+
+func NewLogRotator(filePath string, maxSizeMB int) (*LogRotator, error) {
+    maxSize := int64(maxSizeMB) * 1024 * 1024
+    file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &LogRotator{
+        filePath:   filePath,
+        maxSize:    maxSize,
+        current:    file,
+        currentSize: info.Size(),
+    }, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+    if lr.currentSize+int64(len(p)) > lr.maxSize {
+        if err := lr.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := lr.current.Write(p)
+    if err == nil {
+        lr.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+    if err := lr.current.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Unix()
+    backupPath := fmt.Sprintf("%s.%d", lr.filePath, timestamp)
+
+    if err := os.Rename(lr.filePath, backupPath); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(lr.filePath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    lr.current = file
+    lr.currentSize = 0
+    return nil
+}
+
+func (lr *LogRotator) CleanupOldLogs(maxBackups int) error {
+    dir := filepath.Dir(lr.filePath)
+    baseName := filepath.Base(lr.filePath)
+
+    entries, err := os.ReadDir(dir)
+    if err != nil {
+        return err
+    }
+
+    var backups []string
+    for _, entry := range entries {
+        name := entry.Name()
+        if len(name) > len(baseName) && name[:len(baseName)] == baseName && name[len(baseName)] == '.' {
+            backups = append(backups, name)
+        }
+    }
+
+    if len(backups) <= maxBackups {
+        return nil
+    }
+
+    for i := 0; i < len(backups)-maxBackups; i++ {
+        path := filepath.Join(dir, backups[i])
+        if err := os.Remove(path); err != nil {
+            return err
+        }
+    }
+
+    return nil
+}
+
+func (lr *LogRotator) Close() error {
+    return lr.current.Close()
+}
+
+func main() {
+    rotator, err := NewLogRotator("app.log", 10)
+    if err != nil {
+        panic(err)
+    }
+    defer rotator.Close()
+
+    for i := 0; i < 1000; i++ {
+        message := fmt.Sprintf("Log entry %d: %s\n", i, time.Now().Format(time.RFC3339))
+        if _, err := rotator.Write([]byte(message)); err != nil {
+            fmt.Printf("Write error: %v\n", err)
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
+
+    if err := rotator.CleanupOldLogs(5); err != nil {
+        fmt.Printf("Cleanup error: %v\n", err)
+    }
 }
