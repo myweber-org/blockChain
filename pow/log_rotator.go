@@ -181,4 +181,118 @@ func main() {
     }
 
     fmt.Println("Log rotation test completed")
+}package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	maxFileSize = 10 * 1024 * 1024
+	maxFiles    = 5
+	logDir      = "./logs"
+)
+
+type RotatingLogger struct {
+	currentFile *os.File
+	fileSize    int64
+	baseName    string
+	sequence    int
+}
+
+func NewRotatingLogger(baseName string) (*RotatingLogger, error) {
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, err
+	}
+
+	rl := &RotatingLogger{
+		baseName: baseName,
+		sequence: 0,
+	}
+
+	if err := rl.openNextFile(); err != nil {
+		return nil, err
+	}
+
+	return rl, nil
+}
+
+func (rl *RotatingLogger) openNextFile() error {
+	if rl.currentFile != nil {
+		rl.currentFile.Close()
+	}
+
+	rl.sequence++
+	if rl.sequence > maxFiles {
+		rl.sequence = 1
+	}
+
+	filename := filepath.Join(logDir, fmt.Sprintf("%s_%d.log", rl.baseName, rl.sequence))
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	rl.currentFile = file
+	rl.fileSize = 0
+
+	rl.cleanOldFiles()
+	return nil
+}
+
+func (rl *RotatingLogger) cleanOldFiles() {
+	files, err := filepath.Glob(filepath.Join(logDir, rl.baseName+"_*.log"))
+	if err != nil {
+		return
+	}
+
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+		if time.Since(info.ModTime()) > 7*24*time.Hour {
+			os.Remove(file)
+		}
+	}
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+	if rl.fileSize+int64(len(p)) > maxFileSize {
+		if err := rl.openNextFile(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err = rl.currentFile.Write(p)
+	rl.fileSize += int64(n)
+	return n, err
+}
+
+func (rl *RotatingLogger) Close() error {
+	if rl.currentFile != nil {
+		return rl.currentFile.Close()
+	}
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("app")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	multiWriter := io.MultiWriter(os.Stdout, logger)
+	log.SetOutput(multiWriter)
+
+	for i := 0; i < 100; i++ {
+		log.Printf("Log entry %d: Application is running normally", i)
+		time.Sleep(100 * time.Millisecond)
+	}
 }
