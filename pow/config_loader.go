@@ -116,4 +116,103 @@ func isValidLogLevel(level string) bool {
         "fatal": true,
     }
     return validLevels[strings.ToLower(level)]
+}package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	ServerPort int    `env:"SERVER_PORT" default:"8080"`
+	DBHost     string `env:"DB_HOST" default:"localhost"`
+	DBPort     int    `env:"DB_PORT" default:"5432"`
+	DebugMode  bool   `env:"DEBUG_MODE" default:"false"`
+	LogLevel   string `env:"LOG_LEVEL" default:"info"`
+}
+
+func LoadConfig() (*Config, error) {
+	cfg := &Config{}
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		structField := t.Field(i)
+		envTag := structField.Tag.Get("env")
+		defaultTag := structField.Tag.Get("default")
+
+		if envTag == "" {
+			continue
+		}
+
+		envValue := os.Getenv(envTag)
+		if envValue == "" {
+			envValue = defaultTag
+		}
+
+		if err := setFieldValue(field, envValue); err != nil {
+			return nil, fmt.Errorf("failed to set field %s: %w", structField.Name, err)
+		}
+	}
+
+	return cfg, nil
+}
+
+func setFieldValue(field reflect.Value, value string) error {
+	if value == "" {
+		return nil
+	}
+
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int:
+		intVal, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		field.SetInt(int64(intVal))
+	case reflect.Bool:
+		boolVal, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		field.SetBool(boolVal)
+	default:
+		return fmt.Errorf("unsupported field type: %s", field.Kind())
+	}
+
+	return nil
+}
+
+func (c *Config) String() string {
+	data, _ := json.MarshalIndent(c, "", "  ")
+	return string(data)
+}
+
+func (c *Config) Validate() error {
+	if c.ServerPort <= 0 || c.ServerPort > 65535 {
+		return fmt.Errorf("invalid server port: %d", c.ServerPort)
+	}
+	if c.DBHost == "" {
+		return fmt.Errorf("database host cannot be empty")
+	}
+	if c.DBPort <= 0 || c.DBPort > 65535 {
+		return fmt.Errorf("invalid database port: %d", c.DBPort)
+	}
+	validLogLevels := map[string]bool{
+		"debug": true,
+		"info":  true,
+		"warn":  true,
+		"error": true,
+	}
+	if !validLogLevels[strings.ToLower(c.LogLevel)] {
+		return fmt.Errorf("invalid log level: %s", c.LogLevel)
+	}
+	return nil
 }
