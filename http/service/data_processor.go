@@ -131,3 +131,96 @@ func ProcessData(input string) (string, bool) {
 	}
 	return cleaned, true
 }
+package main
+
+import (
+    "encoding/json"
+    "errors"
+    "fmt"
+    "regexp"
+    "strings"
+)
+
+type UserProfile struct {
+    ID        int    `json:"id"`
+    Username  string `json:"username"`
+    Email     string `json:"email"`
+    Age       int    `json:"age"`
+    IsActive  bool   `json:"is_active"`
+}
+
+func ValidateUserProfile(profile UserProfile) error {
+    if profile.ID <= 0 {
+        return errors.New("invalid user ID")
+    }
+
+    usernameRegex := regexp.MustCompile(`^[a-zA-Z0-9_]{3,20}$`)
+    if !usernameRegex.MatchString(profile.Username) {
+        return errors.New("username must be 3-20 alphanumeric characters or underscores")
+    }
+
+    emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+    if !emailRegex.MatchString(profile.Email) {
+        return errors.New("invalid email format")
+    }
+
+    if profile.Age < 0 || profile.Age > 120 {
+        return errors.New("age must be between 0 and 120")
+    }
+
+    return nil
+}
+
+func TransformProfile(profile UserProfile) UserProfile {
+    transformed := profile
+    transformed.Username = strings.ToLower(transformed.Username)
+    transformed.Email = strings.ToLower(transformed.Email)
+    transformed.IsActive = true
+
+    if transformed.Age < 18 {
+        transformed.IsActive = false
+    }
+
+    return transformed
+}
+
+func ProcessUserData(inputJSON string) (string, error) {
+    var profile UserProfile
+    err := json.Unmarshal([]byte(inputJSON), &profile)
+    if err != nil {
+        return "", fmt.Errorf("failed to parse JSON: %v", err)
+    }
+
+    err = ValidateUserProfile(profile)
+    if err != nil {
+        return "", fmt.Errorf("validation failed: %v", err)
+    }
+
+    transformedProfile := TransformProfile(profile)
+
+    outputJSON, err := json.MarshalIndent(transformedProfile, "", "  ")
+    if err != nil {
+        return "", fmt.Errorf("failed to marshal JSON: %v", err)
+    }
+
+    return string(outputJSON), nil
+}
+
+func main() {
+    sampleJSON := `{
+        "id": 123,
+        "username": "TestUser_123",
+        "email": "TEST@EXAMPLE.COM",
+        "age": 25,
+        "is_active": false
+    }`
+
+    result, err := ProcessUserData(sampleJSON)
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+        return
+    }
+
+    fmt.Println("Processed user profile:")
+    fmt.Println(result)
+}
