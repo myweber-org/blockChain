@@ -43,4 +43,129 @@ func getEnvAsBool(key string, defaultValue bool) bool {
         return value
     }
     return defaultValue
+}package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+)
+
+type Config struct {
+	ServerPort int    `json:"server_port" env:"SERVER_PORT"`
+	DBHost     string `json:"db_host" env:"DB_HOST"`
+	DBPort     int    `json:"db_port" env:"DB_PORT"`
+	DBName     string `json:"db_name" env:"DB_NAME"`
+	LogLevel   string `json:"log_level" env:"LOG_LEVEL"`
+	CacheTTL   int    `json:"cache_ttl" env:"CACHE_TTL"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	var cfg Config
+	
+	if configPath != "" {
+		absPath, err := filepath.Abs(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid config path: %w", err)
+		}
+		
+		file, err := os.Open(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open config file: %w", err)
+		}
+		defer file.Close()
+		
+		decoder := json.NewDecoder(file)
+		if err := decoder.Decode(&cfg); err != nil {
+			return nil, fmt.Errorf("failed to decode config: %w", err)
+		}
+	}
+	
+	if err := loadEnvVars(&cfg); err != nil {
+		return nil, err
+	}
+	
+	if err := validateConfig(&cfg); err != nil {
+		return nil, err
+	}
+	
+	return &cfg, nil
+}
+
+func loadEnvVars(cfg *Config) error {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+	
+	for i := 0; i < v.NumField(); i++ {
+		field := t.Field(i)
+		envTag := field.Tag.Get("env")
+		
+		if envTag == "" {
+			continue
+		}
+		
+		envValue := os.Getenv(envTag)
+		if envValue == "" {
+			continue
+		}
+		
+		fieldValue := v.Field(i)
+		
+		switch field.Type.Kind() {
+		case reflect.String:
+			fieldValue.SetString(envValue)
+		case reflect.Int:
+			var intVal int
+			if _, err := fmt.Sscanf(envValue, "%d", &intVal); err != nil {
+				return fmt.Errorf("invalid integer value for %s: %s", envTag, envValue)
+			}
+			fieldValue.SetInt(int64(intVal))
+		}
+	}
+	
+	return nil
+}
+
+func validateConfig(cfg *Config) error {
+	var errors []string
+	
+	if cfg.ServerPort <= 0 || cfg.ServerPort > 65535 {
+		errors = append(errors, "server_port must be between 1 and 65535")
+	}
+	
+	if cfg.DBHost == "" {
+		errors = append(errors, "db_host is required")
+	}
+	
+	if cfg.DBPort <= 0 || cfg.DBPort > 65535 {
+		errors = append(errors, "db_port must be between 1 and 65535")
+	}
+	
+	if cfg.DBName == "" {
+		errors = append(errors, "db_name is required")
+	}
+	
+	validLogLevels := map[string]bool{
+		"debug": true,
+		"info":  true,
+		"warn":  true,
+		"error": true,
+	}
+	
+	if !validLogLevels[strings.ToLower(cfg.LogLevel)] {
+		errors = append(errors, "log_level must be one of: debug, info, warn, error")
+	}
+	
+	if cfg.CacheTTL < 0 {
+		errors = append(errors, "cache_ttl cannot be negative")
+	}
+	
+	if len(errors) > 0 {
+		return fmt.Errorf("config validation failed: %s", strings.Join(errors, "; "))
+	}
+	
+	return nil
 }
