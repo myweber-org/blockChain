@@ -1,48 +1,49 @@
-
-package data_processor
+package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"errors"
+	"regexp"
+	"strings"
 )
 
-type ValidationError struct {
-	Field   string
-	Message string
+type UserData struct {
+	Email    string
+	Username string
+	Age      int
 }
 
-func (e ValidationError) Error() string {
-	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
-}
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
-func ParseAndValidateJSON(rawData []byte, target interface{}) error {
-	if len(rawData) == 0 {
-		return ValidationError{Field: "data", Message: "empty input"}
+func ValidateUserData(data UserData) error {
+	if strings.TrimSpace(data.Email) == "" {
+		return errors.New("email cannot be empty")
 	}
-
-	if err := json.Unmarshal(rawData, target); err != nil {
-		return ValidationError{Field: "structure", Message: err.Error()}
+	if !emailRegex.MatchString(data.Email) {
+		return errors.New("invalid email format")
 	}
-
-	return nil
-}
-
-func ValidateStringField(value string, fieldName string, minLength int) error {
-	if len(value) < minLength {
-		return ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("must be at least %d characters", minLength),
-		}
+	if len(data.Username) < 3 || len(data.Username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
+	}
+	if data.Age < 18 || data.Age > 120 {
+		return errors.New("age must be between 18 and 120")
 	}
 	return nil
 }
 
-func ValidateNumericField(value float64, fieldName string, minValue float64) error {
-	if value < minValue {
-		return ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("must be greater than %.2f", minValue),
-		}
+func TransformUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func ProcessUserInput(email, username string, age int) (UserData, error) {
+	transformedUsername := TransformUsername(username)
+	userData := UserData{
+		Email:    strings.TrimSpace(email),
+		Username: transformedUsername,
+		Age:      age,
 	}
-	return nil
+	err := ValidateUserData(userData)
+	if err != nil {
+		return UserData{}, err
+	}
+	return userData, nil
 }
