@@ -445,4 +445,66 @@ func main() {
 	}
 
 	fmt.Printf("Successfully processed %d records to %s\n", len(records), outputFile)
+}package main
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+	"time"
+)
+
+type UserProfile struct {
+	ID        int
+	Username  string
+	Email     string
+	CreatedAt time.Time
+	Active    bool
+}
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+
+func ValidateUserProfile(profile UserProfile) error {
+	if profile.ID <= 0 {
+		return errors.New("invalid user ID")
+	}
+
+	if strings.TrimSpace(profile.Username) == "" {
+		return errors.New("username cannot be empty")
+	}
+
+	if len(profile.Username) < 3 || len(profile.Username) > 50 {
+		return errors.New("username must be between 3 and 50 characters")
+	}
+
+	if !emailRegex.MatchString(profile.Email) {
+		return errors.New("invalid email format")
+	}
+
+	if profile.CreatedAt.After(time.Now()) {
+		return errors.New("created date cannot be in the future")
+	}
+
+	return nil
+}
+
+func TransformUsername(username string) string {
+	transformed := strings.ToLower(strings.TrimSpace(username))
+	transformed = strings.ReplaceAll(transformed, " ", "_")
+	return transformed
+}
+
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
+	if err := ValidateUserProfile(profile); err != nil {
+		return profile, err
+	}
+
+	profile.Username = TransformUsername(profile.Username)
+	profile.Email = NormalizeEmail(profile.Email)
+
+	return profile, nil
 }
