@@ -1,92 +1,66 @@
+
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 )
 
-type ExchangeRateResponse struct {
-	Rates map[string]float64 `json:"rates"`
-	Base  string             `json:"base"`
-	Date  string             `json:"date"`
+type ExchangeRate struct {
+	BaseCurrency    string
+	TargetCurrency  string
+	Rate            float64
+	LastUpdated     time.Time
 }
 
 type CurrencyConverter struct {
-	apiKey     string
-	baseURL    string
-	lastUpdate time.Time
-	cache      map[string]float64
-	cacheTTL   time.Duration
+	rates map[string]ExchangeRate
 }
 
-func NewCurrencyConverter(apiKey string) *CurrencyConverter {
+func NewCurrencyConverter() *CurrencyConverter {
 	return &CurrencyConverter{
-		apiKey:   apiKey,
-		baseURL:  "https://api.exchangerate-api.com/v4/latest/",
-		cache:    make(map[string]float64),
-		cacheTTL: 30 * time.Minute,
+		rates: make(map[string]ExchangeRate),
 	}
 }
 
-func (c *CurrencyConverter) Convert(amount float64, from, to string) (float64, error) {
-	if time.Since(c.lastUpdate) > c.cacheTTL {
-		if err := c.updateRates(from); err != nil {
-			return 0, err
-		}
+func (c *CurrencyConverter) AddRate(base, target string, rate float64) {
+	key := base + "_" + target
+	c.rates[key] = ExchangeRate{
+		BaseCurrency:   base,
+		TargetCurrency: target,
+		Rate:           rate,
+		LastUpdated:    time.Now(),
+	}
+}
+
+func (c *CurrencyConverter) Convert(amount float64, base, target string) (float64, error) {
+	if base == target {
+		return amount, nil
 	}
 
-	rate, exists := c.cache[to]
+	key := base + "_" + target
+	rate, exists := c.rates[key]
 	if !exists {
-		return 0, fmt.Errorf("exchange rate for %s not available", to)
+		return 0, fmt.Errorf("exchange rate not found for %s to %s", base, target)
 	}
 
-	return amount * rate, nil
+	return amount * rate.Rate, nil
 }
 
-func (c *CurrencyConverter) updateRates(baseCurrency string) error {
-	url := fmt.Sprintf("%s%s", c.baseURL, baseCurrency)
-	
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
+func (c *CurrencyConverter) GetSupportedPairs() []string {
+	var pairs []string
+	for key := range c.rates {
+		pairs = append(pairs, key)
 	}
-
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status: %s", resp.Status)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	var rateResponse ExchangeRateResponse
-	if err := json.Unmarshal(body, &rateResponse); err != nil {
-		return err
-	}
-
-	c.cache = rateResponse.Rates
-	c.lastUpdate = time.Now()
-	
-	return nil
+	return pairs
 }
 
 func main() {
-	converter := NewCurrencyConverter("your-api-key-here")
+	converter := NewCurrencyConverter()
+	
+	converter.AddRate("USD", "EUR", 0.92)
+	converter.AddRate("EUR", "USD", 1.09)
+	converter.AddRate("USD", "JPY", 148.50)
 	
 	amount := 100.0
 	converted, err := converter.Convert(amount, "USD", "EUR")
@@ -96,4 +70,5 @@ func main() {
 	}
 	
 	fmt.Printf("%.2f USD = %.2f EUR\n", amount, converted)
+	fmt.Printf("Supported pairs: %v\n", converter.GetSupportedPairs())
 }
