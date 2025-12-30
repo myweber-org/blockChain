@@ -1,105 +1,92 @@
+
 package main
 
 import (
 	"encoding/csv"
-	"fmt"
+	"errors"
 	"io"
 	"os"
-	"strings"
+	"strconv"
 )
 
-type DataProcessor struct {
-	InputPath  string
-	OutputPath string
-	Delimiter  rune
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
 }
 
-func NewDataProcessor(input, output string) *DataProcessor {
-	return &DataProcessor{
-		InputPath:  input,
-		OutputPath: output,
-		Delimiter:  ',',
-	}
-}
-
-func (dp *DataProcessor) ValidateRow(row []string) bool {
-	if len(row) == 0 {
-		return false
-	}
-	for _, field := range row {
-		if strings.TrimSpace(field) == "" {
-			return false
-		}
-	}
-	return true
-}
-
-func (dp *DataProcessor) CleanField(field string) string {
-	cleaned := strings.TrimSpace(field)
-	cleaned = strings.ToUpper(cleaned)
-	return cleaned
-}
-
-func (dp *DataProcessor) Process() error {
-	inputFile, err := os.Open(dp.InputPath)
+func ReadCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("failed to open input file: %w", err)
+		return nil, err
 	}
-	defer inputFile.Close()
+	defer file.Close()
 
-	outputFile, err := os.Create(dp.OutputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outputFile.Close()
+	reader := csv.NewReader(file)
+	var records []DataRecord
+	lineNumber := 0
 
-	reader := csv.NewReader(inputFile)
-	reader.Comma = dp.Delimiter
-
-	writer := csv.NewWriter(outputFile)
-	writer.Comma = dp.Delimiter
-	defer writer.Flush()
-
-	headerProcessed := false
 	for {
-		record, err := reader.Read()
+		line, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read CSV record: %w", err)
+			return nil, err
 		}
 
-		if !headerProcessed {
-			if err := writer.Write(record); err != nil {
-				return fmt.Errorf("failed to write header: %w", err)
-			}
-			headerProcessed = true
+		lineNumber++
+		if lineNumber == 1 {
 			continue
 		}
 
-		if !dp.ValidateRow(record) {
-			continue
+		if len(line) != 3 {
+			return nil, errors.New("invalid column count at line " + strconv.Itoa(lineNumber))
 		}
 
-		cleanedRecord := make([]string, len(record))
-		for i, field := range record {
-			cleanedRecord[i] = dp.CleanField(field)
+		id, err := strconv.Atoi(line[0])
+		if err != nil {
+			return nil, errors.New("invalid ID at line " + strconv.Itoa(lineNumber))
 		}
 
-		if err := writer.Write(cleanedRecord); err != nil {
-			return fmt.Errorf("failed to write cleaned record: %w", err)
+		name := line[1]
+		if name == "" {
+			return nil, errors.New("empty name at line " + strconv.Itoa(lineNumber))
 		}
+
+		value, err := strconv.ParseFloat(line[2], 64)
+		if err != nil {
+			return nil, errors.New("invalid value at line " + strconv.Itoa(lineNumber))
+		}
+
+		records = append(records, DataRecord{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
 	}
 
+	return records, nil
+}
+
+func ValidateRecords(records []DataRecord) error {
+	seenIDs := make(map[int]bool)
+	for _, record := range records {
+		if record.ID <= 0 {
+			return errors.New("invalid ID: " + strconv.Itoa(record.ID))
+		}
+		if seenIDs[record.ID] {
+			return errors.New("duplicate ID: " + strconv.Itoa(record.ID))
+		}
+		seenIDs[record.ID] = true
+	}
 	return nil
 }
 
-func main() {
-	processor := NewDataProcessor("input.csv", "output.csv")
-	if err := processor.Process(); err != nil {
-		fmt.Printf("Processing failed: %v\n", err)
-		os.Exit(1)
+func CalculateTotalValue(records []DataRecord) float64 {
+	var total float64
+	for _, record := range records {
+		total += record.Value
 	}
-	fmt.Println("Data processing completed successfully")
+	return total
 }
