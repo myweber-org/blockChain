@@ -376,4 +376,41 @@ func main() {
 	cleaned := RemoveDuplicates(data)
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
+}package csvutils
+
+import (
+	"strings"
+	"unicode"
+)
+
+func SanitizeCSVField(input string) string {
+	var builder strings.Builder
+	runes := []rune(strings.TrimSpace(input))
+	
+	for i, r := range runes {
+		if r == '"' {
+			builder.WriteRune('"')
+			builder.WriteRune('"')
+		} else if r == ',' || r == '\n' || r == '\r' {
+			builder.WriteRune(' ')
+		} else if unicode.IsControl(r) {
+			continue
+		} else {
+			builder.WriteRune(r)
+		}
+		
+		if i > 0 && i%100 == 0 {
+			builder.WriteRune(' ')
+		}
+	}
+	
+	result := builder.String()
+	if strings.ContainsAny(result, `,"`) || len(runes) != len([]rune(result)) {
+		return `"` + result + `"`
+	}
+	return result
+}
+
+func NormalizeWhitespace(input string) string {
+	return strings.Join(strings.Fields(input), " ")
 }
