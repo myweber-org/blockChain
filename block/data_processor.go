@@ -141,4 +141,83 @@ func main() {
 	println("Profile processed successfully")
 	println("Username:", processedProfile.Username)
 	println("Created at:", processedProfile.CreatedAt.Format("2006-01-02"))
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
+
+type DataRecord struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Timestamp time.Time `json:"timestamp"`
+	Value     float64   `json:"value"`
+	Tags      []string  `json:"tags"`
+}
+
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
+
+func NormalizeTags(tags []string) []string {
+	uniqueTags := make(map[string]bool)
+	var normalized []string
+
+	for _, tag := range tags {
+		trimmed := strings.TrimSpace(tag)
+		lower := strings.ToLower(trimmed)
+		if trimmed != "" && !uniqueTags[lower] {
+			uniqueTags[lower] = true
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return normalized
+}
+
+func TransformRecord(record DataRecord) (DataRecord, error) {
+	if !ValidateEmail(record.Email) {
+		return DataRecord{}, fmt.Errorf("invalid email format: %s", record.Email)
+	}
+
+	if record.Value < 0 {
+		record.Value = 0
+	}
+
+	record.Tags = NormalizeTags(record.Tags)
+
+	if record.ID == "" {
+		record.ID = fmt.Sprintf("rec_%d", time.Now().UnixNano())
+	}
+
+	return record, nil
+}
+
+func ProcessRecords(records []DataRecord) ([]DataRecord, []error) {
+	var processed []DataRecord
+	var errors []error
+
+	for _, record := range records {
+		transformed, err := TransformRecord(record)
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		processed = append(processed, transformed)
+	}
+
+	return processed, errors
+}
+
+func RecordsToJSON(records []DataRecord) (string, error) {
+	data, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
