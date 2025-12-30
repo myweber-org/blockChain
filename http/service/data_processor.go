@@ -265,4 +265,135 @@ func (dp *DataProcessor) ExtractDomain(email string) string {
 
 func (dp *DataProcessor) NormalizeSpaces(input string) string {
 	return dp.whitespaceRegex.ReplaceAllString(input, " ")
+}package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID        int
+	Name      string
+	Value     float64
+	Timestamp string
+}
+
+func ProcessCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := make([]DataRecord, 0)
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if len(row) != 4 {
+			return nil, fmt.Errorf("invalid column count at line %d: expected 4, got %d", lineNumber, len(row))
+		}
+
+		record, err := parseRow(row, lineNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, record)
+	}
+
+	if len(records) == 0 {
+		return nil, errors.New("no valid records found in file")
+	}
+
+	return records, nil
+}
+
+func parseRow(row []string, line int) (DataRecord, error) {
+	var record DataRecord
+	var err error
+
+	record.ID, err = strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid ID at line %d: %w", line, err)
+	}
+
+	record.Name = strings.TrimSpace(row[1])
+	if record.Name == "" {
+		return DataRecord{}, fmt.Errorf("empty name at line %d", line)
+	}
+
+	record.Value, err = strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid value at line %d: %w", line, err)
+	}
+
+	record.Timestamp = strings.TrimSpace(row[3])
+	if record.Timestamp == "" {
+		return DataRecord{}, fmt.Errorf("empty timestamp at line %d", line)
+	}
+
+	return record, nil
+}
+
+func ValidateRecords(records []DataRecord) error {
+	seenIDs := make(map[int]bool)
+	for _, record := range records {
+		if record.ID <= 0 {
+			return fmt.Errorf("invalid ID %d: must be positive", record.ID)
+		}
+		if seenIDs[record.ID] {
+			return fmt.Errorf("duplicate ID %d found", record.ID)
+		}
+		seenIDs[record.ID] = true
+
+		if record.Value < 0 {
+			return fmt.Errorf("negative value %f for record ID %d", record.Value, record.ID)
+		}
+	}
+	return nil
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, float64) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
+
+	var sum float64
+	var min, max float64
+	first := true
+
+	for _, record := range records {
+		sum += record.Value
+		if first {
+			min = record.Value
+			max = record.Value
+			first = false
+		} else {
+			if record.Value < min {
+				min = record.Value
+			}
+			if record.Value > max {
+				max = record.Value
+			}
+		}
+	}
+
+	average := sum / float64(len(records))
+	return average, min, max
 }
