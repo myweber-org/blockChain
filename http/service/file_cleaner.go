@@ -2,50 +2,51 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
 )
 
 const (
-	tempDir      = "/tmp/app_temp"
-	maxAgeDays   = 7
-	fileExt      = ".tmp"
+	tempDir      = "/tmp/myapp"
+	maxAgeHours  = 168
 )
 
 func main() {
-	if err := cleanOldFiles(); err != nil {
+	err := cleanOldFiles(tempDir, maxAgeHours)
+	if err != nil {
 		fmt.Printf("Error cleaning files: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("Cleanup completed successfully")
 }
 
-func cleanOldFiles() error {
-	files, err := ioutil.ReadDir(tempDir)
-	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
-	}
+func cleanOldFiles(dirPath string, maxAgeHours int) error {
+	cutoffTime := time.Now().Add(-time.Duration(maxAgeHours) * time.Hour)
 
-	cutoffTime := time.Now().AddDate(0, 0, -maxAgeDays)
-	removedCount := 0
-
-	for _, file := range files {
-		if filepath.Ext(file.Name()) != fileExt {
-			continue
+	return filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
 
-		if file.ModTime().Before(cutoffTime) {
-			filePath := filepath.Join(tempDir, file.Name())
-			if err := os.Remove(filePath); err != nil {
-				fmt.Printf("Warning: failed to remove %s: %v\n", filePath, err)
-				continue
+		if d.IsDir() {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+
+		if info.ModTime().Before(cutoffTime) {
+			err := os.Remove(path)
+			if err != nil {
+				fmt.Printf("Failed to remove %s: %v\n", path, err)
+			} else {
+				fmt.Printf("Removed old file: %s\n", path)
 			}
-			removedCount++
 		}
-	}
-
-	fmt.Printf("Removed %d temporary files older than %d days\n", removedCount, maxAgeDays)
-	return nil
+		return nil
+	})
 }
