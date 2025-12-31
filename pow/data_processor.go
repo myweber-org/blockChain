@@ -2,91 +2,38 @@
 package main
 
 import (
-	"encoding/csv"
-	"errors"
-	"io"
-	"os"
-	"strconv"
+	"regexp"
+	"strings"
 )
 
-type DataRecord struct {
-	ID    int
-	Name  string
-	Value float64
+type DataProcessor struct {
+	whitespaceRegex *regexp.Regexp
 }
 
-func ReadCSVFile(filename string) ([]DataRecord, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
 	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	var records []DataRecord
-	lineNumber := 0
-
-	for {
-		line, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		lineNumber++
-		if lineNumber == 1 {
-			continue
-		}
-
-		if len(line) != 3 {
-			return nil, errors.New("invalid column count at line " + strconv.Itoa(lineNumber))
-		}
-
-		id, err := strconv.Atoi(line[0])
-		if err != nil {
-			return nil, errors.New("invalid ID at line " + strconv.Itoa(lineNumber))
-		}
-
-		name := line[1]
-		if name == "" {
-			return nil, errors.New("empty name at line " + strconv.Itoa(lineNumber))
-		}
-
-		value, err := strconv.ParseFloat(line[2], 64)
-		if err != nil {
-			return nil, errors.New("invalid value at line " + strconv.Itoa(lineNumber))
-		}
-
-		records = append(records, DataRecord{
-			ID:    id,
-			Name:  name,
-			Value: value,
-		})
-	}
-
-	return records, nil
 }
 
-func ValidateRecords(records []DataRecord) error {
-	seenIDs := make(map[int]bool)
-	for _, record := range records {
-		if record.ID <= 0 {
-			return errors.New("invalid ID: " + strconv.Itoa(record.ID))
-		}
-		if seenIDs[record.ID] {
-			return errors.New("duplicate ID: " + strconv.Itoa(record.ID))
-		}
-		seenIDs[record.ID] = true
-	}
-	return nil
+func (dp *DataProcessor) CleanString(input string) string {
+	trimmed := strings.TrimSpace(input)
+	cleaned := dp.whitespaceRegex.ReplaceAllString(trimmed, " ")
+	return cleaned
 }
 
-func CalculateTotalValue(records []DataRecord) float64 {
-	var total float64
-	for _, record := range records {
-		total += record.Value
+func (dp *DataProcessor) ValidateEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
+}
+
+func (dp *DataProcessor) ExtractDomain(email string) (string, bool) {
+	if !dp.ValidateEmail(email) {
+		return "", false
 	}
-	return total
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return "", false
+	}
+	return parts[1], true
 }
