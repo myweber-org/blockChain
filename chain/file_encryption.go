@@ -297,3 +297,115 @@ func main() {
 
 	fmt.Printf("Decrypted: %s\n", string(decrypted))
 }
+package main
+
+import (
+    "crypto/aes"
+    "crypto/cipher"
+    "crypto/rand"
+    "encoding/base64"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+)
+
+func encryptData(key []byte, plaintext []byte) ([]byte, error) {
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, err
+    }
+
+    ciphertext := make([]byte, aes.BlockSize+len(plaintext))
+    iv := ciphertext[:aes.BlockSize]
+    if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+        return nil, err
+    }
+
+    stream := cipher.NewCFBEncrypter(block, iv)
+    stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
+
+    return ciphertext, nil
+}
+
+func decryptData(key []byte, ciphertext []byte) ([]byte, error) {
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, err
+    }
+
+    if len(ciphertext) < aes.BlockSize {
+        return nil, errors.New("ciphertext too short")
+    }
+
+    iv := ciphertext[:aes.BlockSize]
+    ciphertext = ciphertext[aes.BlockSize:]
+
+    stream := cipher.NewCFBDecrypter(block, iv)
+    stream.XORKeyStream(ciphertext, ciphertext)
+
+    return ciphertext, nil
+}
+
+func generateKey() ([]byte, error) {
+    key := make([]byte, 32)
+    if _, err := io.ReadFull(rand.Reader, key); err != nil {
+        return nil, err
+    }
+    return key, nil
+}
+
+func processFile(inputPath string, outputPath string, encrypt bool, key []byte) error {
+    data, err := os.ReadFile(inputPath)
+    if err != nil {
+        return err
+    }
+
+    var processedData []byte
+    if encrypt {
+        processedData, err = encryptData(key, data)
+        if err != nil {
+            return err
+        }
+    } else {
+        processedData, err = decryptData(key, data)
+        if err != nil {
+            return err
+        }
+    }
+
+    return os.WriteFile(outputPath, processedData, 0644)
+}
+
+func main() {
+    if len(os.Args) < 4 {
+        fmt.Println("Usage: go run file_encryption.go <encrypt|decrypt> <input_file> <output_file>")
+        return
+    }
+
+    mode := os.Args[1]
+    inputFile := os.Args[2]
+    outputFile := os.Args[3]
+
+    key, err := generateKey()
+    if err != nil {
+        fmt.Printf("Key generation failed: %v\n", err)
+        return
+    }
+
+    keyB64 := base64.StdEncoding.EncodeToString(key)
+    fmt.Printf("Generated key (base64): %s\n", keyB64)
+
+    encrypt := mode == "encrypt"
+    err = processFile(inputFile, outputFile, encrypt, key)
+    if err != nil {
+        fmt.Printf("Operation failed: %v\n", err)
+        return
+    }
+
+    action := "Encrypted"
+    if !encrypt {
+        action = "Decrypted"
+    }
+    fmt.Printf("%s %s to %s successfully\n", action, inputFile, outputFile)
+}
