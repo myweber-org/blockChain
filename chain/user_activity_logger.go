@@ -17,108 +17,6 @@ func NewActivityLogger(logger *log.Logger) *ActivityLogger {
 func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		userAgent := r.UserAgent()
-		clientIP := r.RemoteAddr
-		method := r.Method
-		path := r.URL.Path
-
-		recorder := &responseRecorder{
-			ResponseWriter: w,
-			statusCode:     http.StatusOK,
-		}
-
-		next.ServeHTTP(recorder, r)
-
-		duration := time.Since(start)
-		status := recorder.statusCode
-
-		al.Logger.Printf(
-			"IP: %s | Method: %s | Path: %s | Status: %d | Duration: %v | Agent: %s",
-			clientIP, method, path, status, duration, userAgent,
-		)
-	})
-}
-
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-
-	"golang.org/x/time/rate"
-)
-
-type ActivityLogger struct {
-	limiter *rate.Limiter
-}
-
-func NewActivityLogger(rps int) *ActivityLogger {
-	return &ActivityLogger{
-		limiter: rate.NewLimiter(rate.Limit(rps), rps*2),
-	}
-}
-
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !al.limiter.Allow() {
-			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
-			return
-		}
-
-		start := time.Now()
-		recorder := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
-		
-		defer func() {
-			duration := time.Since(start)
-			log.Printf("[%s] %s %s %d %v",
-				time.Now().Format(time.RFC3339),
-				r.Method,
-				r.URL.Path,
-				recorder.statusCode,
-				duration,
-			)
-		}()
-
-		next.ServeHTTP(recorder, r)
-	})
-}
-
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	Logger *log.Logger
-}
-
-func NewActivityLogger(logger *log.Logger) *ActivityLogger {
-	return &ActivityLogger{Logger: logger}
-}
-
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		
 		recorder := &responseRecorder{
 			ResponseWriter: w,
@@ -130,12 +28,13 @@ func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
 		duration := time.Since(start)
 		
 		al.Logger.Printf(
-			"%s %s %d %s %s",
+			"Method: %s | Path: %s | Status: %d | Duration: %v | IP: %s | UserAgent: %s",
 			r.Method,
 			r.URL.Path,
 			recorder.statusCode,
-			duration.String(),
+			duration,
 			r.RemoteAddr,
+			r.UserAgent(),
 		)
 	})
 }
