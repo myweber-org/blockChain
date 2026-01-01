@@ -74,55 +74,26 @@ func decryptFile(inputPath, outputPath string, key []byte) error {
 	return nil
 }
 
-func generateRandomKey() ([]byte, error) {
+func main() {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("key generation error: %w", err)
-	}
-	return key, nil
-}
-
-func main() {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output>")
-		os.Exit(1)
-	}
-
-	operation := os.Args[1]
-	inputFile := os.Args[2]
-	outputFile := os.Args[3]
-
-	key, err := generateRandomKey()
-	if err != nil {
 		fmt.Printf("Key generation failed: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
-	switch operation {
-	case "encrypt":
-		if err := encryptFile(inputFile, outputFile, key); err != nil {
-			fmt.Printf("Encryption failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("File encrypted successfully. Key: %x\n", key)
-	case "decrypt":
-		fmt.Print("Enter encryption key (hex): ")
-		var keyHex string
-		fmt.Scanln(&keyHex)
-		
-		key, err := hex.DecodeString(keyHex)
-		if err != nil {
-			fmt.Printf("Invalid key format: %v\n", err)
-			os.Exit(1)
-		}
-		
-		if err := decryptFile(inputFile, outputFile, key); err != nil {
-			fmt.Printf("Decryption failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("File decrypted successfully.")
-	default:
-		fmt.Println("Invalid operation. Use 'encrypt' or 'decrypt'.")
-		os.Exit(1)
+	inputFile := "sensitive_data.txt"
+	encryptedFile := "encrypted_data.bin"
+	decryptedFile := "decrypted_data.txt"
+
+	if err := encryptFile(inputFile, encryptedFile, key); err != nil {
+		fmt.Printf("Encryption failed: %v\n", err)
+		return
 	}
+	fmt.Println("File encrypted successfully")
+
+	if err := decryptFile(encryptedFile, decryptedFile, key); err != nil {
+		fmt.Printf("Decryption failed: %v\n", err)
+		return
+	}
+	fmt.Println("File decrypted successfully")
 }
