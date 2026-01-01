@@ -1,40 +1,68 @@
-
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"strings"
+	"time"
 )
 
-type UserData struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+type DataRecord struct {
+	ID        string
+	Value     float64
+	Timestamp time.Time
+	Category  string
 }
 
-func ValidateAndParseJSON(rawData []byte) (*UserData, error) {
-	var user UserData
-	err := json.Unmarshal(rawData, &user)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("ID cannot be empty")
 	}
+	if record.Value < 0 {
+		return errors.New("value must be non-negative")
+	}
+	if record.Category == "" {
+		return errors.New("category cannot be empty")
+	}
+	if record.Timestamp.After(time.Now()) {
+		return errors.New("timestamp cannot be in the future")
+	}
+	return nil
+}
 
-	if user.ID <= 0 {
-		return nil, fmt.Errorf("invalid user ID: %d", user.ID)
+func TransformRecord(record DataRecord) DataRecord {
+	record.Category = strings.ToUpper(strings.TrimSpace(record.Category))
+	record.ID = strings.ReplaceAll(record.ID, " ", "_")
+	if record.Value > 1000 {
+		record.Value = record.Value / 1000
 	}
-	if user.Name == "" {
-		return nil, fmt.Errorf("user name cannot be empty")
-	}
+	return record
+}
 
-	return &user, nil
+func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
+	var processed []DataRecord
+	for _, record := range records {
+		if err := ValidateRecord(record); err != nil {
+			return nil, fmt.Errorf("validation failed for record %s: %w", record.ID, err)
+		}
+		processed = append(processed, TransformRecord(record))
+	}
+	return processed, nil
 }
 
 func main() {
-	jsonStr := `{"id": 123, "name": "John Doe", "email": "john@example.com"}`
-	user, err := ValidateAndParseJSON([]byte(jsonStr))
-	if err != nil {
-		log.Fatal(err)
+	records := []DataRecord{
+		{ID: "rec 001", Value: 1500.5, Timestamp: time.Now().Add(-time.Hour), Category: "category A"},
+		{ID: "rec002", Value: 500.0, Timestamp: time.Now().Add(-2 * time.Hour), Category: "category B"},
 	}
-	fmt.Printf("Parsed user: %+v\n", user)
+
+	processed, err := ProcessRecords(records)
+	if err != nil {
+		fmt.Printf("Processing error: %v\n", err)
+		return
+	}
+
+	for _, rec := range processed {
+		fmt.Printf("Processed: %+v\n", rec)
+	}
 }
