@@ -68,4 +68,66 @@ func main() {
 	}
 
 	fmt.Println("Activity logging completed. Check activity.log for details.")
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"time"
+)
+
+type ActivityLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Resource  string    `json:"resource"`
+}
+
+func NewActivityLog(userID, action, resource string) *ActivityLog {
+	return &ActivityLog{
+		Timestamp: time.Now().UTC(),
+		UserID:    userID,
+		Action:    action,
+		Resource:  resource,
+	}
+}
+
+func (al *ActivityLog) ToJSON() ([]byte, error) {
+	return json.Marshal(al)
+}
+
+func LogActivity(userID, action, resource string) error {
+	logEntry := NewActivityLog(userID, action, resource)
+	
+	jsonData, err := logEntry.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal log entry: %w", err)
+	}
+	
+	file, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+	
+	if _, err := file.Write(append(jsonData, '\n')); err != nil {
+		return fmt.Errorf("failed to write log entry: %w", err)
+	}
+	
+	log.Printf("Logged activity: %s performed %s on %s", userID, action, resource)
+	return nil
+}
+
+func main() {
+	if err := LogActivity("user123", "CREATE", "document.pdf"); err != nil {
+		log.Fatal(err)
+	}
+	
+	if err := LogActivity("user456", "DELETE", "image.jpg"); err != nil {
+		log.Fatal(err)
+	}
+	
+	fmt.Println("Activity logging completed")
 }
