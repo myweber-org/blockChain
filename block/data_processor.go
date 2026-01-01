@@ -458,4 +458,42 @@ func main() {
 	avg, max := CalculateStats(records)
 	fmt.Printf("Average value: %.2f\n", avg)
 	fmt.Printf("Maximum value: %.2f\n", max)
+}package main
+
+import (
+	"errors"
+	"strings"
+)
+
+type UserData struct {
+	Email    string
+	Username string
+	Age      int
+}
+
+func ValidateUserData(data UserData) error {
+	if data.Email == "" {
+		return errors.New("email is required")
+	}
+	if !strings.Contains(data.Email, "@") {
+		return errors.New("invalid email format")
+	}
+	if data.Username == "" {
+		return errors.New("username is required")
+	}
+	if len(data.Username) < 3 {
+		return errors.New("username must be at least 3 characters")
+	}
+	if data.Age < 0 || data.Age > 150 {
+		return errors.New("age must be between 0 and 150")
+	}
+	return nil
+}
+
+func NormalizeUserData(data UserData) UserData {
+	return UserData{
+		Email:    strings.ToLower(strings.TrimSpace(data.Email)),
+		Username: strings.TrimSpace(data.Username),
+		Age:      data.Age,
+	}
 }
