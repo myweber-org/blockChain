@@ -137,3 +137,21 @@ func main() {
 	valid, invalid := cleaner.ValidateEmails()
 	fmt.Printf("Valid emails: %d, Invalid emails: %d\n", len(valid), len(invalid))
 }
+package csvutil
+
+import (
+	"strings"
+	"unicode"
+)
+
+func SanitizeCSVField(input string) string {
+	var builder strings.Builder
+	for _, r := range input {
+		if unicode.IsPrint(r) && r != '"' && r != ',' && r != '\n' && r != '\r' {
+			builder.WriteRune(r)
+		} else {
+			builder.WriteRune('_')
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
