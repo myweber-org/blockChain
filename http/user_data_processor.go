@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -10,7 +9,6 @@ type User struct {
 	ID       int
 	Username string
 	Email    string
-	Age      int
 }
 
 func ValidateUsername(username string) bool {
@@ -26,28 +24,24 @@ func SanitizeEmail(email string) string {
 	return strings.ToLower(trimmed)
 }
 
-func ValidateUserAge(age int) bool {
-	return age >= 18 && age <= 120
+func ValidateEmail(email string) bool {
+	emailPattern := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailPattern.MatchString(email)
 }
 
-func ProcessUserInput(username, email string, age int) (User, error) {
+func ProcessUserInput(username, email string) (*User, error) {
 	if !ValidateUsername(username) {
-		return User{}, &ValidationError{Field: "username", Message: "invalid username format"}
+		return nil, &ValidationError{Field: "username", Message: "invalid username format"}
 	}
 
 	sanitizedEmail := SanitizeEmail(email)
-	if !strings.Contains(sanitizedEmail, "@") {
-		return User{}, &ValidationError{Field: "email", Message: "invalid email address"}
+	if !ValidateEmail(sanitizedEmail) {
+		return nil, &ValidationError{Field: "email", Message: "invalid email format"}
 	}
 
-	if !ValidateUserAge(age) {
-		return User{}, &ValidationError{Field: "age", Message: "age must be between 18 and 120"}
-	}
-
-	return User{
+	return &User{
 		Username: username,
 		Email:    sanitizedEmail,
-		Age:      age,
 	}, nil
 }
 
