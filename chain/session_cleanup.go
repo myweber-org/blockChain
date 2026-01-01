@@ -55,4 +55,65 @@ func main() {
 			}
 		}
 	}
+}package main
+
+import (
+    "log"
+    "time"
+)
+
+type Session struct {
+    ID        string
+    UserID    string
+    ExpiresAt time.Time
+}
+
+type SessionStore interface {
+    GetExpiredSessions() ([]Session, error)
+    DeleteSession(id string) error
+}
+
+type SessionCleaner struct {
+    store SessionStore
+}
+
+func NewSessionCleaner(store SessionStore) *SessionCleaner {
+    return &SessionCleaner{store: store}
+}
+
+func (sc *SessionCleaner) CleanExpiredSessions() error {
+    expiredSessions, err := sc.store.GetExpiredSessions()
+    if err != nil {
+        return err
+    }
+
+    for _, session := range expiredSessions {
+        err := sc.store.DeleteSession(session.ID)
+        if err != nil {
+            log.Printf("Failed to delete session %s: %v", session.ID, err)
+            continue
+        }
+        log.Printf("Deleted expired session: %s", session.ID)
+    }
+
+    return nil
+}
+
+func (sc *SessionCleaner) StartDailyCleanup() {
+    ticker := time.NewTicker(24 * time.Hour)
+    defer ticker.Stop()
+
+    for range ticker.C {
+        err := sc.CleanExpiredSessions()
+        if err != nil {
+            log.Printf("Session cleanup failed: %v", err)
+        }
+    }
+}
+
+func main() {
+    // Implementation would provide actual SessionStore
+    var store SessionStore
+    cleaner := NewSessionCleaner(store)
+    cleaner.StartDailyCleanup()
 }
