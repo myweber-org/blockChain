@@ -1,70 +1,16 @@
 package middleware
 
 import (
-	"net/http"
-	"strings"
-)
-
-type UserAuthenticator struct {
-	secretKey string
-}
-
-func NewUserAuthenticator(secretKey string) *UserAuthenticator {
-	return &UserAuthenticator{secretKey: secretKey}
-}
-
-func (ua *UserAuthenticator) Authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			http.Error(w, "Bearer token required", http.StatusUnauthorized)
-			return
-		}
-
-		if !ua.validateToken(tokenString) {
-			http.Error(w, "Invalid token", http.StatusForbidden)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (ua *UserAuthenticator) validateToken(tokenString string) bool {
-	// Simplified token validation logic
-	// In production, use proper JWT validation library
-	return tokenString != "" && len(tokenString) > 10
-}package middleware
-
-import (
 	"context"
 	"net/http"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type contextKey string
 
 const userIDKey contextKey = "userID"
 
-type Authenticator struct {
-	secretKey []byte
-}
-
-func NewAuthenticator(secretKey string) *Authenticator {
-	return &Authenticator{
-		secretKey: []byte(secretKey),
-	}
-}
-
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+func Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -78,28 +24,10 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenStr := parts[1]
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return a.secretKey, nil
-		})
-
-		if err != nil || !token.Valid {
+		token := parts[1]
+		userID, err := validateToken(token)
+		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-			return
-		}
-
-		userID, ok := claims["user_id"].(string)
-		if !ok {
-			http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
 			return
 		}
 
@@ -111,57 +39,13 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
-}package middleware
-
-import (
-	"net/http"
-	"strings"
-)
-
-type Authenticator struct {
-	secretKey []byte
 }
 
-func NewAuthenticator(secret string) *Authenticator {
-	return &Authenticator{secretKey: []byte(secret)}
-}
-
-func (a *Authenticator) ValidateToken(tokenString string) (bool, error) {
-	if tokenString == "" {
-		return false, nil
+func validateToken(token string) (string, error) {
+	// Simplified token validation - in production use proper JWT library
+	if token == "" || len(token) < 10 {
+		return "", http.ErrAbortHandler
 	}
-
-	// Token validation logic would go here
-	// For this example, we'll do a simple check
-	valid := strings.HasPrefix(tokenString, "valid_")
-	return valid, nil
-}
-
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		valid, err := a.ValidateToken(tokenParts[1])
-		if err != nil {
-			http.Error(w, "Token validation error", http.StatusInternalServerError)
-			return
-		}
-
-		if !valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	// Mock validation - return token as userID for demonstration
+	return "user_" + token[:8], nil
 }
