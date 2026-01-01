@@ -1,83 +1,110 @@
-package middleware
+
+package main
 
 import (
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
 type ActivityLogger struct {
-	handler http.Handler
+	mu          sync.RWMutex
+	activities  map[string][]time.Time
+	rateLimit   int
+	window      time.Duration
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+func NewActivityLogger(limit int, window time.Duration) *ActivityLogger {
+	return &ActivityLogger{
+		activities: make(map[string][]time.Time),
+		rateLimit:  limit,
+		window:     window,
+	}
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+func (al *ActivityLogger) recordActivity(userID string) bool {
+	al.mu.Lock()
+	defer al.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-al.window)
+
+	activities := al.activities[userID]
+	var validActivities []time.Time
+	for _, t := range activities {
+		if t.After(windowStart) {
+			validActivities = append(validActivities, t)
+		}
 	}
 
-	al.handler.ServeHTTP(recorder, r)
+	if len(validActivities) >= al.rateLimit {
+		return false
+	}
 
-	duration := time.Since(start)
-	log.Printf(
-		"%s %s %d %s %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-	)
+	validActivities = append(validActivities, now)
+	al.activities[userID] = validActivities
+	return true
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
+func (al *ActivityLogger) cleanupOldActivities() {
+	ticker := time.NewTicker(al.window * 2)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		al.mu.Lock()
+		windowStart := time.Now().Add(-al.window)
+		for userID, activities := range al.activities {
+			var validActivities []time.Time
+			for _, t := range activities {
+				if t.After(windowStart) {
+					validActivities = append(validActivities, t)
+				}
+			}
+			if len(validActivities) == 0 {
+				delete(al.activities, userID)
+			} else {
+				al.activities[userID] = validActivities
+			}
+		}
+		al.mu.Unlock()
+	}
 }
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package main
+func (al *ActivityLogger) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
-import (
-    "encoding/json"
-    "fmt"
-    "os"
-    "time"
-)
+		if !al.recordActivity(userID) {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 
-type ActivityEvent struct {
-    UserID    string    `json:"user_id"`
-    EventType string    `json:"event_type"`
-    Timestamp time.Time `json:"timestamp"`
-    Metadata  string    `json:"metadata,omitempty"`
-}
-
-func logActivity(userID, eventType, metadata string) ActivityEvent {
-    event := ActivityEvent{
-        UserID:    userID,
-        EventType: eventType,
-        Timestamp: time.Now().UTC(),
-        Metadata:  metadata,
-    }
-
-    logEntry, err := json.Marshal(event)
-    if err != nil {
-        fmt.Printf("Failed to marshal event: %v\n", err)
-        return event
-    }
-
-    fmt.Fprintf(os.Stdout, "%s\n", logEntry)
-    return event
+		log.Printf("Activity recorded for user %s: %s %s", userID, r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func main() {
-    logActivity("user_123", "login", "from_ip:192.168.1.1")
-    logActivity("user_456", "purchase", "item_id:789,amount:29.99")
-    logActivity("user_123", "logout", "")
+	logger := NewActivityLogger(10, time.Minute)
+	go logger.cleanupOldActivities()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/data", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Data response"))
+	})
+
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: logger.Middleware(mux),
+	}
+
+	log.Println("Server starting on :8080")
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatal(err)
+	}
 }
