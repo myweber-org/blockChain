@@ -74,4 +74,59 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr,
 		duration,
 	)
+}package main
+
+import (
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type ActivityLogger struct {
+    logFile *os.File
+}
+
+func NewActivityLogger(filename string) (*ActivityLogger, error) {
+    file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+    return &ActivityLogger{logFile: file}, nil
+}
+
+func (al *ActivityLogger) LogActivity(userID, action, details string) {
+    timestamp := time.Now().Format(time.RFC3339)
+    sessionID := generateSessionID()
+    
+    logEntry := fmt.Sprintf("%s | Session: %s | User: %s | Action: %s | Details: %s\n", 
+        timestamp, sessionID, userID, action, details)
+    
+    if _, err := al.logFile.WriteString(logEntry); err != nil {
+        log.Printf("Failed to write log entry: %v", err)
+    }
+}
+
+func generateSessionID() string {
+    return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func (al *ActivityLogger) Close() {
+    if al.logFile != nil {
+        al.logFile.Close()
+    }
+}
+
+func main() {
+    logger, err := NewActivityLogger("user_activity.log")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer logger.Close()
+
+    logger.LogActivity("user123", "LOGIN", "Successful authentication")
+    logger.LogActivity("user123", "VIEW_PAGE", "/dashboard")
+    logger.LogActivity("user456", "UPDATE_PROFILE", "Changed email address")
+    
+    fmt.Println("Activity logging completed")
 }
