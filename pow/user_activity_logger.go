@@ -7,68 +7,84 @@ import (
 )
 
 type ActivityLogger struct {
-	handler http.Handler
+	rateLimiter *RateLimiter
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+type RateLimiter struct {
+	requests map[string][]time.Time
+	window   time.Duration
+	maxReqs  int
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+func NewActivityLogger(window time.Duration, maxReqs int) *ActivityLogger {
+	return &ActivityLogger{
+		rateLimiter: &RateLimiter{
+			requests: make(map[string][]time.Time),
+			window:   window,
+			maxReqs:  maxReqs,
+		},
 	}
-	
-	al.handler.ServeHTTP(recorder, r)
-	
-	duration := time.Since(start)
-	
-	log.Printf(
-		"%s %s %d %s %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-	)
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientIP := r.RemoteAddr
+		userAgent := r.UserAgent()
+		path := r.URL.Path
+
+		if !al.rateLimiter.Allow(clientIP) {
+			http.Error(w, "Too many requests", http.StatusTooManyRequests)
+			log.Printf("Rate limit exceeded for IP: %s", clientIP)
+			return
+		}
+
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		duration := time.Since(start)
+
+		log.Printf("Activity: IP=%s, UA=%s, Path=%s, Duration=%v", 
+			clientIP, userAgent, path, duration)
+	})
 }
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
+func (rl *RateLimiter) Allow(ip string) bool {
+	now := time.Now()
+	requests := rl.requests[ip]
 
-import (
-	"log"
-	"net/http"
-	"time"
-)
+	var validReqs []time.Time
+	for _, t := range requests {
+		if now.Sub(t) <= rl.window {
+			validReqs = append(validReqs, t)
+		}
+	}
 
-type ActivityLogger struct {
-	handler http.Handler
+	if len(validReqs) >= rl.maxReqs {
+		return false
+	}
+
+	validReqs = append(validReqs, now)
+	rl.requests[ip] = validReqs
+	return true
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	al.handler.ServeHTTP(w, r)
-	duration := time.Since(start)
-
-	log.Printf("Activity: %s %s from %s took %v",
-		r.Method,
-		r.URL.Path,
-		r.RemoteAddr,
-		duration,
-	)
+func (rl *RateLimiter) Cleanup() {
+	ticker := time.NewTicker(rl.window * 2)
+	go func() {
+		for range ticker.C {
+			now := time.Now()
+			for ip, requests := range rl.requests {
+				var validReqs []time.Time
+				for _, t := range requests {
+					if now.Sub(t) <= rl.window {
+						validReqs = append(validReqs, t)
+					}
+				}
+				if len(validReqs) == 0 {
+					delete(rl.requests, ip)
+				} else {
+					rl.requests[ip] = validReqs
+				}
+			}
+		}
+	}()
 }
