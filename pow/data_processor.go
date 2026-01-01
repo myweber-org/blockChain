@@ -56,4 +56,34 @@ func main() {
 		return
 	}
 	fmt.Printf("Processed data: %+v\n", processedData)
+}package main
+
+import (
+	"errors"
+	"strings"
+)
+
+func ValidateEmail(email string) error {
+	if !strings.Contains(email, "@") {
+		return errors.New("invalid email format")
+	}
+	if len(email) < 5 {
+		return errors.New("email too short")
+	}
+	return nil
+}
+
+func TrimAndUpper(input string) string {
+	trimmed := strings.TrimSpace(input)
+	return strings.ToUpper(trimmed)
+}
+
+func FilterEmptyStrings(slice []string) []string {
+	var result []string
+	for _, s := range slice {
+		if s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }
