@@ -42,4 +42,42 @@ type responseRecorder struct {
 func (rr *responseRecorder) WriteHeader(code int) {
 	rr.statusCode = code
 	rr.ResponseWriter.WriteHeader(code)
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "time"
+)
+
+type ActivityEvent struct {
+    UserID    string    `json:"user_id"`
+    EventType string    `json:"event_type"`
+    Timestamp time.Time `json:"timestamp"`
+    Metadata  string    `json:"metadata,omitempty"`
+}
+
+func logActivity(userID, eventType, metadata string) ActivityEvent {
+    event := ActivityEvent{
+        UserID:    userID,
+        EventType: eventType,
+        Timestamp: time.Now().UTC(),
+        Metadata:  metadata,
+    }
+
+    logEntry, err := json.Marshal(event)
+    if err != nil {
+        fmt.Printf("Failed to marshal event: %v\n", err)
+        return event
+    }
+
+    fmt.Fprintf(os.Stdout, "%s\n", logEntry)
+    return event
+}
+
+func main() {
+    logActivity("user_123", "login", "from_ip:192.168.1.1")
+    logActivity("user_456", "purchase", "item_id:789,amount:29.99")
+    logActivity("user_123", "logout", "")
 }
