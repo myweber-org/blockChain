@@ -161,4 +161,89 @@ func randomString(length int) string {
         b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
     }
     return string(b)
+}package session
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"time"
+
+	"github.com/go-redis/redis/v8"
+	"golang.org/x/net/context"
+)
+
+type SessionManager struct {
+	client     *redis.Client
+	expiration time.Duration
+}
+
+func NewSessionManager(redisAddr string, expiration time.Duration) (*SessionManager, error) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       0,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, err
+	}
+
+	return &SessionManager{
+		client:     client,
+		expiration: expiration,
+	}, nil
+}
+
+func (sm *SessionManager) GenerateToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+func (sm *SessionManager) CreateSession(userID string) (string, error) {
+	token, err := sm.GenerateToken()
+	if err != nil {
+		return "", err
+	}
+
+	ctx := context.Background()
+	err = sm.client.Set(ctx, token, userID, sm.expiration).Err()
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+func (sm *SessionManager) ValidateSession(token string) (string, error) {
+	ctx := context.Background()
+	userID, err := sm.client.Get(ctx, token).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", errors.New("session not found")
+		}
+		return "", err
+	}
+
+	// Refresh expiration on validation
+	sm.client.Expire(ctx, token, sm.expiration)
+
+	return userID, nil
+}
+
+func (sm *SessionManager) DestroySession(token string) error {
+	ctx := context.Background()
+	return sm.client.Del(ctx, token).Err()
+}
+
+func (sm *SessionManager) CleanupExpiredSessions() error {
+	// Redis handles expiration automatically, but this method
+	// can be used for additional cleanup if needed
+	return nil
 }
