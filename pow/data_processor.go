@@ -1,102 +1,59 @@
-
 package main
 
 import (
-    "encoding/csv"
-    "fmt"
-    "io"
-    "os"
-    "strings"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 )
 
-type DataRecord struct {
-    ID      string
-    Name    string
-    Email   string
-    Active  string
+type UserData struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Age      int    `json:"age"`
 }
 
-func ProcessCSVFile(filename string) ([]DataRecord, error) {
-    file, err := os.Open(filename)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open file: %w", err)
-    }
-    defer file.Close()
-
-    reader := csv.NewReader(file)
-    reader.TrimLeadingSpace = true
-
-    var records []DataRecord
-    lineNumber := 0
-
-    for {
-        lineNumber++
-        row, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
-        }
-
-        if lineNumber == 1 {
-            continue
-        }
-
-        if len(row) < 4 {
-            return nil, fmt.Errorf("insufficient columns at line %d", lineNumber)
-        }
-
-        record := DataRecord{
-            ID:     strings.TrimSpace(row[0]),
-            Name:   strings.TrimSpace(row[1]),
-            Email:  strings.TrimSpace(row[2]),
-            Active: strings.TrimSpace(row[3]),
-        }
-
-        if !isValidRecord(record) {
-            return nil, fmt.Errorf("invalid data at line %d", lineNumber)
-        }
-
-        records = append(records, record)
-    }
-
-    return records, nil
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
 }
 
-func isValidRecord(record DataRecord) bool {
-    if record.ID == "" || record.Name == "" || record.Email == "" {
-        return false
-    }
-    if record.Active != "true" && record.Active != "false" {
-        return false
-    }
-    return true
+func SanitizeUsername(username string) string {
+	username = strings.TrimSpace(username)
+	username = regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(username, "")
+	if len(username) > 20 {
+		username = username[:20]
+	}
+	return username
 }
 
-func FilterActiveUsers(records []DataRecord) []DataRecord {
-    var activeUsers []DataRecord
-    for _, record := range records {
-        if record.Active == "true" {
-            activeUsers = append(activeUsers, record)
-        }
-    }
-    return activeUsers
+func TransformUserData(rawData []byte) (*UserData, error) {
+	var data UserData
+	err := json.Unmarshal(rawData, &data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	if !ValidateEmail(data.Email) {
+		return nil, fmt.Errorf("invalid email format: %s", data.Email)
+	}
+
+	data.Username = SanitizeUsername(data.Username)
+
+	if data.Age < 0 || data.Age > 120 {
+		return nil, fmt.Errorf("age out of valid range: %d", data.Age)
+	}
+
+	return &data, nil
 }
 
-func GenerateReport(records []DataRecord) {
-    fmt.Printf("Total records processed: %d\n", len(records))
-    activeUsers := FilterActiveUsers(records)
-    fmt.Printf("Active users: %d\n", len(activeUsers))
-    fmt.Printf("Inactive users: %d\n", len(records)-len(activeUsers))
-    
-    fmt.Println("\nSample records:")
-    displayCount := 3
-    if len(records) < displayCount {
-        displayCount = len(records)
-    }
-    for i := 0; i < displayCount; i++ {
-        fmt.Printf("  ID: %s, Name: %s, Email: %s\n", 
-            records[i].ID, records[i].Name, records[i].Email)
-    }
+func main() {
+	rawJSON := `{"email":"test@example.com","username":"  user_123!@#","age":25}`
+	processedData, err := TransformUserData([]byte(rawJSON))
+	if err != nil {
+		fmt.Printf("Error processing data: %v\n", err)
+		return
+	}
+	fmt.Printf("Processed data: %+v\n", processedData)
 }
