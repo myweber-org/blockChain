@@ -1,164 +1,71 @@
-package middleware
+package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
-	"net/http"
+	"os"
 	"time"
 )
 
-type ActivityLogger struct {
-	handler http.Handler
+type ActivityLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Details   string    `json:"details"`
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+func NewActivityLog(userID, action, details string) *ActivityLog {
+	return &ActivityLog{
+		Timestamp: time.Now().UTC(),
+		UserID:    userID,
+		Action:    action,
+		Details:   details,
+	}
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+func (al *ActivityLog) ToJSON() ([]byte, error) {
+	return json.MarshalIndent(al, "", "  ")
+}
+
+func LogActivity(logFile *os.File, userID, action, details string) error {
+	activity := NewActivityLog(userID, action, details)
+	jsonData, err := activity.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal activity: %w", err)
 	}
 
-	al.handler.ServeHTTP(recorder, r)
-
-	duration := time.Since(start)
-	log.Printf(
-		"Method: %s | Path: %s | Status: %d | Duration: %v | IP: %s | UserAgent: %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-		r.UserAgent(),
-	)
-}
-
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+	if _, err := logFile.Write(append(jsonData, '\n')); err != nil {
+		return fmt.Errorf("failed to write log: %w", err)
 	}
 
-	al.handler.ServeHTTP(recorder, r)
-
-	duration := time.Since(start)
-	log.Printf(
-		"%s %s %d %s %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-	)
-}
-
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package main
-
-import (
-    "encoding/json"
-    "fmt"
-    "log"
-    "os"
-    "time"
-)
-
-type ActivityEvent struct {
-    UserID    string    `json:"user_id"`
-    EventType string    `json:"event_type"`
-    Timestamp time.Time `json:"timestamp"`
-    Details   string    `json:"details"`
-}
-
-type ActivityLogger struct {
-    logFile *os.File
-}
-
-func NewActivityLogger(filename string) (*ActivityLogger, error) {
-    file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    if err != nil {
-        return nil, err
-    }
-    return &ActivityLogger{logFile: file}, nil
-}
-
-func (al *ActivityLogger) LogActivity(userID, eventType, details string) error {
-    event := ActivityEvent{
-        UserID:    userID,
-        EventType: eventType,
-        Timestamp: time.Now().UTC(),
-        Details:   details,
-    }
-
-    data, err := json.Marshal(event)
-    if err != nil {
-        return err
-    }
-
-    data = append(data, '\n')
-    _, err = al.logFile.Write(data)
-    return err
-}
-
-func (al *ActivityLogger) Close() error {
-    return al.logFile.Close()
+	log.Printf("Logged activity: %s by user %s", action, userID)
+	return nil
 }
 
 func main() {
-    logger, err := NewActivityLogger("user_activity.log")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer logger.Close()
+	logFile, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logFile.Close()
 
-    err = logger.LogActivity("user123", "login", "User logged in from IP 192.168.1.100")
-    if err != nil {
-        log.Fatal(err)
-    }
+	activities := []struct {
+		userID string
+		action string
+		details string
+	}{
+		{"user123", "LOGIN", "Successful authentication"},
+		{"user123", "VIEW_PROFILE", "Accessed profile page"},
+		{"user456", "UPDATE_SETTINGS", "Changed notification preferences"},
+		{"user123", "LOGOUT", "Session terminated"},
+	}
 
-    err = logger.LogActivity("user123", "view_page", "Viewed product page for item ABC-123")
-    if err != nil {
-        log.Fatal(err)
-    }
+	for _, act := range activities {
+		if err := LogActivity(logFile, act.userID, act.action, act.details); err != nil {
+			log.Printf("Error logging activity: %v", err)
+		}
+	}
 
-    err = logger.LogActivity("user456", "purchase", "Purchased item XYZ-789 for $29.99")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    fmt.Println("Activity logging completed successfully")
+	fmt.Println("Activity logging completed. Check activity.log for details.")
 }
