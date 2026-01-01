@@ -265,3 +265,166 @@ func main() {
         time.Sleep(10 * time.Millisecond)
     }
 }
+package main
+
+import (
+    "compress/gzip"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "strconv"
+    "sync"
+    "time"
+)
+
+type RotatingLog struct {
+    mu          sync.Mutex
+    basePath    string
+    currentSize int64
+    maxSize     int64
+    file        *os.File
+    sequence    int
+}
+
+func NewRotatingLog(basePath string, maxSizeMB int64) (*RotatingLog, error) {
+    rl := &RotatingLog{
+        basePath: basePath,
+        maxSize:  maxSizeMB * 1024 * 1024,
+        sequence: 0,
+    }
+
+    if err := rl.openCurrent(); err != nil {
+        return nil, err
+    }
+
+    return rl, nil
+}
+
+func (rl *RotatingLog) openCurrent() error {
+    file, err := os.OpenFile(rl.basePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    stat, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+
+    rl.file = file
+    rl.currentSize = stat.Size()
+
+    rl.findLatestSequence()
+    return nil
+}
+
+func (rl *RotatingLog) findLatestSequence() {
+    pattern := rl.basePath + ".*.gz"
+    matches, _ := filepath.Glob(pattern)
+    maxSeq := 0
+
+    for _, match := range matches {
+        base := filepath.Base(match)
+        if len(base) > len(rl.basePath)+5 {
+            seqStr := base[len(rl.basePath)+1 : len(base)-3]
+            if seq, err := strconv.Atoi(seqStr); err == nil && seq > maxSeq {
+                maxSeq = seq
+            }
+        }
+    }
+
+    rl.sequence = maxSeq
+}
+
+func (rl *RotatingLog) Write(p []byte) (int, error) {
+    rl.mu.Lock()
+    defer rl.mu.Unlock()
+
+    if rl.currentSize+int64(len(p)) > rl.maxSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := rl.file.Write(p)
+    if err == nil {
+        rl.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (rl *RotatingLog) rotate() error {
+    if err := rl.file.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    rotatedName := fmt.Sprintf("%s.%d.%s", rl.basePath, rl.sequence, timestamp)
+    rl.sequence++
+
+    if err := os.Rename(rl.basePath, rotatedName); err != nil {
+        return err
+    }
+
+    if err := rl.compressFile(rotatedName); err != nil {
+        return err
+    }
+
+    return rl.openCurrent()
+}
+
+func (rl *RotatingLog) compressFile(source string) error {
+    srcFile, err := os.Open(source)
+    if err != nil {
+        return err
+    }
+    defer srcFile.Close()
+
+    destFile, err := os.Create(source + ".gz")
+    if err != nil {
+        return err
+    }
+    defer destFile.Close()
+
+    gzWriter := gzip.NewWriter(destFile)
+    defer gzWriter.Close()
+
+    if _, err := io.Copy(gzWriter, srcFile); err != nil {
+        return err
+    }
+
+    os.Remove(source)
+    return nil
+}
+
+func (rl *RotatingLog) Close() error {
+    rl.mu.Lock()
+    defer rl.mu.Unlock()
+
+    if rl.file != nil {
+        return rl.file.Close()
+    }
+    return nil
+}
+
+func main() {
+    log, err := NewRotatingLog("application.log", 10)
+    if err != nil {
+        fmt.Printf("Failed to create log: %v\n", err)
+        return
+    }
+    defer log.Close()
+
+    for i := 0; i < 1000; i++ {
+        message := fmt.Sprintf("Log entry %d at %s\n", i, time.Now().Format(time.RFC3339))
+        if _, err := log.Write([]byte(message)); err != nil {
+            fmt.Printf("Write error: %v\n", err)
+            break
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed")
+}
