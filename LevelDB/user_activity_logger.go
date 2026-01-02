@@ -130,4 +130,79 @@ func main() {
 	}
 	
 	fmt.Println("Activity logging completed")
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "time"
+)
+
+type ActivityLog struct {
+    UserID    string    `json:"user_id"`
+    Action    string    `json:"action"`
+    Timestamp time.Time `json:"timestamp"`
+    Details   string    `json:"details,omitempty"`
+}
+
+type ActivityLogger struct {
+    logs []ActivityLog
+}
+
+func NewActivityLogger() *ActivityLogger {
+    return &ActivityLogger{
+        logs: make([]ActivityLog, 0),
+    }
+}
+
+func (al *ActivityLogger) LogActivity(userID, action, details string) {
+    log := ActivityLog{
+        UserID:    userID,
+        Action:    action,
+        Timestamp: time.Now().UTC(),
+        Details:   details,
+    }
+    al.logs = append(al.logs, log)
+}
+
+func (al *ActivityLogger) GetLogs() []ActivityLog {
+    return al.logs
+}
+
+func (al *ActivityLogger) SaveToFile(filename string) error {
+    file, err := os.Create(filename)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    return encoder.Encode(al.logs)
+}
+
+func main() {
+    logger := NewActivityLogger()
+    
+    logger.LogActivity("user123", "LOGIN", "User logged in from web browser")
+    logger.LogActivity("user123", "VIEW_PROFILE", "Viewed profile page")
+    logger.LogActivity("user456", "REGISTER", "New user registration")
+    logger.LogActivity("user123", "LOGOUT", "User logged out")
+    
+    logs := logger.GetLogs()
+    for _, log := range logs {
+        fmt.Printf("[%s] %s: %s - %s\n", 
+            log.Timestamp.Format("2006-01-02 15:04:05"),
+            log.UserID,
+            log.Action,
+            log.Details)
+    }
+    
+    err := logger.SaveToFile("activity_logs.json")
+    if err != nil {
+        fmt.Printf("Error saving logs: %v\n", err)
+    } else {
+        fmt.Println("Logs saved to activity_logs.json")
+    }
 }
