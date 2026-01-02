@@ -1,10 +1,9 @@
+
 package main
 
 import (
-	"compress/gzip"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,45 +11,42 @@ import (
 )
 
 const (
-	maxFileSize = 10 * 1024 * 1024 // 10MB
+	maxFileSize = 1024 * 1024 // 1MB
 	maxBackups  = 5
-	logDir      = "./logs"
 )
 
-type RotatingLogger struct {
-	mu        sync.Mutex
-	file      *os.File
-	size      int64
-	baseName  string
-	sequence  int
+type RotatingWriter struct {
+	filename   string
+	current    *os.File
+	size       int64
+	mu         sync.Mutex
 }
 
-func NewRotatingLogger(name string) (*RotatingLogger, error) {
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+func NewRotatingWriter(filename string) (*RotatingWriter, error) {
+	w := &RotatingWriter{filename: filename}
+	if err := w.openFile(); err != nil {
 		return nil, err
 	}
-
-	rl := &RotatingLogger{
-		baseName: filepath.Join(logDir, name),
-	}
-
-	if err := rl.openFile(); err != nil {
-		return nil, err
-	}
-
-	return rl, nil
+	return w, nil
 }
 
-func (rl *RotatingLogger) openFile() error {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+func (w *RotatingWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	if rl.file != nil {
-		rl.file.Close()
+	if w.size+int64(len(p)) >= maxFileSize {
+		if err := w.rotate(); err != nil {
+			return 0, err
+		}
 	}
 
-	filename := fmt.Sprintf("%s.log", rl.baseName)
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	n, err = w.current.Write(p)
+	w.size += int64(n)
+	return n, err
+}
+
+func (w *RotatingWriter) openFile() error {
+	file, err := os.OpenFile(w.filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return err
 	}
@@ -61,95 +57,67 @@ func (rl *RotatingLogger) openFile() error {
 		return err
 	}
 
-	rl.file = file
-	rl.size = stat.Size()
+	w.current = file
+	w.size = stat.Size()
 	return nil
 }
 
-func (rl *RotatingLogger) Write(p []byte) (int, error) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+func (w *RotatingWriter) rotate() error {
+	if w.current != nil {
+		w.current.Close()
+	}
 
-	if rl.size+int64(len(p)) > maxFileSize {
-		if err := rl.rotate(); err != nil {
-			return 0, err
+	for i := maxBackups - 1; i >= 0; i-- {
+		oldName := w.backupName(i)
+		newName := w.backupName(i + 1)
+
+		if _, err := os.Stat(oldName); err == nil {
+			if i+1 >= maxBackups {
+				os.Remove(newName)
+			} else {
+				os.Rename(oldName, newName)
+			}
 		}
 	}
 
-	n, err := rl.file.Write(p)
-	if err == nil {
-		rl.size += int64(n)
+	if err := os.Rename(w.filename, w.backupName(0)); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	return n, err
+
+	return w.openFile()
 }
 
-func (rl *RotatingLogger) rotate() error {
-	if rl.file != nil {
-		rl.file.Close()
+func (w *RotatingWriter) backupName(i int) string {
+	if i == 0 {
+		return w.filename
 	}
-
-	rl.sequence++
-	if rl.sequence > maxBackups {
-		rl.sequence = 1
-	}
-
-	oldName := fmt.Sprintf("%s.log", rl.baseName)
-	newName := fmt.Sprintf("%s.%d.log.gz", rl.baseName, rl.sequence)
-
-	if err := rl.compressFile(oldName, newName); err != nil {
-		return err
-	}
-
-	if err := os.Truncate(oldName, 0); err != nil {
-		return err
-	}
-
-	return rl.openFile()
+	return fmt.Sprintf("%s.%d", w.filename, i)
 }
 
-func (rl *RotatingLogger) compressFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
+func (w *RotatingWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	gz := gzip.NewWriter(out)
-	defer gz.Close()
-
-	_, err = io.Copy(gz, in)
-	return err
-}
-
-func (rl *RotatingLogger) Close() error {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	if rl.file != nil {
-		return rl.file.Close()
+	if w.current != nil {
+		return w.current.Close()
 	}
 	return nil
 }
 
 func main() {
-	logger, err := NewRotatingLogger("app")
+	writer, err := NewRotatingWriter("app.log")
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintf(os.Stderr, "Failed to create writer: %v\n", err)
+		os.Exit(1)
 	}
-	defer logger.Close()
-
-	log.SetOutput(logger)
+	defer writer.Close()
 
 	for i := 0; i < 1000; i++ {
-		log.Printf("Log entry %d at %s", i, time.Now().Format(time.RFC3339))
+		message := fmt.Sprintf("[%s] Log entry %d: Some sample log data here\n", 
+			time.Now().Format(time.RFC3339), i)
+		writer.Write([]byte(message))
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	fmt.Println("Log rotation completed")
+	fmt.Println("Log rotation test completed")
 }
