@@ -24,8 +24,8 @@ func Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := parts[1]
-		userID, err := validateToken(tokenString)
+		token := parts[1]
+		userID, err := validateToken(token)
 		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
@@ -36,57 +36,17 @@ func Authenticate(next http.Handler) http.Handler {
 	})
 }
 
-func validateToken(tokenString string) (string, error) {
-	// This is a placeholder for actual JWT validation logic
-	// In production, use a proper JWT library like github.com/golang-jwt/jwt
-	if tokenString == "valid_token_example" {
-		return "user123", nil
-	}
-	return "", http.ErrAbortHandler
-}
-
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
-}package middleware
-
-import (
-	"net/http"
-	"strings"
-)
-
-type Authenticator struct {
-	secretKey string
 }
 
-func NewAuthenticator(secretKey string) *Authenticator {
-	return &Authenticator{secretKey: secretKey}
-}
-
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		token := parts[1]
-		if !a.validateToken(token) {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (a *Authenticator) validateToken(token string) bool {
-	return token == "valid-token-example"
+func validateToken(token string) (string, error) {
+	// This is a placeholder for actual token validation logic
+	// In production, this would verify JWT signature and extract claims
+	if token == "" {
+		return "", http.ErrMissingFile
+	}
+	// Simulated validation - return a dummy user ID
+	return "user-123", nil
 }
