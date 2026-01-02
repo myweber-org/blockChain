@@ -1,90 +1,49 @@
-package middleware
+package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
-	"net/http"
+	"os"
 	"time"
 )
 
-type ActivityLogger struct {
-	rateLimiter *RateLimiter
+type ActivityLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	SessionID string    `json:"session_id"`
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Details   string    `json:"details"`
 }
 
-type RateLimiter struct {
-	requests map[string][]time.Time
-	window   time.Duration
-	maxReqs  int
-}
-
-func NewActivityLogger(window time.Duration, maxReqs int) *ActivityLogger {
-	return &ActivityLogger{
-		rateLimiter: &RateLimiter{
-			requests: make(map[string][]time.Time),
-			window:   window,
-			maxReqs:  maxReqs,
-		},
+func NewActivityLog(sessionID, userID, action, details string) *ActivityLog {
+	return &ActivityLog{
+		Timestamp: time.Now().UTC(),
+		SessionID: sessionID,
+		UserID:    userID,
+		Action:    action,
+		Details:   details,
 	}
 }
 
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		clientIP := r.RemoteAddr
-		userAgent := r.UserAgent()
-		path := r.URL.Path
-
-		if !al.rateLimiter.Allow(clientIP) {
-			http.Error(w, "Too many requests", http.StatusTooManyRequests)
-			log.Printf("Rate limit exceeded for IP: %s", clientIP)
-			return
-		}
-
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		duration := time.Since(start)
-
-		log.Printf("Activity: IP=%s, UA=%s, Path=%s, Duration=%v", 
-			clientIP, userAgent, path, duration)
-	})
+func (al *ActivityLog) ToJSON() ([]byte, error) {
+	return json.MarshalIndent(al, "", "  ")
 }
 
-func (rl *RateLimiter) Allow(ip string) bool {
-	now := time.Now()
-	requests := rl.requests[ip]
-
-	var validReqs []time.Time
-	for _, t := range requests {
-		if now.Sub(t) <= rl.window {
-			validReqs = append(validReqs, t)
-		}
+func LogActivity(logger *log.Logger, sessionID, userID, action, details string) {
+	activity := NewActivityLog(sessionID, userID, action, details)
+	jsonData, err := activity.ToJSON()
+	if err != nil {
+		logger.Printf("Failed to marshal activity log: %v", err)
+		return
 	}
-
-	if len(validReqs) >= rl.maxReqs {
-		return false
-	}
-
-	validReqs = append(validReqs, now)
-	rl.requests[ip] = validReqs
-	return true
+	logger.Println(string(jsonData))
 }
 
-func (rl *RateLimiter) Cleanup() {
-	ticker := time.NewTicker(rl.window * 2)
-	go func() {
-		for range ticker.C {
-			now := time.Now()
-			for ip, requests := range rl.requests {
-				var validReqs []time.Time
-				for _, t := range requests {
-					if now.Sub(t) <= rl.window {
-						validReqs = append(validReqs, t)
-					}
-				}
-				if len(validReqs) == 0 {
-					delete(rl.requests, ip)
-				} else {
-					rl.requests[ip] = validReqs
-				}
-			}
-		}
-	}()
+func main() {
+	logger := log.New(os.Stdout, "ACTIVITY: ", log.LstdFlags)
+	
+	LogActivity(logger, "sess_abc123", "user_789", "LOGIN", "User logged in from IP 192.168.1.100")
+	LogActivity(logger, "sess_abc123", "user_789", "VIEW_PAGE", "Accessed dashboard page")
+	LogActivity(logger, "sess_abc123", "user_789", "LOGOUT", "User logged out after 15 minutes")
 }
