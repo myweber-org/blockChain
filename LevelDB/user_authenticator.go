@@ -10,7 +10,7 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
-func AuthMiddleware(next http.Handler) http.Handler {
+func Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -24,8 +24,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := parts[1]
-		userID, err := validateToken(tokenString)
+		token := parts[1]
+		userID, err := validateToken(token)
 		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
@@ -36,17 +36,19 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userIDKey).(string)
-	return userID, ok
-}
-
-func validateToken(tokenString string) (string, error) {
+func validateToken(token string) (string, error) {
 	// Token validation logic would go here
-	// For example, using jwt-go library
+	// For example, parse JWT and verify signature
 	// This is a simplified placeholder
-	if tokenString == "" {
+	if token == "" {
 		return "", http.ErrNoCookie
 	}
 	return "user123", nil
+}
+
+func GetUserID(ctx context.Context) string {
+	if val, ok := ctx.Value(userIDKey).(string); ok {
+		return val
+	}
+	return ""
 }
