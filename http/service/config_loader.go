@@ -230,4 +230,45 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 func overrideFromEnv(config interface{}) {
     // Environment variable override logic would be implemented here
     // This is a placeholder for the actual implementation
+}package config
+
+import (
+	"os"
+	"strconv"
+)
+
+type Config struct {
+	ServerPort int
+	DebugMode  bool
+	APIKey     string
+}
+
+func Load() (*Config, error) {
+	cfg := &Config{}
+
+	portStr := os.Getenv("SERVER_PORT")
+	if portStr != "" {
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ServerPort = port
+	} else {
+		cfg.ServerPort = 8080
+	}
+
+	debugStr := os.Getenv("DEBUG_MODE")
+	if debugStr != "" {
+		debug, err := strconv.ParseBool(debugStr)
+		if err != nil {
+			return nil, err
+		}
+		cfg.DebugMode = debug
+	} else {
+		cfg.DebugMode = false
+	}
+
+	cfg.APIKey = os.Getenv("API_KEY")
+
+	return cfg, nil
 }
