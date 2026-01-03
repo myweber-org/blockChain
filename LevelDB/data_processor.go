@@ -65,4 +65,31 @@ func main() {
 	for _, rec := range processed {
 		fmt.Printf("Processed: %+v\n", rec)
 	}
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+)
+
+func ValidateJSON(data []byte) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := json.Unmarshal(data, &result)
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON format: %w", err)
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("JSON object is empty")
+	}
+	return result, nil
+}
+
+func main() {
+	jsonData := `{"name": "test", "value": 42}`
+	parsed, err := ValidateJSON([]byte(jsonData))
+	if err != nil {
+		log.Fatalf("Validation failed: %v", err)
+	}
+	fmt.Printf("Parsed data: %v\n", parsed)
 }
