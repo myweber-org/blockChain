@@ -174,3 +174,105 @@ func decryptData(encryptedText string, key []byte) ([]byte, error) {
     nonce, ciphertext := data[:nonceSize], data[nonceSize:]
     return gcm.Open(nil, nonce, ciphertext, nil)
 }
+package main
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+)
+
+func encrypt(plaintext []byte, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+func decrypt(ciphertext []byte, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	return gcm.Open(nil, nonce, ciphertext, nil)
+}
+
+func generateKey() ([]byte, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run file_encryption.go <encrypt|decrypt>")
+		os.Exit(1)
+	}
+
+	operation := os.Args[1]
+	key, err := generateKey()
+	if err != nil {
+		fmt.Printf("Key generation failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	keyBase64 := base64.StdEncoding.EncodeToString(key)
+	fmt.Printf("Generated key (base64): %s\n", keyBase64)
+
+	sampleText := "This is a secret message that needs protection"
+	fmt.Printf("Original text: %s\n", sampleText)
+
+	if operation == "encrypt" {
+		encrypted, err := encrypt([]byte(sampleText), key)
+		if err != nil {
+			fmt.Printf("Encryption failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		encryptedBase64 := base64.StdEncoding.EncodeToString(encrypted)
+		fmt.Printf("Encrypted text (base64): %s\n", encryptedBase64)
+
+	} else if operation == "decrypt" {
+		encrypted, _ := encrypt([]byte(sampleText), key)
+		decrypted, err := decrypt(encrypted, key)
+		if err != nil {
+			fmt.Printf("Decryption failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Decrypted text: %s\n", string(decrypted))
+	} else {
+		fmt.Println("Invalid operation. Use 'encrypt' or 'decrypt'")
+		os.Exit(1)
+	}
+}
