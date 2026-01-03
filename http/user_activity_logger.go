@@ -251,4 +251,90 @@ type responseRecorder struct {
 func (rr *responseRecorder) WriteHeader(code int) {
 	rr.statusCode = code
 	rr.ResponseWriter.WriteHeader(code)
+}package middleware
+
+import (
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
+)
+
+type ActivityLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	UserID    string    `json:"user_id"`
+	IPAddress string    `json:"ip_address"`
+	Endpoint  string    `json:"endpoint"`
+	Method    string    `json:"method"`
+	UserAgent string    `json:"user_agent"`
+}
+
+type RateLimiter struct {
+	mu       sync.Mutex
+	counters map[string]int
+	resetAt  time.Time
+}
+
+func NewRateLimiter() *RateLimiter {
+	return &RateLimiter{
+		counters: make(map[string]int),
+		resetAt:  time.Now().Add(time.Minute),
+	}
+}
+
+func (rl *RateLimiter) Allow(key string, limit int) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if time.Now().After(rl.resetAt) {
+		rl.counters = make(map[string]int)
+		rl.resetAt = time.Now().Add(time.Minute)
+	}
+
+	if rl.counters[key] >= limit {
+		return false
+	}
+
+	rl.counters[key]++
+	return true
+}
+
+func ActivityLogger(next http.Handler, rateLimiter *RateLimiter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			ip = forwarded
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			userID = "anonymous"
+		}
+
+		key := ip + ":" + userID
+		if !rateLimiter.Allow(key, 100) {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+
+		logEntry := ActivityLog{
+			Timestamp: time.Now().UTC(),
+			UserID:    userID,
+			IPAddress: ip,
+			Endpoint:  r.URL.Path,
+			Method:    r.Method,
+			UserAgent: r.UserAgent(),
+		}
+
+		logData, err := json.Marshal(logEntry)
+		if err == nil {
+			go func() {
+				// In production, this would send to a logging service
+				// For now just print to stdout
+				println(string(logData))
+			}()
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
