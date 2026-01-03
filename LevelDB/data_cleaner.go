@@ -1,70 +1,49 @@
+package datautil
 
-package main
+import "sort"
 
-import "fmt"
+func RemoveDuplicates[T comparable](input []T) []T {
+    if len(input) == 0 {
+        return input
+    }
 
-func RemoveDuplicates(nums []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
+    seen := make(map[T]bool)
+    result := make([]T, 0, len(input))
 
-	for _, num := range nums {
-		if !seen[num] {
-			seen[num] = true
-			result = append(result, num)
-		}
-	}
-	return result
+    for _, item := range input {
+        if !seen[item] {
+            seen[item] = true
+            result = append(result, item)
+        }
+    }
+
+    return result
 }
 
-func main() {
-	input := []int{1, 2, 2, 3, 4, 4, 5, 1, 6}
-	cleaned := RemoveDuplicates(input)
-	fmt.Printf("Original: %v\n", input)
-	fmt.Printf("Cleaned: %v\n", cleaned)
-}
-package main
+func RemoveDuplicatesSorted[T comparable](input []T) []T {
+    if len(input) == 0 {
+        return input
+    }
 
-import "fmt"
+    sort.Slice(input, func(i, j int) bool {
+        switch v := any(input[i]).(type) {
+        case int:
+            return v < any(input[j]).(int)
+        case string:
+            return v < any(input[j]).(string)
+        default:
+            return false
+        }
+    })
 
-func RemoveDuplicates(nums []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
+    result := make([]T, 0, len(input))
+    result = append(result, input[0])
 
-	for _, num := range nums {
-		if !seen[num] {
-			seen[num] = true
-			result = append(result, num)
-		}
-	}
-	return result
-}
+    for i := 1; i < len(input); i++ {
+        if input[i] != input[i-1] {
+            result = append(result, input[i])
+        }
+    }
 
-func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5, 1, 6}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}
-package main
-
-import "fmt"
-
-func removeDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5, 6, 6, 7}
-	cleanedData := removeDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleanedData)
+    return result
 }
