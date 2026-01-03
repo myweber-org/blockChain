@@ -49,4 +49,38 @@ func cleanupExpiredSessions(ctx context.Context, db *database.DB) error {
 
 	log.Printf("Cleaned up %d expired sessions", rowsAffected)
 	return nil
+}package main
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/go-redis/redis/v8"
+)
+
+func main() {
+	ctx := context.Background()
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		now := time.Now().Unix()
+		maxScore := float64(now - 86400) // 24 hours ago
+
+		// Remove expired sessions from sorted set
+		removed, err := rdb.ZRemRangeByScore(ctx, "user_sessions", "0", string(maxScore)).Result()
+		if err != nil {
+			log.Printf("Failed to clean sessions: %v", err)
+			continue
+		}
+
+		if removed > 0 {
+			log.Printf("Cleaned %d expired sessions", removed)
+		}
+	}
 }
