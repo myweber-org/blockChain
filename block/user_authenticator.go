@@ -1,50 +1,6 @@
 package middleware
 
 import (
-    "net/http"
-    "strings"
-    "github.com/dgrijalva/jwt-go"
-)
-
-type Claims struct {
-    Username string `json:"username"`
-    Role     string `json:"role"`
-    jwt.StandardClaims
-}
-
-func AuthMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        authHeader := r.Header.Get("Authorization")
-        if authHeader == "" {
-            http.Error(w, "Authorization header required", http.StatusUnauthorized)
-            return
-        }
-
-        parts := strings.Split(authHeader, " ")
-        if len(parts) != 2 || parts[0] != "Bearer" {
-            http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-            return
-        }
-
-        tokenString := parts[1]
-        claims := &Claims{}
-
-        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-            return []byte("your-secret-key"), nil
-        })
-
-        if err != nil || !token.Valid {
-            http.Error(w, "Invalid token", http.StatusUnauthorized)
-            return
-        }
-
-        r.Header.Set("X-Username", claims.Username)
-        r.Header.Set("X-Role", claims.Role)
-        next.ServeHTTP(w, r)
-    })
-}package middleware
-
-import (
 	"context"
 	"net/http"
 	"strings"
@@ -87,16 +43,13 @@ func GetUserID(ctx context.Context) (string, bool) {
 
 func validateToken(tokenString string) (string, error) {
 	// Simplified token validation - in production use a proper JWT library
-	// This is a placeholder implementation
-	if tokenString == "" {
-		return "", http.ErrNoCookie
+	// This is just a placeholder implementation
+	if tokenString == "" || len(tokenString) < 10 {
+		return "", http.ErrAbortHandler
 	}
 	
-	// Mock validation - replace with actual JWT validation
-	if strings.HasPrefix(tokenString, "valid_") {
-		userID := strings.TrimPrefix(tokenString, "valid_")
-		return userID, nil
-	}
-	
-	return "", http.ErrNoCookie
+	// Mock validation - extract user ID from token
+	// In real implementation, parse JWT and verify signature
+	userID := "user_" + tokenString[:8]
+	return userID, nil
 }
