@@ -1,61 +1,72 @@
-
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 )
 
-type DataRecord struct {
-	ID    int
-	Email string
-	Valid bool
-}
+func cleanCSV(inputPath, outputPath string) error {
+	inFile, err := os.Open(inputPath)
+	if err != nil {
+		return err
+	}
+	defer inFile.Close()
 
-func deduplicateEmails(emails []string) []string {
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	reader := csv.NewReader(inFile)
+	writer := csv.NewWriter(outFile)
+	defer writer.Flush()
+
+	header, err := reader.Read()
+	if err != nil {
+		return err
+	}
+
 	seen := make(map[string]bool)
-	result := []string{}
-	for _, email := range emails {
-		email = strings.ToLower(strings.TrimSpace(email))
-		if !seen[email] {
-			seen[email] = true
-			result = append(result, email)
+	writer.Write(header)
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		for i, val := range record {
+			record[i] = strings.TrimSpace(val)
+		}
+
+		key := strings.Join(record, "|")
+		if !seen[key] {
+			seen[key] = true
+			writer.Write(record)
 		}
 	}
-	return result
-}
 
-func validateEmail(email string) bool {
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
-}
-
-func processRecords(records []DataRecord) []DataRecord {
-	emailMap := make(map[string]bool)
-	var validRecords []DataRecord
-
-	for _, record := range records {
-		cleanEmail := strings.ToLower(strings.TrimSpace(record.Email))
-		if validateEmail(cleanEmail) && !emailMap[cleanEmail] {
-			emailMap[cleanEmail] = true
-			record.Valid = true
-			validRecords = append(validRecords, record)
-		}
-	}
-	return validRecords
+	return nil
 }
 
 func main() {
-	records := []DataRecord{
-		{1, "user@example.com", false},
-		{2, "USER@example.com", false},
-		{3, "invalid-email", false},
-		{4, "test@domain.org", false},
-		{5, "user@example.com", false},
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_cleaner <input.csv> <output.csv>")
+		os.Exit(1)
 	}
 
-	cleaned := processRecords(records)
-	fmt.Printf("Processed %d records, %d valid after cleaning\n", len(records), len(cleaned))
-	for _, r := range cleaned {
-		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
+	err := cleanCSV(os.Args[1], os.Args[2])
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
 	}
+
+	fmt.Println("Data cleaning completed successfully")
 }
