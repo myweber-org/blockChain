@@ -1,71 +1,58 @@
-
 package main
 
 import (
 	"errors"
 	"strings"
-	"time"
+	"unicode"
 )
 
-type DataRecord struct {
-	ID        string
-	Value     float64
-	Timestamp time.Time
-	Tags      []string
+type UserData struct {
+	Username string
+	Email    string
+	Age      int
 }
 
-func ValidateRecord(record DataRecord) error {
-	if record.ID == "" {
-		return errors.New("ID cannot be empty")
+func ValidateUserData(data UserData) error {
+	if strings.TrimSpace(data.Username) == "" {
+		return errors.New("username cannot be empty")
 	}
-	if record.Value < 0 {
-		return errors.New("value must be non-negative")
+	if len(data.Username) < 3 || len(data.Username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
 	}
-	if record.Timestamp.IsZero() {
-		return errors.New("timestamp must be set")
+	for _, r := range data.Username {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return errors.New("username can only contain letters, digits, and underscores")
+		}
 	}
+
+	if !strings.Contains(data.Email, "@") {
+		return errors.New("invalid email format")
+	}
+
+	if data.Age < 0 || data.Age > 150 {
+		return errors.New("age must be between 0 and 150")
+	}
+
 	return nil
 }
 
-func TransformRecord(record DataRecord) DataRecord {
-	transformed := record
-	transformed.Value = record.Value * 1.1
-	transformed.Tags = append(record.Tags, "processed")
-	return transformed
+func NormalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
 }
 
-func FilterRecords(records []DataRecord, minValue float64) []DataRecord {
-	var filtered []DataRecord
-	for _, record := range records {
-		if record.Value >= minValue {
-			filtered = append(filtered, record)
-		}
-	}
-	return filtered
-}
+func ProcessUserInput(rawUsername string, rawEmail string, rawAge int) (UserData, error) {
+	normalizedUsername := NormalizeUsername(rawUsername)
 
-func NormalizeTags(tags []string) []string {
-	normalized := make([]string, 0, len(tags))
-	seen := make(map[string]bool)
-	
-	for _, tag := range tags {
-		cleanTag := strings.ToLower(strings.TrimSpace(tag))
-		if cleanTag != "" && !seen[cleanTag] {
-			seen[cleanTag] = true
-			normalized = append(normalized, cleanTag)
-		}
+	userData := UserData{
+		Username: normalizedUsername,
+		Email:    strings.TrimSpace(rawEmail),
+		Age:      rawAge,
 	}
-	return normalized
-}
 
-func CalculateAverage(records []DataRecord) float64 {
-	if len(records) == 0 {
-		return 0
+	err := ValidateUserData(userData)
+	if err != nil {
+		return UserData{}, err
 	}
-	
-	var sum float64
-	for _, record := range records {
-		sum += record.Value
-	}
-	return sum / float64(len(records))
+
+	return userData, nil
 }
