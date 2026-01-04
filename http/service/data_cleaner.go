@@ -133,3 +133,31 @@ func main() {
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+func SanitizeInput(input string) string {
+	trimmed := strings.TrimSpace(input)
+	normalized := normalizeSpaces(trimmed)
+	cleaned := removeSpecialChars(normalized)
+	return cleaned
+}
+
+func normalizeSpaces(s string) string {
+	space := regexp.MustCompile(`\s+`)
+	return space.ReplaceAllString(s, " ")
+}
+
+func removeSpecialChars(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return -1
+	}, s)
+}
