@@ -1,117 +1,129 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
-	"fmt"
-	"io"
-	"os"
+    "crypto/aes"
+    "crypto/cipher"
+    "crypto/rand"
+    "crypto/sha256"
+    "encoding/base64"
+    "errors"
+    "fmt"
+    "io"
+    "os"
 )
 
-func encryptData(plaintext []byte, key []byte) (string, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", err
-	}
-
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+func deriveKey(passphrase string, salt []byte) []byte {
+    hash := sha256.New()
+    hash.Write([]byte(passphrase))
+    hash.Write(salt)
+    return hash.Sum(nil)
 }
 
-func decryptData(encrypted string, key []byte) ([]byte, error) {
-	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
-	if err != nil {
-		return nil, err
-	}
+func encrypt(plaintext []byte, passphrase string) (string, error) {
+    salt := make([]byte, 16)
+    if _, err := rand.Read(salt); err != nil {
+        return "", err
+    }
 
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
+    key := deriveKey(passphrase, salt)
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return "", err
+    }
 
-	if len(ciphertext) < aes.BlockSize {
-		return nil, errors.New("ciphertext too short")
-	}
+    gcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return "", err
+    }
 
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
+    nonce := make([]byte, gcm.NonceSize())
+    if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+        return "", err
+    }
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(ciphertext, ciphertext)
-
-	return ciphertext, nil
+    ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+    ciphertext = append(salt, ciphertext...)
+    return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-func generateKey() ([]byte, error) {
-	key := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return nil, err
-	}
-	return key, nil
+func decrypt(encodedCiphertext string, passphrase string) ([]byte, error) {
+    ciphertext, err := base64.StdEncoding.DecodeString(encodedCiphertext)
+    if err != nil {
+        return nil, err
+    }
+
+    if len(ciphertext) < 16 {
+        return nil, errors.New("ciphertext too short")
+    }
+
+    salt := ciphertext[:16]
+    ciphertext = ciphertext[16:]
+
+    key := deriveKey(passphrase, salt)
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, err
+    }
+
+    gcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return nil, err
+    }
+
+    nonceSize := gcm.NonceSize()
+    if len(ciphertext) < nonceSize {
+        return nil, errors.New("ciphertext too short")
+    }
+
+    nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+    return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run file_encryption_tool.go <command>")
-		fmt.Println("Commands: generate-key, encrypt <text>, decrypt <encrypted>")
-		return
-	}
+    if len(os.Args) != 4 {
+        fmt.Println("Usage: go run file_encryption_tool.go <encrypt|decrypt> <input_file> <passphrase>")
+        os.Exit(1)
+    }
 
-	switch os.Args[1] {
-	case "generate-key":
-		key, err := generateKey()
-		if err != nil {
-			fmt.Printf("Error generating key: %v\n", err)
-			return
-		}
-		fmt.Printf("Generated key: %s\n", base64.StdEncoding.EncodeToString(key))
+    mode := os.Args[1]
+    filename := os.Args[2]
+    passphrase := os.Args[3]
 
-	case "encrypt":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: encrypt <key> <text>")
-			return
-		}
-		key, err := base64.StdEncoding.DecodeString(os.Args[2])
-		if err != nil {
-			fmt.Printf("Invalid key: %v\n", err)
-			return
-		}
-		encrypted, err := encryptData([]byte(os.Args[3]), key)
-		if err != nil {
-			fmt.Printf("Encryption error: %v\n", err)
-			return
-		}
-		fmt.Printf("Encrypted: %s\n", encrypted)
+    data, err := os.ReadFile(filename)
+    if err != nil {
+        fmt.Printf("Error reading file: %v\n", err)
+        os.Exit(1)
+    }
 
-	case "decrypt":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: decrypt <key> <encrypted>")
-			return
-		}
-		key, err := base64.StdEncoding.DecodeString(os.Args[2])
-		if err != nil {
-			fmt.Printf("Invalid key: %v\n", err)
-			return
-		}
-		decrypted, err := decryptData(os.Args[3], key)
-		if err != nil {
-			fmt.Printf("Decryption error: %v\n", err)
-			return
-		}
-		fmt.Printf("Decrypted: %s\n", decrypted)
+    switch mode {
+    case "encrypt":
+        encrypted, err := encrypt(data, passphrase)
+        if err != nil {
+            fmt.Printf("Encryption failed: %v\n", err)
+            os.Exit(1)
+        }
+        outputFile := filename + ".enc"
+        if err := os.WriteFile(outputFile, []byte(encrypted), 0644); err != nil {
+            fmt.Printf("Error writing encrypted file: %v\n", err)
+            os.Exit(1)
+        }
+        fmt.Printf("Encrypted file saved as: %s\n", outputFile)
 
-	default:
-		fmt.Println("Unknown command")
-	}
+    case "decrypt":
+        decrypted, err := decrypt(string(data), passphrase)
+        if err != nil {
+            fmt.Printf("Decryption failed: %v\n", err)
+            os.Exit(1)
+        }
+        outputFile := filename + ".dec"
+        if err := os.WriteFile(outputFile, decrypted, 0644); err != nil {
+            fmt.Printf("Error writing decrypted file: %v\n", err)
+            os.Exit(1)
+        }
+        fmt.Printf("Decrypted file saved as: %s\n", outputFile)
+
+    default:
+        fmt.Println("Invalid mode. Use 'encrypt' or 'decrypt'")
+        os.Exit(1)
+    }
 }
