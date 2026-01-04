@@ -4,68 +4,88 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"sync"
 	"time"
 )
 
 type Session struct {
-	ID        string
-	UserID    int
-	CreatedAt time.Time
+	UserID    string
 	ExpiresAt time.Time
+	Data      map[string]interface{}
 }
 
 type Manager struct {
 	sessions map[string]Session
-	duration time.Duration
+	mu       sync.RWMutex
+	ttl      time.Duration
 }
 
-func NewManager(sessionDuration time.Duration) *Manager {
+func NewManager(ttl time.Duration) *Manager {
 	return &Manager{
 		sessions: make(map[string]Session),
-		duration: sessionDuration,
+		ttl:      ttl,
 	}
 }
 
-func (m *Manager) Create(userID int) (string, error) {
+func (m *Manager) Create(userID string, data map[string]interface{}) (string, error) {
 	token, err := generateToken()
 	if err != nil {
 		return "", err
 	}
 
-	now := time.Now()
 	session := Session{
-		ID:        token,
 		UserID:    userID,
-		CreatedAt: now,
-		ExpiresAt: now.Add(m.duration),
+		ExpiresAt: time.Now().Add(m.ttl),
+		Data:      data,
 	}
 
+	m.mu.Lock()
 	m.sessions[token] = session
+	m.mu.Unlock()
+
 	return token, nil
 }
 
-func (m *Manager) Validate(token string) (int, error) {
+func (m *Manager) Validate(token string) (Session, error) {
+	m.mu.RLock()
 	session, exists := m.sessions[token]
+	m.mu.RUnlock()
+
 	if !exists {
-		return 0, errors.New("session not found")
+		return Session{}, errors.New("session not found")
 	}
 
 	if time.Now().After(session.ExpiresAt) {
-		delete(m.sessions, token)
-		return 0, errors.New("session expired")
+		m.Delete(token)
+		return Session{}, errors.New("session expired")
 	}
 
-	return session.UserID, nil
+	return session, nil
 }
 
-func (m *Manager) Invalidate(token string) {
+func (m *Manager) Delete(token string) {
+	m.mu.Lock()
 	delete(m.sessions, token)
+	m.mu.Unlock()
+}
+
+func (m *Manager) Cleanup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	for token, session := range m.sessions {
+		if now.After(session.ExpiresAt) {
+			delete(m.sessions, token)
+		}
+	}
 }
 
 func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+	return base64.URLEncoding.EncodeToString(b), nil
 }
