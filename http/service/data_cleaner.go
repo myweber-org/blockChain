@@ -1,163 +1,65 @@
-
 package main
 
 import (
-    "encoding/csv"
-    "fmt"
-    "io"
-    "os"
-    "strconv"
-    "strings"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 )
 
-type Record struct {
-    ID    int
-    Name  string
-    Email string
-    Score float64
-}
+func cleanCSV(inputPath, outputPath string) error {
+	inFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inFile.Close()
 
-func cleanEmail(email string) string {
-    return strings.ToLower(strings.TrimSpace(email))
-}
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
 
-func validateScore(score float64) bool {
-    return score >= 0 && score <= 100
-}
+	reader := csv.NewReader(inFile)
+	writer := csv.NewWriter(outFile)
+	defer writer.Flush()
 
-func parseCSVFile(filename string) ([]Record, error) {
-    file, err := os.Open(filename)
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read CSV record: %w", err)
+		}
 
-    reader := csv.NewReader(file)
-    var records []Record
-    lineNum := 0
+		cleanedRecord := make([]string, len(record))
+		for i, field := range record {
+			cleanedRecord[i] = strings.TrimSpace(field)
+		}
 
-    for {
-        line, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return nil, err
-        }
-
-        lineNum++
-        if lineNum == 1 {
-            continue
-        }
-
-        if len(line) != 4 {
-            continue
-        }
-
-        id, err := strconv.Atoi(strings.TrimSpace(line[0]))
-        if err != nil {
-            continue
-        }
-
-        name := strings.TrimSpace(line[1])
-        email := cleanEmail(line[2])
-
-        score, err := strconv.ParseFloat(strings.TrimSpace(line[3]), 64)
-        if err != nil || !validateScore(score) {
-            continue
-        }
-
-        records = append(records, Record{
-            ID:    id,
-            Name:  name,
-            Email: email,
-            Score: score,
-        })
-    }
-
-    return records, nil
-}
-
-func calculateAverageScore(records []Record) float64 {
-    if len(records) == 0 {
-        return 0
-    }
-
-    total := 0.0
-    for _, record := range records {
-        total += record.Score
-    }
-    return total / float64(len(records))
-}
-
-func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: data_cleaner <csv_file>")
-        return
-    }
-
-    records, err := parseCSVFile(os.Args[1])
-    if err != nil {
-        fmt.Printf("Error processing file: %v\n", err)
-        return
-    }
-
-    fmt.Printf("Processed %d valid records\n", len(records))
-    fmt.Printf("Average score: %.2f\n", calculateAverageScore(records))
-
-    for i, record := range records {
-        if i < 3 {
-            fmt.Printf("Sample record: %+v\n", record)
-        }
-    }
-}package main
-
-import "fmt"
-
-func RemoveDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
+		if err := writer.Write(cleanedRecord); err != nil {
+			return fmt.Errorf("failed to write CSV record: %w", err)
 		}
 	}
-	return result
+
+	return nil
 }
 
 func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5, 6, 6}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}
-package main
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_cleaner <input.csv> <output.csv>")
+		os.Exit(1)
+	}
 
-import (
-	"regexp"
-	"strings"
-	"unicode"
-)
+	inputFile := os.Args[1]
+	outputFile := os.Args[2]
 
-func SanitizeInput(input string) string {
-	trimmed := strings.TrimSpace(input)
-	normalized := normalizeSpaces(trimmed)
-	cleaned := removeSpecialChars(normalized)
-	return cleaned
-}
+	if err := cleanCSV(inputFile, outputFile); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 
-func normalizeSpaces(s string) string {
-	space := regexp.MustCompile(`\s+`)
-	return space.ReplaceAllString(s, " ")
-}
-
-func removeSpecialChars(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
-			return r
-		}
-		return -1
-	}, s)
+	fmt.Println("CSV cleaning completed successfully")
 }
