@@ -1,45 +1,60 @@
+
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-func removeDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
+type DataRecord struct {
+	ID    int
+	Email string
+	Valid bool
+}
 
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
+func deduplicateRecords(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var unique []DataRecord
+
+	for _, record := range records {
+		key := strings.ToLower(strings.TrimSpace(record.Email))
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, record)
 		}
 	}
-	return result
+	return unique
+}
+
+func validateEmails(records []DataRecord) []DataRecord {
+	var valid []DataRecord
+	for _, record := range records {
+		if strings.Contains(record.Email, "@") && strings.Contains(record.Email, ".") {
+			record.Valid = true
+			valid = append(valid, record)
+		}
+	}
+	return valid
+}
+
+func processData(records []DataRecord) []DataRecord {
+	deduped := deduplicateRecords(records)
+	validated := validateEmails(deduped)
+	return validated
 }
 
 func main() {
-	data := []int{5, 2, 8, 2, 5, 9, 8, 1}
-	cleaned := removeDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}package main
-
-import "fmt"
-
-func RemoveDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
+	sampleData := []DataRecord{
+		{1, "user@example.com", false},
+		{2, "user@example.com", false},
+		{3, "invalid-email", false},
+		{4, "test@domain.org", false},
+		{5, "TEST@DOMAIN.ORG", false},
 	}
-	return result
-}
 
-func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
+	result := processData(sampleData)
+	fmt.Printf("Processed %d records\n", len(result))
+	for _, r := range result {
+		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
+	}
 }
