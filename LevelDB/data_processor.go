@@ -51,3 +51,37 @@ func ProcessUserData(data UserData) (UserData, error) {
 
 	return data, nil
 }
+package main
+
+import (
+	"errors"
+	"strings"
+)
+
+func ValidateEmail(email string) error {
+	if !strings.Contains(email, "@") {
+		return errors.New("invalid email format")
+	}
+	if strings.Count(email, "@") > 1 {
+		return errors.New("invalid email format")
+	}
+	return nil
+}
+
+func TrimAndTitle(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return trimmed
+	}
+	return strings.ToUpper(trimmed[:1]) + strings.ToLower(trimmed[1:])
+}
+
+func FilterEmptyStrings(slice []string) []string {
+	var result []string
+	for _, s := range slice {
+		if strings.TrimSpace(s) != "" {
+			result = append(result, s)
+		}
+	}
+	return result
+}
