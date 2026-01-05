@@ -1,3 +1,4 @@
+
 package middleware
 
 import (
@@ -17,27 +18,23 @@ func NewActivityLogger(logger *log.Logger) *ActivityLogger {
 func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		userAgent := r.UserAgent()
-		clientIP := r.RemoteAddr
-		method := r.Method
-		path := r.URL.Path
-
+		
 		recorder := &responseRecorder{
 			ResponseWriter: w,
 			statusCode:     http.StatusOK,
 		}
-
+		
 		next.ServeHTTP(recorder, r)
-
+		
 		duration := time.Since(start)
+		
 		al.Logger.Printf(
-			"IP: %s | Method: %s | Path: %s | Status: %d | Duration: %v | Agent: %s",
-			clientIP,
-			method,
-			path,
+			"%s %s %d %s %s",
+			r.Method,
+			r.URL.Path,
 			recorder.statusCode,
-			duration,
-			userAgent,
+			duration.String(),
+			r.RemoteAddr,
 		)
 	})
 }
