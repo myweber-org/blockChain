@@ -14,18 +14,18 @@ type LogEntry struct {
 	Message   string
 }
 
-func parseLogLine(line string) (LogEntry, error) {
+func parseLogLine(line string) (*LogEntry, error) {
 	pattern := `^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.+)$`
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(line)
 
-	if len(matches) != 4 {
-		return LogEntry{}, fmt.Errorf("invalid log format")
+	if matches == nil {
+		return nil, fmt.Errorf("invalid log format")
 	}
 
-	return LogEntry{
+	return &LogEntry{
 		Timestamp: matches[1],
-		Level:     strings.ToUpper(matches[2]),
+		Level:     matches[2],
 		Message:   matches[3],
 	}, nil
 }
@@ -33,7 +33,7 @@ func parseLogLine(line string) (LogEntry, error) {
 func filterErrors(entries []LogEntry) []LogEntry {
 	var errorEntries []LogEntry
 	for _, entry := range entries {
-		if entry.Level == "ERROR" {
+		if strings.ToUpper(entry.Level) == "ERROR" {
 			errorEntries = append(errorEntries, entry)
 		}
 	}
@@ -49,16 +49,12 @@ func readLogFile(filename string) ([]LogEntry, error) {
 
 	var entries []LogEntry
 	scanner := bufio.NewScanner(file)
-	lineNumber := 0
 
 	for scanner.Scan() {
-		lineNumber++
 		entry, err := parseLogLine(scanner.Text())
-		if err != nil {
-			fmt.Printf("Warning: Failed to parse line %d: %v\n", lineNumber, err)
-			continue
+		if err == nil {
+			entries = append(entries, *entry)
 		}
-		entries = append(entries, entry)
 	}
 
 	if err := scanner.Err(); err != nil {
