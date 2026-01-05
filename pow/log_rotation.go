@@ -124,4 +124,146 @@ func main() {
 		logger.WriteString(time.Now().Format("2006-01-02 15:04:05") + " - Log entry " + strconv.Itoa(i) + "\n")
 		time.Sleep(10 * time.Millisecond)
 	}
+}package main
+
+import (
+	"compress/gzip"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+const (
+	maxLogSize   = 10 * 1024 * 1024 // 10MB
+	backupCount  = 5
+	logDir       = "./logs"
+	currentLog   = "app.log"
+)
+
+type RotatingLogger struct {
+	mu       sync.Mutex
+	file     *os.File
+	size     int64
+	basePath string
+}
+
+func NewRotatingLogger() (*RotatingLogger, error) {
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(logDir, currentLog)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	info, _ := file.Stat()
+	return &RotatingLogger{
+		file:     file,
+		size:     info.Size(),
+		basePath: path,
+	}, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	n, err := rl.file.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	rl.size += int64(n)
+	if rl.size >= maxLogSize {
+		if err := rl.rotate(); err != nil {
+			log.Printf("Rotation failed: %v", err)
+		}
+	}
+	return n, nil
+}
+
+func (rl *RotatingLogger) rotate() error {
+	rl.file.Close()
+
+	backupPath := fmt.Sprintf("%s.%s.gz",
+		rl.basePath,
+		time.Now().Format("20060102-150405"),
+	)
+
+	src, err := os.Open(rl.basePath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(backupPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	gz := gzip.NewWriter(dst)
+	defer gz.Close()
+
+	if _, err := io.Copy(gz, src); err != nil {
+		return err
+	}
+
+	if err := os.Remove(rl.basePath); err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(rl.basePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	rl.file = file
+	rl.size = 0
+	rl.cleanOldBackups()
+	return nil
+}
+
+func (rl *RotatingLogger) cleanOldBackups() {
+	pattern := filepath.Join(logDir, currentLog+".*.gz")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return
+	}
+
+	if len(matches) <= backupCount {
+		return
+	}
+
+	toDelete := matches[:len(matches)-backupCount]
+	for _, path := range toDelete {
+		os.Remove(path)
+	}
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return rl.file.Close()
+}
+
+func main() {
+	logger, err := NewRotatingLogger()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	log.SetOutput(logger)
+
+	for i := 0; i < 10000; i++ {
+		log.Printf("Log entry %d: Application event processed", i)
+		time.Sleep(10 * time.Millisecond)
+	}
 }
