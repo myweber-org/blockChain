@@ -3,75 +3,47 @@ package middleware
 import (
 	"log"
 	"net/http"
-	"sync"
 	"time"
 )
 
 type ActivityLogger struct {
-	mu          sync.RWMutex
-	userHits    map[string][]time.Time
-	windowSize  time.Duration
-	maxRequests int
+	Logger *log.Logger
 }
 
-func NewActivityLogger(window time.Duration, max int) *ActivityLogger {
-	return &ActivityLogger{
-		userHits:    make(map[string][]time.Time),
-		windowSize:  window,
-		maxRequests: max,
-	}
+func NewActivityLogger(logger *log.Logger) *ActivityLogger {
+	return &ActivityLogger{Logger: logger}
 }
 
-func (al *ActivityLogger) LogActivity(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userIP := r.RemoteAddr
-		currentTime := time.Now()
-
-		al.mu.Lock()
-		defer al.mu.Unlock()
-
-		hits := al.userHits[userIP]
-		validHits := []time.Time{}
-		for _, hit := range hits {
-			if currentTime.Sub(hit) <= al.windowSize {
-				validHits = append(validHits, hit)
-			}
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		
+		recorder := &responseRecorder{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
 		}
-
-		if len(validHits) >= al.maxRequests {
-			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			log.Printf("Rate limit exceeded for IP: %s", userIP)
-			return
-		}
-
-		validHits = append(validHits, currentTime)
-		al.userHits[userIP] = validHits
-
-		log.Printf("Activity from IP %s at %s", userIP, currentTime.Format(time.RFC3339))
-		next.ServeHTTP(w, r)
-	}
+		
+		next.ServeHTTP(recorder, r)
+		
+		duration := time.Since(start)
+		
+		al.Logger.Printf(
+			"[%s] %s %s %d %s",
+			time.Now().Format(time.RFC3339),
+			r.Method,
+			r.URL.Path,
+			recorder.statusCode,
+			duration,
+		)
+	})
 }
 
-func (al *ActivityLogger) Cleanup() {
-	ticker := time.NewTicker(al.windowSize * 2)
-	go func() {
-		for range ticker.C {
-			al.mu.Lock()
-			cutoff := time.Now().Add(-al.windowSize)
-			for ip, hits := range al.userHits {
-				validHits := []time.Time{}
-				for _, hit := range hits {
-					if hit.After(cutoff) {
-						validHits = append(validHits, hit)
-					}
-				}
-				if len(validHits) == 0 {
-					delete(al.userHits, ip)
-				} else {
-					al.userHits[ip] = validHits
-				}
-			}
-			al.mu.Unlock()
-		}
-	}()
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.statusCode = code
+	rr.ResponseWriter.WriteHeader(code)
 }
