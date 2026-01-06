@@ -2,111 +2,103 @@
 package main
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
-	"log"
-	"os"
-	"strings"
+    "encoding/csv"
+    "encoding/json"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
 )
 
-type DataProcessor struct {
-	InputPath  string
-	OutputPath string
+type Record struct {
+    ID    int     `json:"id"`
+    Name  string  `json:"name"`
+    Value float64 `json:"value"`
 }
 
-func NewDataProcessor(input, output string) *DataProcessor {
-	return &DataProcessor{
-		InputPath:  input,
-		OutputPath: output,
-	}
+func processCSVFile(inputPath string) ([]Record, error) {
+    file, err := os.Open(inputPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    reader.TrimLeadingSpace = true
+
+    var records []Record
+    lineNumber := 0
+
+    for {
+        lineNumber++
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, fmt.Errorf("csv read error on line %d: %w", lineNumber, err)
+        }
+
+        if len(row) != 3 {
+            return nil, fmt.Errorf("invalid column count on line %d: expected 3, got %d", lineNumber, len(row))
+        }
+
+        id, err := strconv.Atoi(row[0])
+        if err != nil {
+            return nil, fmt.Errorf("invalid ID on line %d: %w", lineNumber, err)
+        }
+
+        value, err := strconv.ParseFloat(row[2], 64)
+        if err != nil {
+            return nil, fmt.Errorf("invalid value on line %d: %w", lineNumber, err)
+        }
+
+        records = append(records, Record{
+            ID:    id,
+            Name:  row[1],
+            Value: value,
+        })
+    }
+
+    return records, nil
 }
 
-func (dp *DataProcessor) ValidateAndClean() error {
-	inputFile, err := os.Open(dp.InputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input file: %w", err)
-	}
-	defer inputFile.Close()
+func generateJSONOutput(records []Record, outputPath string) error {
+    outputFile, err := os.Create(outputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
 
-	outputFile, err := os.Create(dp.OutputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outputFile.Close()
+    encoder := json.NewEncoder(outputFile)
+    encoder.SetIndent("", "  ")
 
-	reader := csv.NewReader(inputFile)
-	writer := csv.NewWriter(outputFile)
-	defer writer.Flush()
+    if err := encoder.Encode(records); err != nil {
+        return fmt.Errorf("failed to encode JSON: %w", err)
+    }
 
-	headers, err := reader.Read()
-	if err != nil {
-		return fmt.Errorf("failed to read headers: %w", err)
-	}
-
-	cleanedHeaders := dp.cleanHeaders(headers)
-	if err := writer.Write(cleanedHeaders); err != nil {
-		return fmt.Errorf("failed to write headers: %w", err)
-	}
-
-	recordCount := 0
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Printf("warning: skipping invalid record: %v", err)
-			continue
-		}
-
-		cleanedRecord := dp.cleanRecord(record)
-		if dp.isValidRecord(cleanedRecord) {
-			if err := writer.Write(cleanedRecord); err != nil {
-				return fmt.Errorf("failed to write record: %w", err)
-			}
-			recordCount++
-		}
-	}
-
-	log.Printf("processed %d valid records", recordCount)
-	return nil
-}
-
-func (dp *DataProcessor) cleanHeaders(headers []string) []string {
-	cleaned := make([]string, len(headers))
-	for i, header := range headers {
-		cleaned[i] = strings.TrimSpace(header)
-		cleaned[i] = strings.ToLower(cleaned[i])
-		cleaned[i] = strings.ReplaceAll(cleaned[i], " ", "_")
-	}
-	return cleaned
-}
-
-func (dp *DataProcessor) cleanRecord(record []string) []string {
-	cleaned := make([]string, len(record))
-	for i, field := range record {
-		cleaned[i] = strings.TrimSpace(field)
-		if cleaned[i] == "" {
-			cleaned[i] = "N/A"
-		}
-	}
-	return cleaned
-}
-
-func (dp *DataProcessor) isValidRecord(record []string) bool {
-	for _, field := range record {
-		if field == "" {
-			return false
-		}
-	}
-	return true
+    return nil
 }
 
 func main() {
-	processor := NewDataProcessor("input.csv", "output.csv")
-	if err := processor.ValidateAndClean(); err != nil {
-		log.Fatalf("processing failed: %v", err)
-	}
-	fmt.Println("data processing completed successfully")
+    if len(os.Args) != 3 {
+        fmt.Println("Usage: data_processor <input.csv> <output.json>")
+        os.Exit(1)
+    }
+
+    inputFile := os.Args[1]
+    outputFile := os.Args[2]
+
+    records, err := processCSVFile(inputFile)
+    if err != nil {
+        fmt.Printf("Error processing CSV: %v\n", err)
+        os.Exit(1)
+    }
+
+    if err := generateJSONOutput(records, outputFile); err != nil {
+        fmt.Printf("Error generating JSON: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Successfully processed %d records to %s\n", len(records), outputFile)
 }
