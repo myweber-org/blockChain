@@ -101,4 +101,81 @@ func main() {
     }
 
     fmt.Printf("Successfully processed %d records to %s\n", len(records), outputFile)
+}package data_processor
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type ValidationRule func(interface{}) error
+
+type JSONProcessor struct {
+	rules map[string]ValidationRule
+}
+
+func NewJSONProcessor() *JSONProcessor {
+	return &JSONProcessor{
+		rules: make(map[string]ValidationRule),
+	}
+}
+
+func (jp *JSONProcessor) AddRule(field string, rule ValidationRule) {
+	jp.rules[field] = rule
+}
+
+func (jp *JSONProcessor) Process(rawData []byte) (map[string]interface{}, error) {
+	var data map[string]interface{}
+	
+	if err := json.Unmarshal(rawData, &data); err != nil {
+		return nil, fmt.Errorf("json unmarshal failed: %w", err)
+	}
+	
+	if len(jp.rules) == 0 {
+		return data, nil
+	}
+	
+	var validationErrors []string
+	
+	for field, rule := range jp.rules {
+		if value, exists := data[field]; exists {
+			if err := rule(value); err != nil {
+				validationErrors = append(validationErrors, fmt.Sprintf("%s: %v", field, err))
+			}
+		}
+	}
+	
+	if len(validationErrors) > 0 {
+		return nil, errors.New(strings.Join(validationErrors, "; "))
+	}
+	
+	return data, nil
+}
+
+func RequiredStringRule(value interface{}) error {
+	str, ok := value.(string)
+	if !ok {
+		return errors.New("must be a string")
+	}
+	
+	if strings.TrimSpace(str) == "" {
+		return errors.New("cannot be empty")
+	}
+	
+	return nil
+}
+
+func PositiveNumberRule(value interface{}) error {
+	num, ok := value.(float64)
+	if !ok {
+		return errors.New("must be a number")
+	}
+	
+	if num <= 0 {
+		return errors.New("must be positive")
+	}
+	
+	return nil
 }
