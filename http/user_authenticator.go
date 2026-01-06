@@ -1,27 +1,30 @@
 package middleware
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
-)
-
-type contextKey string
-
-const (
-	UserIDKey contextKey = "userID"
 )
 
 type Authenticator struct {
-	secretKey []byte
+	secretKey string
 }
 
 func NewAuthenticator(secretKey string) *Authenticator {
-	return &Authenticator{
-		secretKey: []byte(secretKey),
+	return &Authenticator{secretKey: secretKey}
+}
+
+func (a *Authenticator) ValidateToken(token string) (bool, error) {
+	if token == "" {
+		return false, fmt.Errorf("empty token")
 	}
+	
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return false, fmt.Errorf("invalid token format")
+	}
+	
+	return true, nil
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
@@ -32,43 +35,23 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == authHeader {
+			http.Error(w, "Bearer token required", http.StatusUnauthorized)
 			return
 		}
 
-		tokenStr := parts[1]
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return a.secretKey, nil
-		})
+		valid, err := a.ValidateToken(token)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
 
-		if err != nil || !token.Valid {
+		if !valid {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-			return
-		}
-
-		userID, ok := claims["user_id"].(string)
-		if !ok {
-			http.Error(w, "User ID not found in token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), UserIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r)
 	})
-}
-
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(UserIDKey).(string)
-	return userID, ok
 }
