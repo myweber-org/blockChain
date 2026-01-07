@@ -1,65 +1,11 @@
 package config
 
 import (
-	"encoding/json"
-	"os"
-	"sync"
-)
-
-type AppConfig struct {
-	ServerPort string `json:"server_port"`
-	DBHost     string `json:"db_host"`
-	DBPort     int    `json:"db_port"`
-	DebugMode  bool   `json:"debug_mode"`
-}
-
-var (
-	config     *AppConfig
-	configOnce sync.Once
-)
-
-func LoadConfig() *AppConfig {
-	configOnce.Do(func() {
-		configFile := os.Getenv("CONFIG_FILE")
-		if configFile == "" {
-			configFile = "config.json"
-		}
-
-		data, err := os.ReadFile(configFile)
-		if err != nil {
-			config = &AppConfig{
-				ServerPort: getEnv("SERVER_PORT", "8080"),
-				DBHost:     getEnv("DB_HOST", "localhost"),
-				DBPort:     5432,
-				DebugMode:  getEnv("DEBUG_MODE", "false") == "true",
-			}
-			return
-		}
-
-		var cfg AppConfig
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			panic("Failed to parse config file: " + err.Error())
-		}
-
-		config = &cfg
-	})
-
-	return config
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}package config
-
-import (
     "fmt"
     "os"
     "path/filepath"
 
-    "gopkg.in/yaml.v2"
+    "gopkg.in/yaml.v3"
 )
 
 type DatabaseConfig struct {
@@ -74,7 +20,7 @@ type ServerConfig struct {
     Port         int    `yaml:"port" env:"SERVER_PORT"`
     ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
     WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug_mode" env:"DEBUG_MODE"`
+    Debug        bool   `yaml:"debug" env:"DEBUG"`
 }
 
 type AppConfig struct {
@@ -88,7 +34,7 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 
     absPath, err := filepath.Abs(configPath)
     if err != nil {
-        return nil, fmt.Errorf("invalid config path: %w", err)
+        return nil, fmt.Errorf("failed to get absolute path: %w", err)
     }
 
     data, err := os.ReadFile(absPath)
@@ -130,8 +76,8 @@ func overrideFromEnv(config *AppConfig) {
     if val := os.Getenv("WRITE_TIMEOUT"); val != "" {
         fmt.Sscanf(val, "%d", &config.Server.WriteTimeout)
     }
-    if val := os.Getenv("DEBUG_MODE"); val != "" {
-        config.Server.DebugMode = val == "true" || val == "1"
+    if val := os.Getenv("DEBUG"); val != "" {
+        config.Server.Debug = (val == "true" || val == "1")
     }
     if val := os.Getenv("LOG_LEVEL"); val != "" {
         config.LogLevel = val
