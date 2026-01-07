@@ -321,3 +321,86 @@ func main() {
 	fmt.Printf("Average value: %.2f\n", average)
 	fmt.Printf("Maximum value: %.2f\n", max)
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
+}
+
+func ProcessCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := make([]DataRecord, 0)
+
+	// Skip header
+	if _, err := reader.Read(); err != nil {
+		return nil, fmt.Errorf("failed to read header: %w", err)
+	}
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read row: %w", err)
+		}
+
+		if len(row) < 3 {
+			continue
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			continue
+		}
+
+		name := row[1]
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			continue
+		}
+
+		records = append(records, DataRecord{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return records, nil
+}
+
+func CalculateTotal(records []DataRecord) float64 {
+	var total float64
+	for _, record := range records {
+		total += record.Value
+	}
+	return total
+}
+
+func FilterByThreshold(records []DataRecord, threshold float64) []DataRecord {
+	var filtered []DataRecord
+	for _, record := range records {
+		if record.Value >= threshold {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
