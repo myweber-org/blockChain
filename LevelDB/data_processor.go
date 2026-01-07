@@ -242,3 +242,102 @@ func CalculateAverageValue(records []DataRecord) float64 {
 	}
 	return sum / float64(len(records))
 }
+package main
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+)
+
+type DataProcessor struct {
+	workers   int
+	inputChan chan int
+	outputChan chan int
+	wg        sync.WaitGroup
+	errChan   chan error
+}
+
+func NewDataProcessor(workers int) *DataProcessor {
+	return &DataProcessor{
+		workers:   workers,
+		inputChan: make(chan int, 100),
+		outputChan: make(chan int, 100),
+		errChan:   make(chan error, workers),
+	}
+}
+
+func (dp *DataProcessor) Start() {
+	for i := 0; i < dp.workers; i++ {
+		dp.wg.Add(1)
+		go dp.worker(i)
+	}
+}
+
+func (dp *DataProcessor) worker(id int) {
+	defer dp.wg.Done()
+	
+	for data := range dp.inputChan {
+		if data < 0 {
+			dp.errChan <- fmt.Errorf("worker %d: negative value %d", id, data)
+			continue
+		}
+		
+		processed := dp.processData(data)
+		dp.outputChan <- processed
+		
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func (dp *DataProcessor) processData(value int) int {
+	return value * 2
+}
+
+func (dp *DataProcessor) Submit(data []int) {
+	for _, d := range data {
+		dp.inputChan <- d
+	}
+	close(dp.inputChan)
+}
+
+func (dp *DataProcessor) Collect() ([]int, []error) {
+	dp.wg.Wait()
+	close(dp.outputChan)
+	close(dp.errChan)
+	
+	results := []int{}
+	for res := range dp.outputChan {
+		results = append(results, res)
+	}
+	
+	errors := []error{}
+	for err := range dp.errChan {
+		errors = append(errors, err)
+	}
+	
+	return results, errors
+}
+
+func main() {
+	processor := NewDataProcessor(3)
+	processor.Start()
+	
+	testData := []int{1, 5, -3, 8, -1, 10}
+	processor.Submit(testData)
+	
+	results, errs := processor.Collect()
+	
+	fmt.Println("Processing results:")
+	for _, r := range results {
+		fmt.Printf("Result: %d\n", r)
+	}
+	
+	if len(errs) > 0 {
+		fmt.Println("Errors encountered:")
+		for _, e := range errs {
+			fmt.Printf("Error: %v\n", e)
+		}
+	}
+}
