@@ -2,216 +2,46 @@
 package main
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
-	"os"
-	"strconv"
-)
-
-type DataRecord struct {
-	ID    int
-	Name  string
-	Value float64
-}
-
-func ProcessCSVFile(filename string) ([]DataRecord, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	records := []DataRecord{}
-	lineNum := 0
-
-	for {
-		lineNum++
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("csv read error at line %d: %w", lineNum, err)
-		}
-
-		if len(row) != 3 {
-			return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", lineNum, len(row))
-		}
-
-		id, err := strconv.Atoi(row[0])
-		if err != nil {
-			return nil, fmt.Errorf("invalid ID at line %d: %w", lineNum, err)
-		}
-
-		name := row[1]
-		if name == "" {
-			return nil, fmt.Errorf("empty name at line %d", lineNum)
-		}
-
-		value, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid value at line %d: %w", lineNum, err)
-		}
-
-		records = append(records, DataRecord{
-			ID:    id,
-			Name:  name,
-			Value: value,
-		})
-	}
-
-	if len(records) == 0 {
-		return nil, fmt.Errorf("no valid records found in file")
-	}
-
-	return records, nil
-}
-
-func CalculateStatistics(records []DataRecord) (float64, float64, int) {
-	if len(records) == 0 {
-		return 0, 0, 0
-	}
-
-	var sum float64
-	var max float64
-	count := len(records)
-
-	for i, record := range records {
-		sum += record.Value
-		if i == 0 || record.Value > max {
-			max = record.Value
-		}
-	}
-
-	average := sum / float64(count)
-	return average, max, count
-}
-
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <csv_file>")
-		os.Exit(1)
-	}
-
-	filename := os.Args[1]
-	records, err := ProcessCSVFile(filename)
-	if err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		os.Exit(1)
-	}
-
-	avg, max, count := CalculateStatistics(records)
-	fmt.Printf("Processed %d records\n", count)
-	fmt.Printf("Average value: %.2f\n", avg)
-	fmt.Printf("Maximum value: %.2f\n", max)
-}
-package main
-
-import (
-	"encoding/csv"
 	"errors"
-	"fmt"
-	"io"
-	"os"
-	"strconv"
+	"regexp"
+	"strings"
 )
 
-type Record struct {
-	ID    int
-	Name  string
-	Value float64
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+
+func ValidateEmail(email string) error {
+	if !emailRegex.MatchString(email) {
+		return errors.New("invalid email format")
+	}
+	return nil
 }
 
-func ProcessCSV(filename string) ([]Record, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	records := make([]Record, 0)
-
-	headerSkipped := false
-	for {
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("csv read error: %w", err)
-		}
-
-		if !headerSkipped {
-			headerSkipped = true
-			continue
-		}
-
-		if len(row) != 3 {
-			return nil, errors.New("invalid row format")
-		}
-
-		id, err := strconv.Atoi(row[0])
-		if err != nil {
-			return nil, fmt.Errorf("invalid ID: %w", err)
-		}
-
-		name := row[1]
-		if name == "" {
-			return nil, errors.New("empty name field")
-		}
-
-		value, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid value: %w", err)
-		}
-
-		records = append(records, Record{
-			ID:    id,
-			Name:  name,
-			Value: value,
-		})
-	}
-
-	return records, nil
+func SanitizeInput(input string) string {
+	input = strings.TrimSpace(input)
+	input = strings.ReplaceAll(input, "<", "&lt;")
+	input = strings.ReplaceAll(input, ">", "&gt;")
+	return input
 }
 
-func CalculateStats(records []Record) (float64, float64) {
-	if len(records) == 0 {
-		return 0, 0
-	}
-
-	var sum float64
-	var max float64 = records[0].Value
-
-	for _, r := range records {
-		sum += r.Value
-		if r.Value > max {
-			max = r.Value
-		}
-	}
-
-	average := sum / float64(len(records))
-	return average, max
+func NormalizeUsername(username string) string {
+	username = strings.TrimSpace(username)
+	username = strings.ToLower(username)
+	return username
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <csv_file>")
-		os.Exit(1)
+func TransformPhoneNumber(phone string) (string, error) {
+	phone = strings.ReplaceAll(phone, " ", "")
+	phone = strings.ReplaceAll(phone, "-", "")
+	phone = strings.ReplaceAll(phone, "(", "")
+	phone = strings.ReplaceAll(phone, ")", "")
+
+	if len(phone) < 10 {
+		return "", errors.New("phone number too short")
 	}
 
-	records, err := ProcessCSV(os.Args[1])
-	if err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		os.Exit(1)
+	if !strings.HasPrefix(phone, "+") {
+		phone = "+1" + phone
 	}
 
-	fmt.Printf("Processed %d records\n", len(records))
-	
-	avg, max := CalculateStats(records)
-	fmt.Printf("Average value: %.2f\n", avg)
-	fmt.Printf("Maximum value: %.2f\n", max)
+	return phone, nil
 }
