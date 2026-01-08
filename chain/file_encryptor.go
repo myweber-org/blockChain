@@ -759,4 +759,146 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("Decrypted: %s\n", decrypted)
+}package main
+
+import (
+    "crypto/aes"
+    "crypto/cipher"
+    "crypto/rand"
+    "crypto/sha256"
+    "encoding/base64"
+    "errors"
+    "fmt"
+    "io"
+    "strings"
+
+    "golang.org/x/crypto/pbkdf2"
+)
+
+const (
+    saltSize   = 16
+    nonceSize  = 12
+    keySize    = 32
+    iterations = 100000
+)
+
+type EncryptedData struct {
+    Ciphertext string
+    Salt       string
+    Nonce      string
+}
+
+func deriveKey(password string, salt []byte) []byte {
+    return pbkdf2.Key([]byte(password), salt, iterations, keySize, sha256.New)
+}
+
+func Encrypt(plaintext, password string) (*EncryptedData, error) {
+    salt := make([]byte, saltSize)
+    if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+        return nil, fmt.Errorf("failed to generate salt: %w", err)
+    }
+
+    nonce := make([]byte, nonceSize)
+    if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+        return nil, fmt.Errorf("failed to generate nonce: %w", err)
+    }
+
+    key := deriveKey(password, salt)
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create cipher: %w", err)
+    }
+
+    aesgcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create GCM: %w", err)
+    }
+
+    ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
+    return &EncryptedData{
+        Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
+        Salt:       base64.StdEncoding.EncodeToString(salt),
+        Nonce:      base64.StdEncoding.EncodeToString(nonce),
+    }, nil
+}
+
+func Decrypt(data *EncryptedData, password string) (string, error) {
+    salt, err := base64.StdEncoding.DecodeString(data.Salt)
+    if err != nil {
+        return "", fmt.Errorf("invalid salt encoding: %w", err)
+    }
+
+    nonce, err := base64.StdEncoding.DecodeString(data.Nonce)
+    if err != nil {
+        return "", fmt.Errorf("invalid nonce encoding: %w", err)
+    }
+
+    ciphertext, err := base64.StdEncoding.DecodeString(data.Ciphertext)
+    if err != nil {
+        return "", fmt.Errorf("invalid ciphertext encoding: %w", err)
+    }
+
+    key := deriveKey(password, salt)
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return "", fmt.Errorf("failed to create cipher: %w", err)
+    }
+
+    aesgcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return "", fmt.Errorf("failed to create GCM: %w", err)
+    }
+
+    plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
+    if err != nil {
+        return "", errors.New("decryption failed: invalid password or corrupted data")
+    }
+
+    return string(plaintext), nil
+}
+
+func FormatEncryptedData(data *EncryptedData) string {
+    return fmt.Sprintf("%s.%s.%s", data.Ciphertext, data.Salt, data.Nonce)
+}
+
+func ParseEncryptedData(encoded string) (*EncryptedData, error) {
+    parts := strings.Split(encoded, ".")
+    if len(parts) != 3 {
+        return nil, errors.New("invalid encoded data format")
+    }
+
+    return &EncryptedData{
+        Ciphertext: parts[0],
+        Salt:       parts[1],
+        Nonce:      parts[2],
+    }, nil
+}
+
+func main() {
+    password := "securePass123!"
+    message := "Sensitive information requiring protection"
+
+    encrypted, err := Encrypt(message, password)
+    if err != nil {
+        fmt.Printf("Encryption error: %v\n", err)
+        return
+    }
+
+    fmt.Printf("Encrypted: %s\n", FormatEncryptedData(encrypted))
+
+    decrypted, err := Decrypt(encrypted, password)
+    if err != nil {
+        fmt.Printf("Decryption error: %v\n", err)
+        return
+    }
+
+    fmt.Printf("Decrypted: %s\n", decrypted)
+
+    parsed, err := ParseEncryptedData(FormatEncryptedData(encrypted))
+    if err != nil {
+        fmt.Printf("Parse error: %v\n", err)
+        return
+    }
+
+    fmt.Printf("Parsed successfully: %t\n", parsed != nil)
 }
