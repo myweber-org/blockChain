@@ -371,4 +371,128 @@ func main() {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}package main
+
+import (
+    "fmt"
+    "io"
+    "log"
+    "os"
+    "path/filepath"
+    "strconv"
+    "strings"
+    "time"
+)
+
+const (
+    maxFileSize   = 1024 * 1024 // 1MB
+    maxBackupFiles = 5
+    logFileName   = "app.log"
+)
+
+type RotatingLogger struct {
+    currentFile *os.File
+    basePath    string
+    fileIndex   int
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+    rl := &RotatingLogger{
+        basePath: path,
+    }
+    
+    if err := rl.openCurrentFile(); err != nil {
+        return nil, err
+    }
+    
+    return rl, nil
+}
+
+func (rl *RotatingLogger) openCurrentFile() error {
+    if rl.currentFile != nil {
+        rl.currentFile.Close()
+    }
+    
+    file, err := os.OpenFile(rl.basePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    
+    rl.currentFile = file
+    return nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+    fi, err := rl.currentFile.Stat()
+    if err != nil {
+        return 0, err
+    }
+    
+    if fi.Size()+int64(len(p)) > maxFileSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+    
+    return rl.currentFile.Write(p)
+}
+
+func (rl *RotatingLogger) rotate() error {
+    rl.currentFile.Close()
+    
+    backupFiles, err := rl.getBackupFiles()
+    if err != nil {
+        return err
+    }
+    
+    for i := len(backupFiles) - 1; i >= 0; i-- {
+        oldName := backupFiles[i]
+        oldIndex, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(oldName, rl.basePath+"."), ".log"))
+        
+        if oldIndex >= maxBackupFiles-1 {
+            os.Remove(oldName)
+        } else {
+            newName := fmt.Sprintf("%s.%d.log", rl.basePath, oldIndex+1)
+            os.Rename(oldName, newName)
+        }
+    }
+    
+    newBackup := fmt.Sprintf("%s.1.log", rl.basePath)
+    os.Rename(rl.basePath, newBackup)
+    
+    return rl.openCurrentFile()
+}
+
+func (rl *RotatingLogger) getBackupFiles() ([]string, error) {
+    pattern := rl.basePath + ".*.log"
+    files, err := filepath.Glob(pattern)
+    if err != nil {
+        return nil, err
+    }
+    
+    return files, nil
+}
+
+func (rl *RotatingLogger) Close() error {
+    if rl.currentFile != nil {
+        return rl.currentFile.Close()
+    }
+    return nil
+}
+
+func main() {
+    logger, err := NewRotatingLogger(logFileName)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer logger.Close()
+    
+    log.SetOutput(logger)
+    
+    for i := 0; i < 1000; i++ {
+        log.Printf("Log entry %d at %s", i, time.Now().Format(time.RFC3339))
+        time.Sleep(10 * time.Millisecond)
+    }
+    
+    fmt.Println("Log rotation test completed")
 }
