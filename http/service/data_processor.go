@@ -101,3 +101,113 @@ func CalculateAverageValue(records []DataRecord) float64 {
     }
     return total / float64(len(records))
 }
+package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strings"
+)
+
+type DataProcessor struct {
+    inputPath  string
+    outputPath string
+    delimiter  rune
+}
+
+func NewDataProcessor(input, output string) *DataProcessor {
+    return &DataProcessor{
+        inputPath:  input,
+        outputPath: output,
+        delimiter:  ',',
+    }
+}
+
+func (dp *DataProcessor) SetDelimiter(delim rune) {
+    dp.delimiter = delim
+}
+
+func (dp *DataProcessor) ValidateRow(record []string) bool {
+    if len(record) == 0 {
+        return false
+    }
+    for _, field := range record {
+        if strings.TrimSpace(field) == "" {
+            return false
+        }
+    }
+    return true
+}
+
+func (dp *DataProcessor) CleanField(field string) string {
+    cleaned := strings.TrimSpace(field)
+    cleaned = strings.ToLower(cleaned)
+    return cleaned
+}
+
+func (dp *DataProcessor) Process() error {
+    inputFile, err := os.Open(dp.inputPath)
+    if err != nil {
+        return fmt.Errorf("failed to open input file: %w", err)
+    }
+    defer inputFile.Close()
+
+    outputFile, err := os.Create(dp.outputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
+
+    reader := csv.NewReader(inputFile)
+    reader.Comma = dp.delimiter
+    writer := csv.NewWriter(outputFile)
+    defer writer.Flush()
+
+    headerWritten := false
+    for {
+        record, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return fmt.Errorf("error reading CSV: %w", err)
+        }
+
+        if !headerWritten {
+            if err := writer.Write(record); err != nil {
+                return fmt.Errorf("error writing header: %w", err)
+            }
+            headerWritten = true
+            continue
+        }
+
+        if !dp.ValidateRow(record) {
+            continue
+        }
+
+        cleanedRecord := make([]string, len(record))
+        for i, field := range record {
+            cleanedRecord[i] = dp.CleanField(field)
+        }
+
+        if err := writer.Write(cleanedRecord); err != nil {
+            return fmt.Errorf("error writing record: %w", err)
+        }
+    }
+
+    return nil
+}
+
+func main() {
+    processor := NewDataProcessor("input.csv", "output.csv")
+    processor.SetDelimiter(',')
+
+    if err := processor.Process(); err != nil {
+        fmt.Printf("Processing error: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Println("Data processing completed successfully")
+}
