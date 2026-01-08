@@ -1,61 +1,89 @@
+
 package main
 
 import (
-	"regexp"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
 	"strings"
 )
 
-type DataProcessor struct {
-	emailRegex *regexp.Regexp
+type DataRecord struct {
+	ID    string
+	Name  string
+	Email string
+	Valid bool
 }
 
-func NewDataProcessor() *DataProcessor {
-	regex := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
-	return &DataProcessor{emailRegex: regex}
-}
-
-func (dp *DataProcessor) SanitizeString(input string) string {
-	trimmed := strings.TrimSpace(input)
-	return strings.ToLower(trimmed)
-}
-
-func (dp *DataProcessor) ValidateEmail(email string) bool {
-	return dp.emailRegex.MatchString(email)
-}
-
-func (dp *DataProcessor) ProcessUserData(name, email string) (string, string, bool) {
-	sanitizedName := dp.SanitizeString(name)
-	sanitizedEmail := dp.SanitizeString(email)
-	isValid := dp.ValidateEmail(sanitizedEmail)
-	return sanitizedName, sanitizedEmail, isValid
-}
-package main
-
-import (
-	"regexp"
-	"strings"
-)
-
-func SanitizeUsername(input string) string {
-	re := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-	sanitized := re.ReplaceAllString(input, "")
-	return strings.TrimSpace(sanitized)
-}
-
-func ValidateEmail(email string) bool {
-	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, _ := regexp.MatchString(pattern, email)
-	return matched
-}
-
-func TruncateString(s string, maxLength int) string {
-	if len(s) <= maxLength {
-		return s
+func ProcessCSVFile(filePath string) ([]DataRecord, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	return s[:maxLength]
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []DataRecord
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if len(row) < 3 {
+			continue
+		}
+
+		record := DataRecord{
+			ID:    strings.TrimSpace(row[0]),
+			Name:  strings.TrimSpace(row[1]),
+			Email: strings.TrimSpace(row[2]),
+			Valid: validateRecord(strings.TrimSpace(row[0]), strings.TrimSpace(row[2])),
+		}
+
+		if record.Valid {
+			records = append(records, record)
+		}
+	}
+
+	return records, nil
 }
 
-func RemoveExtraSpaces(input string) string {
-	space := regexp.MustCompile(`\s+`)
-	return space.ReplaceAllString(strings.TrimSpace(input), " ")
+func validateRecord(id, email string) bool {
+	if id == "" || email == "" {
+		return false
+	}
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func GenerateReport(records []DataRecord) {
+	fmt.Printf("Total valid records: %d\n", len(records))
+	fmt.Println("Valid Records:")
+	for _, record := range records {
+		fmt.Printf("ID: %s, Name: %s, Email: %s\n", record.ID, record.Name, record.Email)
+	}
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run data_processor.go <csv_file>")
+		return
+	}
+
+	records, err := ProcessCSVFile(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		return
+	}
+
+	GenerateReport(records)
 }
