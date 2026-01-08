@@ -314,3 +314,129 @@ func main() {
 	}
 	fmt.Printf("Processed user: %+v\n", processed)
 }
+package main
+
+import (
+    "encoding/csv"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type DataRecord struct {
+    ID      int
+    Name    string
+    Value   float64
+    Active  bool
+}
+
+func ParseCSVFile(filename string) ([]DataRecord, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    records := make([]DataRecord, 0)
+
+    for line := 1; ; line++ {
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, fmt.Errorf("csv read error at line %d: %w", line, err)
+        }
+
+        if len(row) != 4 {
+            return nil, fmt.Errorf("invalid column count at line %d: expected 4, got %d", line, len(row))
+        }
+
+        record, err := validateAndCreateRecord(row, line)
+        if err != nil {
+            return nil, err
+        }
+
+        records = append(records, record)
+    }
+
+    if len(records) == 0 {
+        return nil, errors.New("no valid records found in file")
+    }
+
+    return records, nil
+}
+
+func validateAndCreateRecord(row []string, line int) (DataRecord, error) {
+    var record DataRecord
+    var err error
+
+    record.ID, err = strconv.Atoi(strings.TrimSpace(row[0]))
+    if err != nil {
+        return DataRecord{}, fmt.Errorf("invalid ID at line %d: %v", line, err)
+    }
+
+    record.Name = strings.TrimSpace(row[1])
+    if record.Name == "" {
+        return DataRecord{}, fmt.Errorf("empty name at line %d", line)
+    }
+
+    record.Value, err = strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+    if err != nil {
+        return DataRecord{}, fmt.Errorf("invalid value at line %d: %v", line, err)
+    }
+
+    activeStr := strings.ToLower(strings.TrimSpace(row[3]))
+    if activeStr == "true" {
+        record.Active = true
+    } else if activeStr == "false" {
+        record.Active = false
+    } else {
+        return DataRecord{}, fmt.Errorf("invalid active flag at line %d: must be 'true' or 'false'", line)
+    }
+
+    return record, nil
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, int) {
+    if len(records) == 0 {
+        return 0, 0, 0
+    }
+
+    var sum float64
+    var activeCount int
+    var maxValue float64
+
+    for _, record := range records {
+        sum += record.Value
+        if record.Value > maxValue {
+            maxValue = record.Value
+        }
+        if record.Active {
+            activeCount++
+        }
+    }
+
+    average := sum / float64(len(records))
+    return average, maxValue, activeCount
+}
+
+func FilterRecords(records []DataRecord, minValue float64, activeOnly bool) []DataRecord {
+    filtered := make([]DataRecord, 0)
+
+    for _, record := range records {
+        if record.Value < minValue {
+            continue
+        }
+        if activeOnly && !record.Active {
+            continue
+        }
+        filtered = append(filtered, record)
+    }
+
+    return filtered
+}
