@@ -1,58 +1,103 @@
 package main
 
 import (
-	"errors"
-	"strings"
-	"unicode"
+    "encoding/csv"
+    "errors"
+    "io"
+    "os"
+    "strconv"
+    "strings"
 )
 
-type UserData struct {
-	Username string
-	Email    string
-	Age      int
+type DataRecord struct {
+    ID    int
+    Name  string
+    Value float64
+    Valid bool
 }
 
-func ValidateUserData(data UserData) error {
-	if strings.TrimSpace(data.Username) == "" {
-		return errors.New("username cannot be empty")
-	}
-	if len(data.Username) < 3 || len(data.Username) > 20 {
-		return errors.New("username must be between 3 and 20 characters")
-	}
-	for _, r := range data.Username {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
-			return errors.New("username can only contain letters, digits, and underscores")
-		}
-	}
+func ParseCSVFile(filename string) ([]DataRecord, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
 
-	if !strings.Contains(data.Email, "@") {
-		return errors.New("invalid email format")
-	}
+    reader := csv.NewReader(file)
+    records := make([]DataRecord, 0)
 
-	if data.Age < 0 || data.Age > 150 {
-		return errors.New("age must be between 0 and 150")
-	}
+    for {
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
 
-	return nil
+        if len(row) != 4 {
+            continue
+        }
+
+        record, err := validateAndCreateRecord(row)
+        if err != nil {
+            continue
+        }
+
+        records = append(records, record)
+    }
+
+    return records, nil
 }
 
-func NormalizeUsername(username string) string {
-	return strings.ToLower(strings.TrimSpace(username))
+func validateAndCreateRecord(row []string) (DataRecord, error) {
+    var record DataRecord
+
+    id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+    if err != nil {
+        return record, errors.New("invalid id")
+    }
+    record.ID = id
+
+    name := strings.TrimSpace(row[1])
+    if name == "" {
+        return record, errors.New("empty name")
+    }
+    record.Name = name
+
+    value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+    if err != nil {
+        return record, errors.New("invalid value")
+    }
+    record.Value = value
+
+    valid, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+    if err != nil {
+        return record, errors.New("invalid boolean")
+    }
+    record.Valid = valid
+
+    return record, nil
 }
 
-func ProcessUserInput(rawUsername string, rawEmail string, rawAge int) (UserData, error) {
-	normalizedUsername := NormalizeUsername(rawUsername)
+func FilterValidRecords(records []DataRecord) []DataRecord {
+    filtered := make([]DataRecord, 0)
+    for _, record := range records {
+        if record.Valid {
+            filtered = append(filtered, record)
+        }
+    }
+    return filtered
+}
 
-	userData := UserData{
-		Username: normalizedUsername,
-		Email:    strings.TrimSpace(rawEmail),
-		Age:      rawAge,
-	}
+func CalculateAverageValue(records []DataRecord) float64 {
+    if len(records) == 0 {
+        return 0.0
+    }
 
-	err := ValidateUserData(userData)
-	if err != nil {
-		return UserData{}, err
-	}
-
-	return userData, nil
+    total := 0.0
+    for _, record := range records {
+        total += record.Value
+    }
+    return total / float64(len(records))
 }
