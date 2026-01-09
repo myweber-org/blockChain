@@ -1,94 +1,39 @@
+
 package main
 
 import (
-    "encoding/csv"
-    "errors"
-    "fmt"
-    "io"
-    "os"
-    "strconv"
+	"regexp"
+	"strings"
 )
 
-type Record struct {
-    ID    int
-    Name  string
-    Value float64
+type DataProcessor struct {
+	allowedPattern *regexp.Regexp
 }
 
-func ProcessCSVFile(filepath string) ([]Record, error) {
-    file, err := os.Open(filepath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open file: %w", err)
-    }
-    defer file.Close()
-
-    reader := csv.NewReader(file)
-    reader.TrimLeadingSpace = true
-
-    var records []Record
-    lineNumber := 0
-
-    for {
-        lineNumber++
-        row, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
-        }
-
-        if len(row) != 3 {
-            return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", lineNumber, len(row))
-        }
-
-        id, err := strconv.Atoi(row[0])
-        if err != nil {
-            return nil, fmt.Errorf("invalid ID format at line %d: %w", lineNumber, err)
-        }
-
-        name := row[1]
-        if name == "" {
-            return nil, fmt.Errorf("empty name at line %d", lineNumber)
-        }
-
-        value, err := strconv.ParseFloat(row[2], 64)
-        if err != nil {
-            return nil, fmt.Errorf("invalid value format at line %d: %w", lineNumber, err)
-        }
-
-        records = append(records, Record{
-            ID:    id,
-            Name:  name,
-            Value: value,
-        })
-    }
-
-    if len(records) == 0 {
-        return nil, errors.New("no valid records found in file")
-    }
-
-    return records, nil
+func NewDataProcessor(pattern string) (*DataProcessor, error) {
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	return &DataProcessor{allowedPattern: compiled}, nil
 }
 
-func CalculateTotal(records []Record) float64 {
-    total := 0.0
-    for _, record := range records {
-        total += record.Value
-    }
-    return total
+func (dp *DataProcessor) CleanInput(input string) string {
+	trimmed := strings.TrimSpace(input)
+	return dp.allowedPattern.FindString(trimmed)
 }
 
-func FindMaxRecord(records []Record) (Record, error) {
-    if len(records) == 0 {
-        return Record{}, errors.New("empty record slice")
-    }
+func (dp *DataProcessor) Validate(input string) bool {
+	return dp.allowedPattern.MatchString(input)
+}
 
-    maxRecord := records[0]
-    for _, record := range records[1:] {
-        if record.Value > maxRecord.Value {
-            maxRecord = record
-        }
-    }
-    return maxRecord, nil
+func (dp *DataProcessor) ProcessBatch(inputs []string) []string {
+	var results []string
+	for _, item := range inputs {
+		cleaned := dp.CleanInput(item)
+		if cleaned != "" {
+			results = append(results, cleaned)
+		}
+	}
+	return results
 }
