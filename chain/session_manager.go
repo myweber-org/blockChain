@@ -1,67 +1,79 @@
 package session
 
 import (
-	"sync"
-	"time"
+    "crypto/rand"
+    "encoding/base64"
+    "errors"
+    "time"
 )
 
 type Session struct {
-	ID        string
-	Data      map[string]interface{}
-	ExpiresAt time.Time
+    ID        string
+    UserID    int
+    ExpiresAt time.Time
+    Data      map[string]interface{}
 }
 
 type Manager struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	ttl      time.Duration
+    sessions map[string]*Session
+    duration time.Duration
 }
 
-func NewManager(ttl time.Duration) *Manager {
-	m := &Manager{
-		sessions: make(map[string]*Session),
-		ttl:      ttl,
-	}
-	go m.cleanupLoop()
-	return m
+func NewManager(duration time.Duration) *Manager {
+    return &Manager{
+        sessions: make(map[string]*Session),
+        duration: duration,
+    }
 }
 
-func (m *Manager) Create(id string) *Session {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Manager) Create(userID int) (*Session, error) {
+    token, err := generateToken()
+    if err != nil {
+        return nil, err
+    }
 
-	s := &Session{
-		ID:        id,
-		Data:      make(map[string]interface{}),
-		ExpiresAt: time.Now().Add(m.ttl),
-	}
-	m.sessions[id] = s
-	return s
+    session := &Session{
+        ID:        token,
+        UserID:    userID,
+        ExpiresAt: time.Now().Add(m.duration),
+        Data:      make(map[string]interface{}),
+    }
+
+    m.sessions[token] = session
+    return session, nil
 }
 
-func (m *Manager) Get(id string) (*Session, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+func (m *Manager) Validate(token string) (*Session, error) {
+    session, exists := m.sessions[token]
+    if !exists {
+        return nil, errors.New("session not found")
+    }
 
-	s, exists := m.sessions[id]
-	if !exists || time.Now().After(s.ExpiresAt) {
-		return nil, false
-	}
-	return s, true
+    if time.Now().After(session.ExpiresAt) {
+        delete(m.sessions, token)
+        return nil, errors.New("session expired")
+    }
+
+    return session, nil
 }
 
-func (m *Manager) cleanupLoop() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
+func (m *Manager) Invalidate(token string) {
+    delete(m.sessions, token)
+}
 
-	for range ticker.C {
-		m.mu.Lock()
-		now := time.Now()
-		for id, session := range m.sessions {
-			if now.After(session.ExpiresAt) {
-				delete(m.sessions, id)
-			}
-		}
-		m.mu.Unlock()
-	}
+func (m *Manager) Cleanup() {
+    now := time.Now()
+    for token, session := range m.sessions {
+        if now.After(session.ExpiresAt) {
+            delete(m.sessions, token)
+        }
+    }
+}
+
+func generateToken() (string, error) {
+    bytes := make([]byte, 32)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+    return base64.URLEncoding.EncodeToString(bytes), nil
 }
