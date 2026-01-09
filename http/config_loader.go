@@ -1,91 +1,124 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
+	"errors"
+	"io/ioutil"
 	"os"
-	"reflect"
-	"strconv"
+	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	ServerPort int    `env:"SERVER_PORT" default:"8080"`
-	LogLevel   string `env:"LOG_LEVEL" default:"info"`
-	DBHost     string `env:"DB_HOST" default:"localhost"`
-	DBPort     int    `env:"DB_PORT" default:"5432"`
-	DBName     string `env:"DB_NAME" default:"appdb"`
-	EnableSSL  bool   `env:"ENABLE_SSL" default:"false"`
+	Server struct {
+		Host string `yaml:"host"`
+		Port int    `yaml:"port"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Name     string `yaml:"name"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level"`
+		Output string `yaml:"output"`
+	} `yaml:"logging"`
 }
 
-func Load() (*Config, error) {
-	cfg := &Config{}
-	t := reflect.TypeOf(cfg).Elem()
-	v := reflect.ValueOf(cfg).Elem()
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		envKey := field.Tag.Get("env")
-		defaultVal := field.Tag.Get("default")
-
-		envVal := os.Getenv(envKey)
-		if envVal == "" {
-			envVal = defaultVal
-		}
-
-		if err := setFieldValue(v.Field(i), envVal); err != nil {
-			return nil, fmt.Errorf("failed to set field %s: %w", field.Name, err)
-		}
+func LoadConfig(configPath string) (*Config, error) {
+	if configPath == "" {
+		configPath = "config.yaml"
 	}
 
-	if err := validateConfig(cfg); err != nil {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
 		return nil, err
 	}
 
-	return cfg, nil
+	data, err := ioutil.ReadFile(absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+
+	overrideFromEnv(&config)
+
+	if err := validateConfig(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
-func setFieldValue(field reflect.Value, value string) error {
-	switch field.Kind() {
-	case reflect.String:
-		field.SetString(value)
-	case reflect.Int:
-		intVal, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		field.SetInt(int64(intVal))
-	case reflect.Bool:
-		boolVal, err := strconv.ParseBool(value)
-		if err != nil {
-			return err
-		}
-		field.SetBool(boolVal)
-	default:
-		return fmt.Errorf("unsupported field type: %s", field.Kind())
+func overrideFromEnv(config *Config) {
+	if host := os.Getenv("SERVER_HOST"); host != "" {
+		config.Server.Host = host
 	}
+	if port := os.Getenv("SERVER_PORT"); port != "" {
+		if p, err := parseInt(port); err == nil {
+			config.Server.Port = p
+		}
+	}
+
+	if host := os.Getenv("DB_HOST"); host != "" {
+		config.Database.Host = host
+	}
+	if port := os.Getenv("DB_PORT"); port != "" {
+		if p, err := parseInt(port); err == nil {
+			config.Database.Port = p
+		}
+	}
+	if name := os.Getenv("DB_NAME"); name != "" {
+		config.Database.Name = name
+	}
+	if user := os.Getenv("DB_USER"); user != "" {
+		config.Database.Username = user
+	}
+	if pass := os.Getenv("DB_PASS"); pass != "" {
+		config.Database.Password = pass
+	}
+
+	if level := os.Getenv("LOG_LEVEL"); level != "" {
+		config.Logging.Level = strings.ToUpper(level)
+	}
+	if output := os.Getenv("LOG_OUTPUT"); output != "" {
+		config.Logging.Output = output
+	}
+}
+
+func validateConfig(config *Config) error {
+	if config.Server.Port <= 0 || config.Server.Port > 65535 {
+		return errors.New("invalid server port")
+	}
+	if config.Database.Host == "" {
+		return errors.New("database host is required")
+	}
+	if config.Database.Name == "" {
+		return errors.New("database name is required")
+	}
+
+	validLevels := map[string]bool{
+		"DEBUG": true,
+		"INFO":  true,
+		"WARN":  true,
+		"ERROR": true,
+	}
+	if !validLevels[config.Logging.Level] {
+		return errors.New("invalid log level")
+	}
+
 	return nil
 }
 
-func validateConfig(cfg *Config) error {
-	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
-		return fmt.Errorf("invalid server port: %d", cfg.ServerPort)
-	}
-
-	validLogLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
-	}
-	if !validLogLevels[strings.ToLower(cfg.LogLevel)] {
-		return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
-	}
-
-	return nil
-}
-
-func (c *Config) String() string {
-	data, _ := json.MarshalIndent(c, "", "  ")
-	return string(data)
+func parseInt(s string) (int, error) {
+	var result int
+	_, err := fmt.Sscanf(s, "%d", &result)
+	return result, err
 }
