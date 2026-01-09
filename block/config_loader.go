@@ -87,4 +87,96 @@ func LoadConfig(path string) (*Config, error) {
     }
 
     return &config, nil
+}package config
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	ServerPort int    `env:"SERVER_PORT" default:"8080"`
+	DBHost     string `env:"DB_HOST" default:"localhost"`
+	DBPort     int    `env:"DB_PORT" default:"5432"`
+	DebugMode  bool   `env:"DEBUG_MODE" default:"false"`
+	APIKeys    []string
+}
+
+func LoadConfig() (*Config, error) {
+	cfg := &Config{}
+	
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		structField := t.Field(i)
+		
+		envTag := structField.Tag.Get("env")
+		defaultTag := structField.Tag.Get("default")
+		
+		var value string
+		if envTag != "" {
+			value = os.Getenv(envTag)
+		}
+		
+		if value == "" && defaultTag != "" {
+			value = defaultTag
+		}
+		
+		if value != "" {
+			if err := setField(field, structField.Type, value); err != nil {
+				return nil, fmt.Errorf("failed to set field %s: %w", structField.Name, err)
+			}
+		}
+	}
+	
+	return cfg, nil
+}
+
+func setField(field reflect.Value, fieldType reflect.Type, value string) error {
+	switch fieldType.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int:
+		intVal, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		field.SetInt(int64(intVal))
+	case reflect.Bool:
+		boolVal, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		field.SetBool(boolVal)
+	case reflect.Slice:
+		if fieldType.Elem().Kind() == reflect.String {
+			var slice []string
+			if err := json.Unmarshal([]byte(value), &slice); err != nil {
+				slice = strings.Split(value, ",")
+			}
+			field.Set(reflect.ValueOf(slice))
+		} else {
+			return errors.New("unsupported slice type")
+		}
+	default:
+		return errors.New("unsupported field type")
+	}
+	return nil
+}
+
+func (c *Config) Validate() error {
+	if c.ServerPort < 1 || c.ServerPort > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
+	if c.DBPort < 1 || c.DBPort > 65535 {
+		return errors.New("database port must be between 1 and 65535")
+	}
+	return nil
 }
