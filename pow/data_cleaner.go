@@ -2,172 +2,100 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
 
-func CleanStringSlice(input []string) []string {
-	seen := make(map[string]struct{})
-	var result []string
-	for _, item := range input {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; !exists {
-			seen[trimmed] = struct{}{}
-			result = append(result, trimmed)
-		}
-	}
-	return result
+type Record struct {
+	ID    string
+	Email string
+	Phone string
 }
 
-func main() {
-	data := []string{" apple ", "banana", " apple", "banana ", " ", "cherry"}
-	cleaned := CleanStringSlice(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}package main
-
-import (
-	"fmt"
-	"strings"
-)
-
-type DataCleaner struct {
-	processed map[string]bool
+type Cleaner struct {
+	seenHashes map[string]bool
 }
 
-func NewDataCleaner() *DataCleaner {
-	return &DataCleaner{
-		processed: make(map[string]bool),
+func NewCleaner() *Cleaner {
+	return &Cleaner{
+		seenHashes: make(map[string]bool),
 	}
 }
 
-func (dc *DataCleaner) Clean(input string) (string, error) {
-	if input == "" {
-		return "", fmt.Errorf("empty input")
-	}
-
-	trimmed := strings.TrimSpace(input)
-	lower := strings.ToLower(trimmed)
-
-	if dc.processed[lower] {
-		return "", fmt.Errorf("duplicate entry: %s", trimmed)
-	}
-
-	dc.processed[lower] = true
-	return trimmed, nil
-}
-
-func (dc *DataCleaner) ValidateEmail(email string) bool {
-	if !strings.Contains(email, "@") {
-		return false
-	}
-	parts := strings.Split(email, "@")
+func (c *Cleaner) NormalizeEmail(email string) string {
+	parts := strings.Split(strings.ToLower(email), "@")
 	if len(parts) != 2 {
+		return ""
+	}
+	local := strings.Split(parts[0], "+")[0]
+	local = strings.ReplaceAll(local, ".", "")
+	return local + "@" + parts[1]
+}
+
+func (c *Cleaner) GenerateHash(record Record) string {
+	normalizedEmail := c.NormalizeEmail(record.Email)
+	if normalizedEmail == "" {
+		return ""
+	}
+	data := fmt.Sprintf("%s|%s", normalizedEmail, strings.TrimSpace(record.Phone))
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
+}
+
+func (c *Cleaner) IsDuplicate(record Record) bool {
+	hash := c.GenerateHash(record)
+	if hash == "" {
 		return false
 	}
-	return len(parts[0]) > 0 && len(parts[1]) > 0
+	if c.seenHashes[hash] {
+		return true
+	}
+	c.seenHashes[hash] = true
+	return false
 }
 
-func main() {
-	cleaner := NewDataCleaner()
-
-	samples := []string{
-		"  User@Example.com  ",
-		"user@example.com",
-		"invalid-email",
-		"another@test.org",
+func (c *Cleaner) ValidateRecord(record Record) bool {
+	if len(record.ID) == 0 || len(record.Email) == 0 {
+		return false
 	}
+	if !strings.Contains(record.Email, "@") {
+		return false
+	}
+	if len(record.Phone) > 0 && !strings.HasPrefix(record.Phone, "+") {
+		return false
+	}
+	return true
+}
 
-	for _, sample := range samples {
-		cleaned, err := cleaner.Clean(sample)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+func (c *Cleaner) ProcessRecords(records []Record) []Record {
+	var cleaned []Record
+	for _, rec := range records {
+		if !c.ValidateRecord(rec) {
 			continue
 		}
-
-		isValid := cleaner.ValidateEmail(cleaned)
-		fmt.Printf("Original: '%s' -> Cleaned: '%s' (Valid: %v)\n", sample, cleaned, isValid)
-	}
-}package main
-
-import "fmt"
-
-func RemoveDuplicates(nums []int) []int {
-    if len(nums) == 0 {
-        return nums
-    }
-
-    seen := make(map[int]bool)
-    result := []int{}
-
-    for _, num := range nums {
-        if !seen[num] {
-            seen[num] = true
-            result = append(result, num)
-        }
-    }
-
-    return result
-}
-
-func main() {
-    data := []int{1, 2, 2, 3, 4, 4, 5, 1, 6}
-    cleaned := RemoveDuplicates(data)
-    fmt.Println("Original:", data)
-    fmt.Println("Cleaned:", cleaned)
-}package main
-
-import (
-	"fmt"
-	"strings"
-)
-
-func CleanStringSlice(input []string) []string {
-	seen := make(map[string]bool)
-	var result []string
-
-	for _, item := range input {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
+		if c.IsDuplicate(rec) {
 			continue
 		}
-		if !seen[trimmed] {
-			seen[trimmed] = true
-			result = append(result, trimmed)
-		}
+		cleaned = append(cleaned, rec)
 	}
-	return result
+	return cleaned
 }
 
 func main() {
-	data := []string{"apple", " banana", "apple", "cherry ", "", "banana", "  "}
-	cleaned := CleanStringSlice(data)
-	fmt.Printf("Original: %v\n", data)
-	fmt.Printf("Cleaned: %v\n", cleaned)
-}
-package main
-
-import "fmt"
-
-func removeDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
+	cleaner := NewCleaner()
+	records := []Record{
+		{ID: "1", Email: "test@example.com", Phone: "+1234567890"},
+		{ID: "2", Email: "TEST@example.com", Phone: "+1234567890"},
+		{ID: "3", Email: "test+tag@example.com", Phone: "+1234567890"},
+		{ID: "4", Email: "invalid-email", Phone: "+0987654321"},
+		{ID: "5", Email: "another@test.com", Phone: ""},
 	}
-	return result
-}
 
-func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5, 1, 6}
-	cleanedData := removeDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleanedData)
+	result := cleaner.ProcessRecords(records)
+	fmt.Printf("Original: %d, Cleaned: %d\n", len(records), len(result))
+	for _, rec := range result {
+		fmt.Printf("ID: %s, Email: %s\n", rec.ID, rec.Email)
+	}
 }
