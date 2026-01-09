@@ -36,17 +36,17 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func validateToken(tokenString string) (string, error) {
-	// Simplified token validation - in production use proper JWT library
-	if tokenString == "" || len(tokenString) < 10 {
-		return "", http.ErrNoCookie
-	}
-	return "user_" + tokenString[:5], nil
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
 }
 
-func GetUserID(ctx context.Context) string {
-	if userID, ok := ctx.Value(userIDKey).(string); ok {
-		return userID
+func validateToken(tokenString string) (string, error) {
+	// This is a placeholder implementation
+	// In production, use a proper JWT library like github.com/golang-jwt/jwt
+	// For this example, we'll do a simple string check
+	if tokenString == "valid_token_example" {
+		return "user123", nil
 	}
-	return ""
+	return "", http.ErrNoCookie
 }
