@@ -67,4 +67,63 @@ func main() {
 	go startCleanupCron(sessionStore)
 
 	select {}
+}package main
+
+import (
+    "context"
+    "log"
+    "time"
+
+    "github.com/redis/go-redis/v9"
+)
+
+func main() {
+    ctx := context.Background()
+    rdb := redis.NewClient(&redis.Options{
+        Addr: "localhost:6379",
+    })
+
+    ticker := time.NewTicker(24 * time.Hour)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            cleanupExpiredSessions(ctx, rdb)
+        }
+    }
+}
+
+func cleanupExpiredSessions(ctx context.Context, rdb *redis.Client) {
+    pattern := "session:*"
+    var cursor uint64
+    var keys []string
+    var err error
+
+    for {
+        keys, cursor, err = rdb.Scan(ctx, cursor, pattern, 100).Result()
+        if err != nil {
+            log.Printf("Error scanning keys: %v", err)
+            return
+        }
+
+        for _, key := range keys {
+            ttl, err := rdb.TTL(ctx, key).Result()
+            if err != nil {
+                log.Printf("Error getting TTL for key %s: %v", key, err)
+                continue
+            }
+            if ttl == -2 || ttl == -1 {
+                if err := rdb.Del(ctx, key).Err(); err != nil {
+                    log.Printf("Error deleting expired session %s: %v", key, err)
+                } else {
+                    log.Printf("Cleaned up expired session: %s", key)
+                }
+            }
+        }
+
+        if cursor == 0 {
+            break
+        }
+    }
 }
