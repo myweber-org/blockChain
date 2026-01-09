@@ -70,4 +70,72 @@ func main() {
 	
 	fmt.Printf("%.2f USD = %.2f EUR\n", amount, result)
 	fmt.Printf("Supported pairs: %v\n", converter.GetSupportedPairs())
+}package main
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+)
+
+type ExchangeRate struct {
+	Currency string
+	Rate     float64
+}
+
+var rates = map[string]ExchangeRate{
+	"USD": {"USD", 1.0},
+	"EUR": {"EUR", 0.92},
+	"GBP": {"GBP", 0.79},
+	"JPY": {"JPY", 148.5},
+	"CAD": {"CAD", 1.35},
+}
+
+func convertAmount(amount float64, fromCurrency, toCurrency string) (float64, error) {
+	fromRate, fromExists := rates[fromCurrency]
+	toRate, toExists := rates[toCurrency]
+
+	if !fromExists || !toExists {
+		return 0, fmt.Errorf("unsupported currency")
+	}
+
+	if amount < 0 {
+		return 0, fmt.Errorf("amount cannot be negative")
+	}
+
+	converted := (amount / fromRate.Rate) * toRate.Rate
+	return converted, nil
+}
+
+func displaySupportedCurrencies() {
+	fmt.Println("Supported currencies:")
+	for code := range rates {
+		fmt.Printf("- %s\n", code)
+	}
+}
+
+func main() {
+	if len(os.Args) != 4 {
+		fmt.Println("Usage: currency_converter <amount> <from_currency> <to_currency>")
+		fmt.Println("Example: currency_converter 100 USD EUR")
+		displaySupportedCurrencies()
+		os.Exit(1)
+	}
+
+	amount, err := strconv.ParseFloat(os.Args[1], 64)
+	if err != nil {
+		fmt.Printf("Invalid amount: %v\n", err)
+		os.Exit(1)
+	}
+
+	fromCurrency := os.Args[2]
+	toCurrency := os.Args[3]
+
+	result, err := convertAmount(amount, fromCurrency, toCurrency)
+	if err != nil {
+		fmt.Printf("Conversion error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, fromCurrency, result, toCurrency)
 }
