@@ -67,3 +67,62 @@ func min(a, b int) int {
 	}
 	return b
 }
+package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type ActivityLog struct {
+	UserID    string
+	IPAddress string
+	Endpoint  string
+	Method    string
+	Timestamp time.Time
+}
+
+func ActivityLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		userID := extractUserID(r)
+		ip := r.RemoteAddr
+		endpoint := r.URL.Path
+		method := r.Method
+
+		logEntry := ActivityLog{
+			UserID:    userID,
+			IPAddress: ip,
+			Endpoint:  endpoint,
+			Method:    method,
+			Timestamp: start,
+		}
+
+		logActivity(logEntry)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func extractUserID(r *http.Request) string {
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		return "anonymous"
+	}
+	return hashToken(token)
+}
+
+func hashToken(token string) string {
+	return token[:8]
+}
+
+func logActivity(entry ActivityLog) {
+	log.Printf("ACTIVITY: User %s from %s accessed %s %s at %v",
+		entry.UserID,
+		entry.IPAddress,
+		entry.Method,
+		entry.Endpoint,
+		entry.Timestamp.Format(time.RFC3339))
+}
