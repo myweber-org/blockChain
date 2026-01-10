@@ -120,4 +120,106 @@ func main() {
 	fmt.Printf("Unique count: %d\n", len(cleaned))
 	
 	cleaner.Reset()
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+type DataCleaner struct {
+	skipHeader bool
+	delimiter  rune
+}
+
+func NewDataCleaner(skipHeader bool, delimiter rune) *DataCleaner {
+	return &DataCleaner{
+		skipHeader: skipHeader,
+		delimiter:  delimiter,
+	}
+}
+
+func (dc *DataCleaner) CleanCSV(inputPath, outputPath string) error {
+	inFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inFile.Close()
+
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	reader := csv.NewReader(inFile)
+	reader.Comma = dc.delimiter
+	writer := csv.NewWriter(outFile)
+	writer.Comma = dc.delimiter
+	defer writer.Flush()
+
+	lineNum := 0
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read error at line %d: %w", lineNum+1, err)
+		}
+
+		lineNum++
+		if dc.skipHeader && lineNum == 1 {
+			if err := writer.Write(record); err != nil {
+				return fmt.Errorf("write header error: %w", err)
+			}
+			continue
+		}
+
+		cleaned := dc.cleanRecord(record)
+		if cleaned == nil {
+			continue
+		}
+
+		if err := writer.Write(cleaned); err != nil {
+			return fmt.Errorf("write error at line %d: %w", lineNum, err)
+		}
+	}
+
+	return nil
+}
+
+func (dc *DataCleaner) cleanRecord(record []string) []string {
+	cleaned := make([]string, len(record))
+	allEmpty := true
+
+	for i, field := range record {
+		field = strings.TrimSpace(field)
+		field = strings.ToLower(field)
+		if field == "" || field == "null" || field == "n/a" {
+			field = "unknown"
+		}
+		cleaned[i] = field
+		if field != "unknown" {
+			allEmpty = false
+		}
+	}
+
+	if allEmpty {
+		return nil
+	}
+	return cleaned
+}
+
+func main() {
+	cleaner := NewDataCleaner(true, ',')
+	err := cleaner.CleanCSV("input.csv", "cleaned.csv")
+	if err != nil {
+		fmt.Printf("Error cleaning data: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Data cleaning completed successfully")
 }
