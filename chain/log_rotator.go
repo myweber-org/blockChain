@@ -257,3 +257,153 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "sort"
+    "strconv"
+    "strings"
+    "time"
+)
+
+const (
+    maxFileSize    = 10 * 1024 * 1024 // 10MB
+    maxBackupFiles = 5
+    logFileName    = "app.log"
+)
+
+type LogRotator struct {
+    currentFile *os.File
+    basePath    string
+    fileSize    int64
+}
+
+func NewLogRotator(logDir string) (*LogRotator, error) {
+    if err := os.MkdirAll(logDir, 0755); err != nil {
+        return nil, fmt.Errorf("failed to create log directory: %w", err)
+    }
+
+    logPath := filepath.Join(logDir, logFileName)
+    file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open log file: %w", err)
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, fmt.Errorf("failed to get file info: %w", err)
+    }
+
+    return &LogRotator{
+        currentFile: file,
+        basePath:    logDir,
+        fileSize:    info.Size(),
+    }, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+    if lr.fileSize+int64(len(p)) > maxFileSize {
+        if err := lr.rotate(); err != nil {
+            return 0, fmt.Errorf("failed to rotate log: %w", err)
+        }
+    }
+
+    n, err := lr.currentFile.Write(p)
+    if err == nil {
+        lr.fileSize += int64(n)
+    }
+    return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+    if err := lr.currentFile.Close(); err != nil {
+        return fmt.Errorf("failed to close current log file: %w", err)
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    backupPath := filepath.Join(lr.basePath, fmt.Sprintf("app.%s.log", timestamp))
+
+    if err := os.Rename(filepath.Join(lr.basePath, logFileName), backupPath); err != nil {
+        return fmt.Errorf("failed to rename log file: %w", err)
+    }
+
+    file, err := os.OpenFile(filepath.Join(lr.basePath, logFileName), os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to create new log file: %w", err)
+    }
+
+    lr.currentFile = file
+    lr.fileSize = 0
+
+    go lr.cleanupOldFiles()
+
+    return nil
+}
+
+func (lr *LogRotator) cleanupOldFiles() {
+    files, err := filepath.Glob(filepath.Join(lr.basePath, "app.*.log"))
+    if err != nil {
+        return
+    }
+
+    sort.Sort(sort.Reverse(sort.StringSlice(files)))
+
+    for i, file := range files {
+        if i >= maxBackupFiles {
+            os.Remove(file)
+        }
+    }
+}
+
+func (lr *LogRotator) parseBackupTimestamp(filename string) (time.Time, error) {
+    base := filepath.Base(filename)
+    parts := strings.Split(base, ".")
+    if len(parts) != 3 || parts[0] != "app" || parts[2] != "log" {
+        return time.Time{}, fmt.Errorf("invalid backup filename format")
+    }
+
+    timestamp := parts[1]
+    if len(timestamp) != 15 {
+        return time.Time{}, fmt.Errorf("invalid timestamp length")
+    }
+
+    year, _ := strconv.Atoi(timestamp[0:4])
+    month, _ := strconv.Atoi(timestamp[4:6])
+    day, _ := strconv.Atoi(timestamp[6:8])
+    hour, _ := strconv.Atoi(timestamp[9:11])
+    minute, _ := strconv.Atoi(timestamp[11:13])
+    second, _ := strconv.Atoi(timestamp[13:15])
+
+    return time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC), nil
+}
+
+func (lr *LogRotator) Close() error {
+    if lr.currentFile != nil {
+        return lr.currentFile.Close()
+    }
+    return nil
+}
+
+func main() {
+    rotator, err := NewLogRotator("./logs")
+    if err != nil {
+        fmt.Printf("Failed to create log rotator: %v\n", err)
+        os.Exit(1)
+    }
+    defer rotator.Close()
+
+    for i := 0; i < 100; i++ {
+        message := fmt.Sprintf("Log entry %d: %s\n", i, time.Now().Format(time.RFC3339))
+        if _, err := rotator.Write([]byte(message)); err != nil {
+            fmt.Printf("Failed to write log: %v\n", err)
+        }
+        time.Sleep(100 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed")
+}
