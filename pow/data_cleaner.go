@@ -1,101 +1,94 @@
-
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"strings"
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strings"
 )
 
-type Record struct {
-	ID    string
-	Email string
-	Phone string
+type DataRecord struct {
+    ID    string
+    Name  string
+    Email string
+    Valid bool
 }
 
-type Cleaner struct {
-	seenHashes map[string]bool
+func cleanString(s string) string {
+    return strings.TrimSpace(strings.ToLower(s))
 }
 
-func NewCleaner() *Cleaner {
-	return &Cleaner{
-		seenHashes: make(map[string]bool),
-	}
+func validateEmail(email string) bool {
+    return strings.Contains(email, "@") && strings.Contains(email, ".")
 }
 
-func (c *Cleaner) NormalizeEmail(email string) string {
-	parts := strings.Split(strings.ToLower(email), "@")
-	if len(parts) != 2 {
-		return ""
-	}
-	local := strings.Split(parts[0], "+")[0]
-	local = strings.ReplaceAll(local, ".", "")
-	return local + "@" + parts[1]
+func processCSVFile(inputPath string) ([]DataRecord, error) {
+    file, err := os.Open(inputPath)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    records := []DataRecord{}
+    lineNumber := 0
+
+    for {
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
+
+        lineNumber++
+        if lineNumber == 1 {
+            continue
+        }
+
+        if len(row) < 3 {
+            continue
+        }
+
+        record := DataRecord{
+            ID:    cleanString(row[0]),
+            Name:  cleanString(row[1]),
+            Email: cleanString(row[2]),
+        }
+
+        record.Valid = validateEmail(record.Email)
+        records = append(records, record)
+    }
+
+    return records, nil
 }
 
-func (c *Cleaner) GenerateHash(record Record) string {
-	normalizedEmail := c.NormalizeEmail(record.Email)
-	if normalizedEmail == "" {
-		return ""
-	}
-	data := fmt.Sprintf("%s|%s", normalizedEmail, strings.TrimSpace(record.Phone))
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
-}
+func generateReport(records []DataRecord) {
+    validCount := 0
+    for _, record := range records {
+        if record.Valid {
+            validCount++
+        }
+    }
 
-func (c *Cleaner) IsDuplicate(record Record) bool {
-	hash := c.GenerateHash(record)
-	if hash == "" {
-		return false
-	}
-	if c.seenHashes[hash] {
-		return true
-	}
-	c.seenHashes[hash] = true
-	return false
-}
-
-func (c *Cleaner) ValidateRecord(record Record) bool {
-	if len(record.ID) == 0 || len(record.Email) == 0 {
-		return false
-	}
-	if !strings.Contains(record.Email, "@") {
-		return false
-	}
-	if len(record.Phone) > 0 && !strings.HasPrefix(record.Phone, "+") {
-		return false
-	}
-	return true
-}
-
-func (c *Cleaner) ProcessRecords(records []Record) []Record {
-	var cleaned []Record
-	for _, rec := range records {
-		if !c.ValidateRecord(rec) {
-			continue
-		}
-		if c.IsDuplicate(rec) {
-			continue
-		}
-		cleaned = append(cleaned, rec)
-	}
-	return cleaned
+    fmt.Printf("Total records processed: %d\n", len(records))
+    fmt.Printf("Valid records: %d\n", validCount)
+    fmt.Printf("Invalid records: %d\n", len(records)-validCount)
 }
 
 func main() {
-	cleaner := NewCleaner()
-	records := []Record{
-		{ID: "1", Email: "test@example.com", Phone: "+1234567890"},
-		{ID: "2", Email: "TEST@example.com", Phone: "+1234567890"},
-		{ID: "3", Email: "test+tag@example.com", Phone: "+1234567890"},
-		{ID: "4", Email: "invalid-email", Phone: "+0987654321"},
-		{ID: "5", Email: "another@test.com", Phone: ""},
-	}
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: data_cleaner <csv_file>")
+        return
+    }
 
-	result := cleaner.ProcessRecords(records)
-	fmt.Printf("Original: %d, Cleaned: %d\n", len(records), len(result))
-	for _, rec := range result {
-		fmt.Printf("ID: %s, Email: %s\n", rec.ID, rec.Email)
-	}
+    records, err := processCSVFile(os.Args[1])
+    if err != nil {
+        fmt.Printf("Error processing file: %v\n", err)
+        return
+    }
+
+    generateReport(records)
 }
