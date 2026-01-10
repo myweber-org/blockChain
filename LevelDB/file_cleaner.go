@@ -1,0 +1,61 @@
+package main
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	tempDir      = "/tmp/app_cache"
+	maxAge       = 7 * 24 * time.Hour
+	fileModePerm = 0750
+)
+
+func main() {
+	if err := cleanOldFiles(); err != nil {
+		fmt.Printf("Cleanup failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Cleanup completed successfully")
+}
+
+func cleanOldFiles() error {
+	if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+		return fmt.Errorf("temp directory does not exist: %s", tempDir)
+	}
+
+	cutoffTime := time.Now().Add(-maxAge)
+	var cleanupErr error
+
+	err := filepath.WalkDir(tempDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		if info.ModTime().Before(cutoffTime) {
+			if err := os.Remove(path); err != nil {
+				cleanupErr = fmt.Errorf("failed to remove %s: %w", path, err)
+				return nil
+			}
+			fmt.Printf("Removed: %s (modified: %v)\n", path, info.ModTime())
+		}
+		return nil
+	})
+
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	return err
+}
