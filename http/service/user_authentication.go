@@ -42,11 +42,18 @@ func GetUserID(ctx context.Context) (string, bool) {
 }
 
 func validateToken(tokenString string) (string, error) {
-	// This is a placeholder implementation
-	// In production, use a proper JWT library like github.com/golang-jwt/jwt
-	// For this example, we'll do a simple string check
-	if tokenString == "valid_token_example" {
-		return "user123", nil
+	// This is a placeholder for actual JWT validation logic
+	// In a real implementation, this would parse and verify the JWT
+	// and extract the user ID from claims
+	if tokenString == "" {
+		return "", http.ErrNoCookie
 	}
-	return "", http.ErrNoCookie
+	
+	// Simulate token validation - in production use a proper JWT library
+	if len(tokenString) < 10 {
+		return "", http.ErrNoCookie
+	}
+	
+	// Return a mock user ID for demonstration
+	return "user-" + tokenString[:8], nil
 }
