@@ -109,4 +109,60 @@ func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type User struct {
+	ID    string
+	Email string
+	Role  string
+}
+
+func AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == authHeader {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
+
+		user, err := validateToken(token)
+		if err != nil {
+			http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func validateToken(token string) (*User, error) {
+	// Token validation logic would go here
+	// This is a simplified example
+	if token == "" {
+		return nil, fmt.Errorf("empty token")
+	}
+
+	// Simulate token validation
+	if strings.HasPrefix(token, "valid_") {
+		return &User{
+			ID:    "user_123",
+			Email: "user@example.com",
+			Role:  "member",
+		}, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
 }
