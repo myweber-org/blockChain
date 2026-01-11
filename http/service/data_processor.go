@@ -104,4 +104,70 @@ func main() {
 	
 	println("Original:", testInput)
 	println("Processed:", processed)
+}package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
+	Valid bool
+}
+
+func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
+	if len(records) == 0 {
+		return nil, errors.New("no records to process")
+	}
+
+	var processed []DataRecord
+	var errorsFound []string
+
+	for _, record := range records {
+		if !record.Valid {
+			errorsFound = append(errorsFound, fmt.Sprintf("record %d is invalid", record.ID))
+			continue
+		}
+
+		if record.Value < 0 {
+			errorsFound = append(errorsFound, fmt.Sprintf("record %d has negative value", record.ID))
+			continue
+		}
+
+		if strings.TrimSpace(record.Name) == "" {
+			errorsFound = append(errorsFound, fmt.Sprintf("record %d has empty name", record.ID))
+			continue
+		}
+
+		processed = append(processed, record)
+	}
+
+	if len(errorsFound) > 0 {
+		return processed, fmt.Errorf("processing completed with errors: %s", strings.Join(errorsFound, "; "))
+	}
+
+	return processed, nil
+}
+
+func main() {
+	records := []DataRecord{
+		{ID: 1, Name: "Record A", Value: 100.5, Valid: true},
+		{ID: 2, Name: "", Value: 50.0, Valid: true},
+		{ID: 3, Name: "Record C", Value: -10.0, Valid: true},
+		{ID: 4, Name: "Record D", Value: 75.3, Valid: false},
+	}
+
+	processed, err := ProcessRecords(records)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	}
+
+	fmt.Printf("Successfully processed %d records\n", len(processed))
+	for _, record := range processed {
+		fmt.Printf("ID: %d, Name: %s, Value: %.2f\n", record.ID, record.Name, record.Value)
+	}
 }
