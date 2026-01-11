@@ -156,4 +156,109 @@ func randomString(length int) string {
         b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
     }
     return string(b)
+}package session
+
+import (
+    "crypto/rand"
+    "encoding/base64"
+    "sync"
+    "time"
+)
+
+type Session struct {
+    Token     string
+    UserID    string
+    ExpiresAt time.Time
+    Data      map[string]interface{}
+}
+
+type Manager struct {
+    sessions map[string]Session
+    mu       sync.RWMutex
+    duration time.Duration
+}
+
+func NewManager(sessionDuration time.Duration) *Manager {
+    return &Manager{
+        sessions: make(map[string]Session),
+        duration: sessionDuration,
+    }
+}
+
+func generateToken() (string, error) {
+    b := make([]byte, 32)
+    _, err := rand.Read(b)
+    if err != nil {
+        return "", err
+    }
+    return base64.URLEncoding.EncodeToString(b), nil
+}
+
+func (m *Manager) Create(userID string) (Session, error) {
+    token, err := generateToken()
+    if err != nil {
+        return Session{}, err
+    }
+
+    session := Session{
+        Token:     token,
+        UserID:    userID,
+        ExpiresAt: time.Now().Add(m.duration),
+        Data:      make(map[string]interface{}),
+    }
+
+    m.mu.Lock()
+    m.sessions[token] = session
+    m.mu.Unlock()
+
+    return session, nil
+}
+
+func (m *Manager) Get(token string) (Session, bool) {
+    m.mu.RLock()
+    session, exists := m.sessions[token]
+    m.mu.RUnlock()
+
+    if !exists {
+        return Session{}, false
+    }
+
+    if time.Now().After(session.ExpiresAt) {
+        m.Delete(token)
+        return Session{}, false
+    }
+
+    return session, true
+}
+
+func (m *Manager) Delete(token string) {
+    m.mu.Lock()
+    delete(m.sessions, token)
+    m.mu.Unlock()
+}
+
+func (m *Manager) Cleanup() {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    now := time.Now()
+    for token, session := range m.sessions {
+        if now.After(session.ExpiresAt) {
+            delete(m.sessions, token)
+        }
+    }
+}
+
+func (m *Manager) Extend(token string, duration time.Duration) bool {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    session, exists := m.sessions[token]
+    if !exists {
+        return false
+    }
+
+    session.ExpiresAt = time.Now().Add(duration)
+    m.sessions[token] = session
+    return true
 }
