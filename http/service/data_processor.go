@@ -55,3 +55,53 @@ func main() {
 
 	fmt.Printf("Processed Data: %+v\n", processedData)
 }
+package main
+
+import (
+	"strings"
+	"unicode"
+)
+
+// DataProcessor handles cleaning and normalization of string data
+type DataProcessor struct{}
+
+// CleanInput removes extra whitespace and trims the input string
+func (dp *DataProcessor) CleanInput(input string) string {
+	return strings.TrimSpace(input)
+}
+
+// NormalizeSpaces collapses multiple consecutive spaces into a single space
+func (dp *DataProcessor) NormalizeSpaces(input string) string {
+	var result strings.Builder
+	prevSpace := false
+
+	for _, r := range input {
+		if unicode.IsSpace(r) {
+			if !prevSpace {
+				result.WriteRune(' ')
+				prevSpace = true
+			}
+		} else {
+			result.WriteRune(r)
+			prevSpace = false
+		}
+	}
+
+	return result.String()
+}
+
+// Process combines cleaning and normalization operations
+func (dp *DataProcessor) Process(input string) string {
+	cleaned := dp.CleanInput(input)
+	return dp.NormalizeSpaces(cleaned)
+}
+
+func main() {
+	processor := &DataProcessor{}
+	
+	testInput := "   Hello    World   \t\n"
+	processed := processor.Process(testInput)
+	
+	println("Original:", testInput)
+	println("Processed:", processed)
+}
