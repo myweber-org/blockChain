@@ -3,22 +3,38 @@ package auth
 import (
     "net/http"
     "strings"
-    "github.com/dgrijalva/jwt-go"
+    "time"
+
+    "github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {
     Username string `json:"username"`
     Role     string `json:"role"`
-    jwt.StandardClaims
+    jwt.RegisteredClaims
 }
 
-var jwtKey = []byte("your_secret_key")
+var jwtKey = []byte("your_secret_key_here")
 
-func AuthMiddleware(next http.Handler) http.Handler {
+func GenerateToken(username, role string) (string, error) {
+    expirationTime := time.Now().Add(24 * time.Hour)
+    claims := &Claims{
+        Username: username,
+        Role:     role,
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(expirationTime),
+        },
+    }
+
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString(jwtKey)
+}
+
+func Authenticate(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         authHeader := r.Header.Get("Authorization")
         if authHeader == "" {
-            http.Error(w, "Missing authorization header", http.StatusUnauthorized)
+            http.Error(w, "Authorization header required", http.StatusUnauthorized)
             return
         }
 
@@ -31,6 +47,11 @@ func AuthMiddleware(next http.Handler) http.Handler {
 
         if err != nil || !token.Valid {
             http.Error(w, "Invalid token", http.StatusUnauthorized)
+            return
+        }
+
+        if time.Until(claims.ExpiresAt.Time) < 0 {
+            http.Error(w, "Token expired", http.StatusUnauthorized)
             return
         }
 
