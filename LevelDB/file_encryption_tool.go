@@ -1,110 +1,124 @@
+
 package main
 
 import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 )
 
-func encryptFile(inputPath, outputPath string, key []byte) error {
-	plaintext, err := os.ReadFile(inputPath)
-	if err != nil {
-		return err
+func deriveKey(passphrase string, salt []byte) []byte {
+	hash := sha256.New()
+	hash.Write([]byte(passphrase))
+	hash.Write(salt)
+	return hash.Sum(nil)
+}
+
+func encryptData(plaintext []byte, passphrase string) ([]byte, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, err
 	}
 
+	key := deriveKey(passphrase, salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return err
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	return os.WriteFile(outputPath, ciphertext, 0644)
+	return append(salt, ciphertext...), nil
 }
 
-func decryptFile(inputPath, outputPath string, key []byte) error {
-	ciphertext, err := os.ReadFile(inputPath)
-	if err != nil {
-		return err
+func decryptData(ciphertext []byte, passphrase string) ([]byte, error) {
+	if len(ciphertext) < 16 {
+		return nil, errors.New("ciphertext too short")
 	}
 
+	salt := ciphertext[:16]
+	ciphertext = ciphertext[16:]
+
+	key := deriveKey(passphrase, salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return errors.New("ciphertext too short")
+		return nil, errors.New("ciphertext too short")
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(outputPath, plaintext, 0644)
-}
-
-func generateKey() ([]byte, error) {
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, err
-	}
-	return key, nil
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
 func main() {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: go run file_encryption_tool.go <encrypt|decrypt> <input> <output>")
-		fmt.Println("Example: go run file_encryption_tool.go encrypt secret.txt encrypted.bin")
+		fmt.Println("Usage: go run file_encryption_tool.go <encrypt|decrypt> <input_file> <output_file>")
+		fmt.Println("Passphrase will be read from environment variable ENCRYPTION_KEY")
 		os.Exit(1)
 	}
 
-	key, err := generateKey()
+	operation := os.Args[1]
+	inputFile := os.Args[2]
+	outputFile := os.Args[3]
+
+	passphrase := os.Getenv("ENCRYPTION_KEY")
+	if passphrase == "" {
+		fmt.Println("Error: ENCRYPTION_KEY environment variable not set")
+		os.Exit(1)
+	}
+
+	inputData, err := os.ReadFile(inputFile)
 	if err != nil {
-		fmt.Printf("Key generation failed: %v\n", err)
+		fmt.Printf("Error reading input file: %v\n", err)
 		os.Exit(1)
 	}
 
-	mode := os.Args[1]
-	inputPath := os.Args[2]
-	outputPath := os.Args[3]
-
-	switch mode {
+	var outputData []byte
+	switch operation {
 	case "encrypt":
-		err = encryptFile(inputPath, outputPath, key)
+		outputData, err = encryptData(inputData, passphrase)
 	case "decrypt":
-		err = decryptFile(inputPath, outputPath, key)
+		outputData, err = decryptData(inputData, passphrase)
 	default:
-		fmt.Printf("Invalid mode: %s\n", mode)
+		fmt.Println("Error: operation must be 'encrypt' or 'decrypt'")
 		os.Exit(1)
 	}
 
 	if err != nil {
-		fmt.Printf("Operation failed: %v\n", err)
+		fmt.Printf("Error during %s: %v\n", operation, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Key (hex): %x\n", key)
-	fmt.Printf("%s completed successfully\n", mode)
+	if err := os.WriteFile(outputFile, outputData, 0644); err != nil {
+		fmt.Printf("Error writing output file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s operation completed successfully\n", operation)
+	fmt.Printf("Input: %s (%d bytes)\n", inputFile, len(inputData))
+	fmt.Printf("Output: %s (%d bytes)\n", outputFile, len(outputData))
 }
