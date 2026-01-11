@@ -29,3 +29,76 @@ func (dp *DataProcessor) ProcessUserData(name, email string) (string, string, bo
 	isValidEmail := dp.ValidateEmail(sanitizedEmail)
 	return sanitizedName, sanitizedEmail, isValidEmail
 }
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    string
+	Value int
+	Tags  []string
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("record ID cannot be empty")
+	}
+	if record.Value < 0 {
+		return errors.New("record value must be non-negative")
+	}
+	if len(record.Tags) == 0 {
+		return errors.New("record must have at least one tag")
+	}
+	return nil
+}
+
+func TransformRecord(record DataRecord) DataRecord {
+	transformed := DataRecord{
+		ID:    strings.ToUpper(record.ID),
+		Value: record.Value * 2,
+		Tags:  make([]string, len(record.Tags)),
+	}
+
+	for i, tag := range record.Tags {
+		transformed.Tags[i] = strings.TrimSpace(tag)
+	}
+
+	return transformed
+}
+
+func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
+	var processed []DataRecord
+
+	for _, record := range records {
+		if err := ValidateRecord(record); err != nil {
+			return nil, fmt.Errorf("validation failed for record %s: %w", record.ID, err)
+		}
+
+		transformed := TransformRecord(record)
+		processed = append(processed, transformed)
+	}
+
+	return processed, nil
+}
+
+func main() {
+	records := []DataRecord{
+		{ID: "abc123", Value: 42, Tags: []string{"test", "sample"}},
+		{ID: "def456", Value: 100, Tags: []string{"production", "data"}},
+	}
+
+	processed, err := ProcessRecords(records)
+	if err != nil {
+		fmt.Printf("Processing error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Processed %d records successfully\n", len(processed))
+	for _, record := range processed {
+		fmt.Printf("ID: %s, Value: %d, Tags: %v\n", record.ID, record.Value, record.Tags)
+	}
+}
