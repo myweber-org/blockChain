@@ -1,49 +1,49 @@
-package main
+
+package data_processor
 
 import (
-	"errors"
-	"regexp"
-	"strings"
+	"encoding/json"
+	"fmt"
 )
 
-type UserData struct {
-	Email    string
-	Username string
-	Age      int
+type ValidationError struct {
+	Field   string
+	Message string
 }
 
-var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+func (e ValidationError) Error() string {
+	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
+}
 
-func ValidateUserData(data UserData) error {
-	if strings.TrimSpace(data.Email) == "" {
-		return errors.New("email cannot be empty")
+func ParseAndValidateJSON(rawData []byte, target interface{}) error {
+	if err := json.Unmarshal(rawData, target); err != nil {
+		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
-	if !emailRegex.MatchString(data.Email) {
-		return errors.New("invalid email format")
+
+	if validator, ok := target.(interface{ Validate() error }); ok {
+		if err := validator.Validate(); err != nil {
+			return err
+		}
 	}
-	if len(data.Username) < 3 || len(data.Username) > 20 {
-		return errors.New("username must be between 3 and 20 characters")
-	}
-	if data.Age < 18 || data.Age > 120 {
-		return errors.New("age must be between 18 and 120")
-	}
+
 	return nil
 }
 
-func TransformUsername(username string) string {
-	return strings.ToLower(strings.TrimSpace(username))
+type UserData struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Age      int    `json:"age"`
 }
 
-func ProcessUserInput(email, username string, age int) (UserData, error) {
-	transformedUsername := TransformUsername(username)
-	userData := UserData{
-		Email:    strings.TrimSpace(email),
-		Username: transformedUsername,
-		Age:      age,
+func (u *UserData) Validate() error {
+	if u.Username == "" {
+		return ValidationError{Field: "username", Message: "cannot be empty"}
 	}
-	err := ValidateUserData(userData)
-	if err != nil {
-		return UserData{}, err
+	if u.Email == "" {
+		return ValidationError{Field: "email", Message: "cannot be empty"}
 	}
-	return userData, nil
+	if u.Age < 0 || u.Age > 150 {
+		return ValidationError{Field: "age", Message: "must be between 0 and 150"}
+	}
+	return nil
 }
