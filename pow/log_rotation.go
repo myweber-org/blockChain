@@ -266,4 +266,117 @@ func main() {
 		log.Printf("Log entry %d: Application event processed", i)
 		time.Sleep(10 * time.Millisecond)
 	}
+}package main
+
+import (
+    "fmt"
+    "io"
+    "log"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+const (
+    maxLogSize    = 1024 * 1024 // 1MB
+    maxBackupFiles = 5
+    logFileName   = "app.log"
+)
+
+type RotatingLogger struct {
+    currentFile *os.File
+    fileSize    int64
+    basePath    string
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+    fullPath := filepath.Join(path, logFileName)
+    file, err := os.OpenFile(fullPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &RotatingLogger{
+        currentFile: file,
+        fileSize:    info.Size(),
+        basePath:    path,
+    }, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+    if rl.fileSize+int64(len(p)) > maxLogSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err = rl.currentFile.Write(p)
+    rl.fileSize += int64(n)
+    return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+    if err := rl.currentFile.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    backupName := fmt.Sprintf("%s.%s", logFileName, timestamp)
+    oldPath := filepath.Join(rl.basePath, logFileName)
+    newPath := filepath.Join(rl.basePath, backupName)
+
+    if err := os.Rename(oldPath, newPath); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(oldPath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    rl.currentFile = file
+    rl.fileSize = 0
+
+    go rl.cleanupOldFiles()
+    return nil
+}
+
+func (rl *RotatingLogger) cleanupOldFiles() {
+    pattern := filepath.Join(rl.basePath, logFileName+".*")
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return
+    }
+
+    if len(matches) > maxBackupFiles {
+        filesToDelete := matches[:len(matches)-maxBackupFiles]
+        for _, f := range filesToDelete {
+            os.Remove(f)
+        }
+    }
+}
+
+func (rl *RotatingLogger) Close() error {
+    return rl.currentFile.Close()
+}
+
+func main() {
+    logger, err := NewRotatingLogger(".")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer logger.Close()
+
+    log.SetOutput(io.MultiWriter(os.Stdout, logger))
+
+    for i := 0; i < 1000; i++ {
+        log.Printf("Log entry %d: Application is running normally", i)
+        time.Sleep(10 * time.Millisecond)
+    }
 }
