@@ -2,100 +2,43 @@ package main
 
 import (
 	"fmt"
-	"strings"
+	"sort"
 )
 
-type DataRecord struct {
-	ID    int
-	Name  string
-	Email string
-	Valid bool
+type Record struct {
+	ID   int
+	Name string
 }
 
-func DeduplicateRecords(records []DataRecord) []DataRecord {
-	seen := make(map[string]bool)
-	var unique []DataRecord
+func cleanData(records []Record) []Record {
+	seen := make(map[int]bool)
+	var unique []Record
 
-	for _, record := range records {
-		key := fmt.Sprintf("%s|%s", record.Name, record.Email)
-		if !seen[key] {
-			seen[key] = true
-			unique = append(unique, record)
+	for _, r := range records {
+		if !seen[r.ID] {
+			seen[r.ID] = true
+			unique = append(unique, r)
 		}
 	}
+
+	sort.Slice(unique, func(i, j int) bool {
+		return unique[i].ID < unique[j].ID
+	})
+
 	return unique
 }
 
-func ValidateEmail(email string) bool {
-	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
-		return false
-	}
-	return len(email) > 5
-}
-
-func CleanData(records []DataRecord) []DataRecord {
-	var cleaned []DataRecord
-	uniqueRecords := DeduplicateRecords(records)
-
-	for _, record := range uniqueRecords {
-		record.Valid = ValidateEmail(record.Email)
-		if record.Valid {
-			cleaned = append(cleaned, record)
-		}
-	}
-	return cleaned
-}
-
 func main() {
-	sampleData := []DataRecord{
-		{1, "John Doe", "john@example.com", false},
-		{2, "Jane Smith", "jane@example.net", false},
-		{3, "John Doe", "john@example.com", false},
-		{4, "Bob", "invalid-email", false},
+	data := []Record{
+		{3, "Charlie"},
+		{1, "Alice"},
+		{2, "Bob"},
+		{1, "Alice"},
+		{4, "David"},
 	}
 
-	cleaned := CleanData(sampleData)
-	fmt.Printf("Original: %d records\n", len(sampleData))
-	fmt.Printf("Cleaned: %d valid records\n", len(cleaned))
-}
-package main
-
-import (
-	"fmt"
-)
-
-// RemoveDuplicates removes duplicate strings from a slice.
-// It preserves the order of the first occurrence of each element.
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]bool)
-	result := []string{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
+	cleaned := cleanData(data)
+	for _, r := range cleaned {
+		fmt.Printf("ID: %d, Name: %s\n", r.ID, r.Name)
 	}
-	return result
-}
-
-func main() {
-	data := []string{"apple", "banana", "apple", "cherry", "banana", "date"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}package data
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-    seen := make(map[T]bool)
-    result := []T{}
-    
-    for _, item := range slice {
-        if !seen[item] {
-            seen[item] = true
-            result = append(result, item)
-        }
-    }
-    
-    return result
 }
