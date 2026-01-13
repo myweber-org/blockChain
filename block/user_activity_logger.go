@@ -1,51 +1,50 @@
-
-package middleware
+package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
-	"net/http"
+	"os"
 	"time"
 )
 
-type ActivityLogger struct {
-	Logger *log.Logger
+type UserActivity struct {
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Timestamp time.Time `json:"timestamp"`
+	Details   string    `json:"details,omitempty"`
 }
 
-func NewActivityLogger(logger *log.Logger) *ActivityLogger {
-	return &ActivityLogger{Logger: logger}
+func logActivity(userID, action, details string) error {
+	activity := UserActivity{
+		UserID:    userID,
+		Action:    action,
+		Timestamp: time.Now().UTC(),
+		Details:   details,
+	}
+
+	file, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(activity); err != nil {
+		return fmt.Errorf("failed to encode activity: %w", err)
+	}
+
+	return nil
 }
 
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		startTime := time.Now()
-		
-		recorder := &responseRecorder{
-			ResponseWriter: w,
-			statusCode:     http.StatusOK,
-		}
-		
-		next.ServeHTTP(recorder, r)
-		
-		duration := time.Since(startTime)
-		
-		al.Logger.Printf(
-			"Activity: %s %s | Status: %d | Duration: %v | User-Agent: %s | Remote: %s",
-			r.Method,
-			r.URL.Path,
-			recorder.statusCode,
-			duration,
-			r.UserAgent(),
-			r.RemoteAddr,
-		)
-	})
-}
+func main() {
+	if err := logActivity("user123", "login", "successful authentication"); err != nil {
+		log.Printf("Failed to log activity: %v", err)
+	}
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
+	if err := logActivity("user456", "file_upload", "uploaded profile.jpg"); err != nil {
+		log.Printf("Failed to log activity: %v", err)
+	}
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+	fmt.Println("Activity logging completed")
 }
