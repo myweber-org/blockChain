@@ -1,49 +1,62 @@
-package auth
+package middleware
 
 import (
-    "errors"
-    "time"
+	"context"
+	"net/http"
+	"strings"
 
-    "github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-type Claims struct {
-    Username string `json:"username"`
-    UserID   int    `json:"user_id"`
-    jwt.RegisteredClaims
+type contextKey string
+
+const UserIDKey contextKey = "userID"
+
+type AuthMiddleware struct {
+	secretKey []byte
 }
 
-var jwtKey = []byte("your_secret_key_here")
-
-func GenerateToken(username string, userID int) (string, error) {
-    expirationTime := time.Now().Add(24 * time.Hour)
-    claims := &Claims{
-        Username: username,
-        UserID:   userID,
-        RegisteredClaims: jwt.RegisteredClaims{
-            ExpiresAt: jwt.NewNumericDate(expirationTime),
-            IssuedAt:  jwt.NewNumericDate(time.Now()),
-            Issuer:    "myapp",
-        },
-    }
-
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    return token.SignedString(jwtKey)
+func NewAuthMiddleware(secret string) *AuthMiddleware {
+	return &AuthMiddleware{secretKey: []byte(secret)}
 }
 
-func ValidateToken(tokenString string) (*Claims, error) {
-    claims := &Claims{}
-    token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-        return jwtKey, nil
-    })
+func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
 
-    if err != nil {
-        return nil, err
-    }
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
 
-    if !token.Valid {
-        return nil, errors.New("invalid token")
-    }
+		tokenStr := parts[1]
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return m.secretKey, nil
+		})
 
-    return claims, nil
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if userID, exists := claims["user_id"]; exists {
+				if idStr, ok := userID.(string); ok {
+					ctx := context.WithValue(r.Context(), UserIDKey, idStr)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+			}
+		}
+
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+	})
 }
