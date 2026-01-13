@@ -1,88 +1,126 @@
 package config
 
 import (
-    "fmt"
-    "os"
-    "path/filepath"
-
-    "gopkg.in/yaml.v2"
+	"encoding/json"
+	"os"
+	"strings"
 )
 
 type DatabaseConfig struct {
-    Host     string `yaml:"host" env:"DB_HOST"`
-    Port     int    `yaml:"port" env:"DB_PORT"`
-    Username string `yaml:"username" env:"DB_USER"`
-    Password string `yaml:"password" env:"DB_PASS"`
-    Name     string `yaml:"name" env:"DB_NAME"`
+	Host     string `json:"host" env:"DB_HOST"`
+	Port     int    `json:"port" env:"DB_PORT"`
+	Username string `json:"username" env:"DB_USER"`
+	Password string `json:"password" env:"DB_PASS"`
+	SSLMode  bool   `json:"ssl_mode" env:"DB_SSL"`
 }
 
-type ServerConfig struct {
-    Port         int    `yaml:"port" env:"SERVER_PORT"`
-    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
-    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug" env:"DEBUG_MODE"`
+type AppConfig struct {
+	Debug      bool           `json:"debug" env:"APP_DEBUG"`
+	Port       int            `json:"port" env:"APP_PORT"`
+	SecretKey  string         `json:"secret_key" env:"APP_SECRET"`
+	Database   DatabaseConfig `json:"database"`
+	AllowedIPs []string       `json:"allowed_ips" env:"APP_ALLOWED_IPS"`
 }
 
-type Config struct {
-    Database DatabaseConfig `yaml:"database"`
-    Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
+func LoadConfig(configPath string) (*AppConfig, error) {
+	config := &AppConfig{
+		Port: 8080,
+		Database: DatabaseConfig{
+			Port: 5432,
+		},
+	}
+
+	if configPath != "" {
+		file, err := os.Open(configPath)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+
+		decoder := json.NewDecoder(file)
+		if err := decoder.Decode(config); err != nil {
+			return nil, err
+		}
+	}
+
+	loadFromEnv(config)
+	return config, validateConfig(config)
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-    var cfg Config
+func loadFromEnv(config *AppConfig) {
+	envMap := make(map[string]string)
+	for _, env := range os.Environ() {
+		pair := strings.SplitN(env, "=", 2)
+		if len(pair) == 2 {
+			envMap[pair[0]] = pair[1]
+		}
+	}
 
-    absPath, err := filepath.Abs(configPath)
-    if err != nil {
-        return nil, fmt.Errorf("invalid config path: %w", err)
-    }
-
-    data, err := os.ReadFile(absPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
-
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
-
-    overrideFromEnv(&cfg)
-
-    return &cfg, nil
+	config.Debug = getEnvBool("APP_DEBUG", config.Debug, envMap)
+	config.Port = getEnvInt("APP_PORT", config.Port, envMap)
+	config.SecretKey = getEnvString("APP_SECRET", config.SecretKey, envMap)
+	
+	config.Database.Host = getEnvString("DB_HOST", config.Database.Host, envMap)
+	config.Database.Port = getEnvInt("DB_PORT", config.Database.Port, envMap)
+	config.Database.Username = getEnvString("DB_USER", config.Database.Username, envMap)
+	config.Database.Password = getEnvString("DB_PASS", config.Database.Password, envMap)
+	config.Database.SSLMode = getEnvBool("DB_SSL", config.Database.SSLMode, envMap)
+	
+	if ips := getEnvString("APP_ALLOWED_IPS", "", envMap); ips != "" {
+		config.AllowedIPs = strings.Split(ips, ",")
+	}
 }
 
-func overrideFromEnv(cfg *Config) {
-    overrideString(&cfg.Database.Host, "DB_HOST")
-    overrideInt(&cfg.Database.Port, "DB_PORT")
-    overrideString(&cfg.Database.Username, "DB_USER")
-    overrideString(&cfg.Database.Password, "DB_PASS")
-    overrideString(&cfg.Database.Name, "DB_NAME")
-
-    overrideInt(&cfg.Server.Port, "SERVER_PORT")
-    overrideInt(&cfg.Server.ReadTimeout, "READ_TIMEOUT")
-    overrideInt(&cfg.Server.WriteTimeout, "WRITE_TIMEOUT")
-    overrideBool(&cfg.Server.DebugMode, "DEBUG_MODE")
-
-    overrideString(&cfg.LogLevel, "LOG_LEVEL")
+func validateConfig(config *AppConfig) error {
+	if config.Port < 1 || config.Port > 65535 {
+		return &ConfigError{Field: "port", Message: "port must be between 1 and 65535"}
+	}
+	
+	if config.Database.Host == "" {
+		return &ConfigError{Field: "database.host", Message: "database host is required"}
+	}
+	
+	if config.SecretKey == "" {
+		return &ConfigError{Field: "secret_key", Message: "secret key is required"}
+	}
+	
+	return nil
 }
 
-func overrideString(field *string, envVar string) {
-    if val, exists := os.LookupEnv(envVar); exists && val != "" {
-        *field = val
-    }
+type ConfigError struct {
+	Field   string
+	Message string
 }
 
-func overrideInt(field *int, envVar string) {
-    if val, exists := os.LookupEnv(envVar); exists && val != "" {
-        var intVal int
-        if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
-            *field = intVal
-        }
-    }
+func (e *ConfigError) Error() string {
+	return e.Field + ": " + e.Message
 }
 
-func overrideBool(field *bool, envVar string) {
-    if val, exists := os.LookupEnv(envVar); exists {
-        *field = val == "true" || val == "1" || val == "yes"
-    }
+func getEnvString(key, defaultValue string, envMap map[string]string) string {
+	if val, exists := envMap[key]; exists && val != "" {
+		return val
+	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int, envMap map[string]string) int {
+	if val, exists := envMap[key]; exists && val != "" {
+		var result int
+		if _, err := fmt.Sscanf(val, "%d", &result); err == nil {
+			return result
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool, envMap map[string]string) bool {
+	if val, exists := envMap[key]; exists && val != "" {
+		switch strings.ToLower(val) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		}
+	}
+	return defaultValue
 }
