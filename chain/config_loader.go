@@ -146,4 +146,49 @@ func validateConfig(cfg *AppConfig) error {
 	}
 
 	return nil
+}package config
+
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	ServerPort int
+	DebugMode  bool
+	APIKey     string
+	Timeout    int
+}
+
+func LoadConfig() *Config {
+	return &Config{
+		ServerPort: getEnvAsInt("SERVER_PORT", 8080),
+		DebugMode:  getEnvAsBool("DEBUG_MODE", false),
+		APIKey:     getEnv("API_KEY", ""),
+		Timeout:    getEnvAsInt("TIMEOUT_SECONDS", 30),
+	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.Atoi(valueStr); err == nil {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.ParseBool(strings.ToLower(valueStr)); err == nil {
+		return value
+	}
+	return defaultValue
 }
