@@ -405,4 +405,137 @@ func main() {
 	}
 
 	fmt.Println("Log rotation test completed")
+}package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "sort"
+    "strconv"
+    "strings"
+    "time"
+)
+
+const (
+    maxFileSize    = 10 * 1024 * 1024 // 10MB
+    maxBackupFiles = 5
+    logFileName    = "app.log"
+)
+
+type LogRotator struct {
+    currentSize int64
+    file        *os.File
+}
+
+func NewLogRotator() (*LogRotator, error) {
+    file, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &LogRotator{
+        currentSize: info.Size(),
+        file:        file,
+    }, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+    if lr.currentSize+int64(len(p)) > maxFileSize {
+        if err := lr.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := lr.file.Write(p)
+    lr.currentSize += int64(n)
+    return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+    if err := lr.file.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    backupName := fmt.Sprintf("%s.%s", logFileName, timestamp)
+    if err := os.Rename(logFileName, backupName); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    lr.file = file
+    lr.currentSize = 0
+
+    go lr.cleanupOldFiles()
+    return nil
+}
+
+func (lr *LogRotator) cleanupOldFiles() {
+    files, err := filepath.Glob(logFileName + ".*")
+    if err != nil {
+        return
+    }
+
+    if len(files) <= maxBackupFiles {
+        return
+    }
+
+    sort.Slice(files, func(i, j int) bool {
+        return extractTimestamp(files[i]) > extractTimestamp(files[j])
+    })
+
+    for i := maxBackupFiles; i < len(files); i++ {
+        os.Remove(files[i])
+    }
+}
+
+func extractTimestamp(filename string) time.Time {
+    parts := strings.Split(filename, ".")
+    if len(parts) < 2 {
+        return time.Time{}
+    }
+
+    timestamp := parts[len(parts)-1]
+    t, err := time.Parse("20060102_150405", timestamp)
+    if err != nil {
+        return time.Time{}
+    }
+    return t
+}
+
+func (lr *LogRotator) Close() error {
+    return lr.file.Close()
+}
+
+func main() {
+    rotator, err := NewLogRotator()
+    if err != nil {
+        panic(err)
+    }
+    defer rotator.Close()
+
+    for i := 0; i < 1000; i++ {
+        logEntry := fmt.Sprintf("[%s] Iteration %d: Processing data chunk %d\n",
+            time.Now().Format(time.RFC3339),
+            i,
+            i*256)
+        if _, err := rotator.Write([]byte(logEntry)); err != nil {
+            fmt.Printf("Write error: %v\n", err)
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed")
 }
