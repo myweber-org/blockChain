@@ -1,26 +1,26 @@
-package middleware
+
+package auth
 
 import (
+	"context"
 	"net/http"
 	"strings"
 )
 
+type contextKey string
+
+const (
+	UserIDKey contextKey = "userID"
+)
+
 type Authenticator struct {
-	secretKey string
+	secretKey []byte
 }
 
 func NewAuthenticator(secretKey string) *Authenticator {
-	return &Authenticator{secretKey: secretKey}
-}
-
-func (a *Authenticator) ValidateToken(token string) bool {
-	if token == "" {
-		return false
+	return &Authenticator{
+		secretKey: []byte(secretKey),
 	}
-	
-	// Simulate token validation logic
-	// In real implementation, this would verify JWT signature
-	return strings.HasPrefix(token, "valid_")
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
@@ -31,12 +31,44 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if !a.ValidateToken(token) {
-			http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		tokenString := parts[1]
+		userID, err := a.validateToken(tokenString)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (a *Authenticator) validateToken(tokenString string) (string, error) {
+	// Token validation logic would be implemented here
+	// For example, using jwt-go library:
+	// token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	//     return a.secretKey, nil
+	// })
+	// if err != nil {
+	//     return "", err
+	// }
+	// claims := token.Claims.(jwt.MapClaims)
+	// return claims["userID"].(string), nil
+	
+	// Simplified implementation for demonstration
+	if tokenString == "valid_token_example" {
+		return "user123", nil
+	}
+	return "", http.ErrAbortHandler
+}
+
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(UserIDKey).(string)
+	return userID, ok
 }
