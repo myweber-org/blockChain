@@ -3,87 +3,110 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"strconv"
 )
 
-type DataRecord struct {
-	ID    string
+type Record struct {
+	ID    int
 	Name  string
-	Email string
-	Valid bool
+	Value float64
 }
 
-func ProcessCSVFile(filePath string) ([]DataRecord, error) {
-	file, err := os.Open(filePath)
+func ParseCSVFile(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.TrimLeadingSpace = true
-
-	var records []DataRecord
-	lineNumber := 0
+	records := []Record{}
+	lineNum := 0
 
 	for {
-		lineNumber++
+		lineNum++
 		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNum, err)
 		}
 
-		if len(row) < 3 {
-			continue
+		if len(row) != 3 {
+			return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", lineNum, len(row))
 		}
 
-		record := DataRecord{
-			ID:    strings.TrimSpace(row[0]),
-			Name:  strings.TrimSpace(row[1]),
-			Email: strings.TrimSpace(row[2]),
-			Valid: validateRecord(strings.TrimSpace(row[0]), strings.TrimSpace(row[2])),
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid ID at line %d: %w", lineNum, err)
 		}
 
-		if record.Valid {
-			records = append(records, record)
+		name := row[1]
+		if name == "" {
+			return nil, fmt.Errorf("empty name at line %d", lineNum)
 		}
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value at line %d: %w", lineNum, err)
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	if len(records) == 0 {
+		return nil, errors.New("no valid records found in file")
 	}
 
 	return records, nil
 }
 
-func validateRecord(id, email string) bool {
-	if id == "" || email == "" {
-		return false
+func CalculateStats(records []Record) (float64, float64, int) {
+	if len(records) == 0 {
+		return 0, 0, 0
 	}
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
+
+	var sum float64
+	var max float64
+	count := len(records)
+
+	for i, record := range records {
+		sum += record.Value
+		if i == 0 || record.Value > max {
+			max = record.Value
+		}
+	}
+
+	average := sum / float64(count)
+	return average, max, count
 }
 
-func GenerateReport(records []DataRecord) {
-	fmt.Printf("Total valid records: %d\n", len(records))
-	fmt.Println("Valid Records:")
+func ValidateRecords(records []Record) error {
+	seenIDs := make(map[int]bool)
+
 	for _, record := range records {
-		fmt.Printf("ID: %s, Name: %s, Email: %s\n", record.ID, record.Name, record.Email)
-	}
-}
+		if record.ID <= 0 {
+			return fmt.Errorf("invalid record ID: %d", record.ID)
+		}
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run data_processor.go <csv_file>")
-		return
-	}
+		if seenIDs[record.ID] {
+			return fmt.Errorf("duplicate ID found: %d", record.ID)
+		}
+		seenIDs[record.ID] = true
 
-	records, err := ProcessCSVFile(os.Args[1])
-	if err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		return
+		if record.Value < 0 {
+			return fmt.Errorf("negative value for record ID %d: %f", record.ID, record.Value)
+		}
 	}
 
-	GenerateReport(records)
+	return nil
 }
