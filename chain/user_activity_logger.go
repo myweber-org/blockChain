@@ -19,10 +19,11 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	al.handler.ServeHTTP(w, r)
 	duration := time.Since(start)
 
-	log.Printf("Activity: %s %s from %s took %v",
+	log.Printf(
+		"Method: %s | Path: %s | Duration: %v | Timestamp: %s",
 		r.Method,
 		r.URL.Path,
-		r.RemoteAddr,
 		duration,
+		time.Now().Format(time.RFC3339),
 	)
 }
