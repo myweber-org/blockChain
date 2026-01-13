@@ -1,30 +1,50 @@
-package utils
+package main
 
 import (
-	"regexp"
+	"fmt"
 	"strings"
 )
 
-// SanitizeInput removes leading/trailing whitespace, reduces multiple spaces to single,
-// and strips potentially dangerous characters from user input strings.
-func SanitizeInput(input string) string {
-	// Trim whitespace from both ends
-	trimmed := strings.TrimSpace(input)
-	
-	// Replace multiple spaces with a single space
-	spaceRegex := regexp.MustCompile(`\s+`)
-	cleaned := spaceRegex.ReplaceAllString(trimmed, " ")
-	
-	// Remove special characters that could be used for injection attacks
-	// Allow alphanumeric, spaces, and common punctuation
-	specialRegex := regexp.MustCompile(`[^a-zA-Z0-9\s.,!?-]`)
-	sanitized := specialRegex.ReplaceAllString(cleaned, "")
-	
-	return sanitized
+type DataCleaner struct {
+	seen map[string]bool
 }
 
-// ValidateEmail checks if a string is a valid email address format
-func ValidateEmail(email string) bool {
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	return emailRegex.MatchString(email)
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		seen: make(map[string]bool),
+	}
+}
+
+func (dc *DataCleaner) Clean(input []string) []string {
+	var result []string
+	for _, item := range input {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if !dc.seen[trimmed] {
+			dc.seen[trimmed] = true
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func (dc *DataCleaner) Validate(item string) bool {
+	return len(item) > 0 && len(item) <= 100
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+	data := []string{"apple", " banana", "apple", "", "cherry  ", "date", "date"}
+	cleaned := cleaner.Clean(data)
+	
+	fmt.Println("Original:", data)
+	fmt.Println("Cleaned:", cleaned)
+	
+	for _, item := range cleaned {
+		if cleaner.Validate(item) {
+			fmt.Printf("'%s' is valid\n", item)
+		}
+	}
 }
