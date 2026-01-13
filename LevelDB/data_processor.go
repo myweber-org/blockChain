@@ -2,171 +2,71 @@
 package main
 
 import (
-	"regexp"
-	"strings"
-)
-
-type DataProcessor struct {
-	allowedPattern *regexp.Regexp
-}
-
-func NewDataProcessor(pattern string) (*DataProcessor, error) {
-	compiled, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, err
-	}
-	return &DataProcessor{allowedPattern: compiled}, nil
-}
-
-func (dp *DataProcessor) CleanInput(input string) string {
-	trimmed := strings.TrimSpace(input)
-	return dp.allowedPattern.FindString(trimmed)
-}
-
-func (dp *DataProcessor) Validate(input string) bool {
-	return dp.allowedPattern.MatchString(input)
-}
-
-func (dp *DataProcessor) ProcessBatch(inputs []string) []string {
-	var results []string
-	for _, item := range inputs {
-		cleaned := dp.CleanInput(item)
-		if cleaned != "" {
-			results = append(results, cleaned)
-		}
-	}
-	return results
-}
-package main
-
-import (
-	"encoding/csv"
 	"errors"
-	"io"
-	"os"
-	"strconv"
+	"fmt"
+	"strings"
+	"time"
 )
 
 type DataRecord struct {
-	ID    int
-	Name  string
-	Value float64
-	Valid bool
+	ID        string
+	Value     float64
+	Timestamp time.Time
+	Tags      []string
 }
 
-func ParseCSVFile(filename string) ([]DataRecord, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("ID cannot be empty")
 	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	records := make([]DataRecord, 0)
-
-	// Skip header
-	_, err = reader.Read()
-	if err != nil {
-		return nil, err
+	if record.Value < 0 {
+		return errors.New("value must be non-negative")
 	}
-
-	for {
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if len(row) < 4 {
-			continue
-		}
-
-		id, err := strconv.Atoi(row[0])
-		if err != nil {
-			continue
-		}
-
-		name := row[1]
-
-		value, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			continue
-		}
-
-		valid := false
-		if row[3] == "true" {
-			valid = true
-		}
-
-		record := DataRecord{
-			ID:    id,
-			Name:  name,
-			Value: value,
-			Valid: valid,
-		}
-
-		records = append(records, record)
-	}
-
-	return records, nil
-}
-
-func ValidateRecords(records []DataRecord) ([]DataRecord, error) {
-	if len(records) == 0 {
-		return nil, errors.New("no records to validate")
-	}
-
-	validRecords := make([]DataRecord, 0)
-	for _, record := range records {
-		if record.ID > 0 && record.Name != "" && record.Value >= 0 {
-			validRecords = append(validRecords, record)
-		}
-	}
-
-	return validRecords, nil
-}
-
-func CalculateTotalValue(records []DataRecord) float64 {
-	total := 0.0
-	for _, record := range records {
-		if record.Valid {
-			total += record.Value
-		}
-	}
-	return total
-}
-package main
-
-import (
-	"errors"
-	"regexp"
-	"strings"
-)
-
-func ValidateEmail(email string) error {
-	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, err := regexp.MatchString(pattern, email)
-	if err != nil {
-		return err
-	}
-	if !matched {
-		return errors.New("invalid email format")
+	if record.Timestamp.IsZero() {
+		return errors.New("timestamp must be set")
 	}
 	return nil
 }
 
-func SanitizeInput(input string) string {
-	input = strings.TrimSpace(input)
-	input = strings.ReplaceAll(input, "<", "&lt;")
-	input = strings.ReplaceAll(input, ">", "&gt;")
-	return input
+func TransformRecord(record DataRecord) DataRecord {
+	transformed := record
+	transformed.Value = record.Value * 1.1
+	transformed.Tags = append(record.Tags, "processed")
+	return transformed
 }
 
-func TransformToSlug(text string) string {
-	text = strings.ToLower(text)
-	text = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(text, "-")
-	text = strings.Trim(text, "-")
-	return text
+func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
+	var processed []DataRecord
+	for _, record := range records {
+		if err := ValidateRecord(record); err != nil {
+			return nil, fmt.Errorf("validation failed for record %s: %w", record.ID, err)
+		}
+		processed = append(processed, TransformRecord(record))
+	}
+	return processed, nil
+}
+
+func GenerateSummary(records []DataRecord) string {
+	if len(records) == 0 {
+		return "No records to summarize"
+	}
+	
+	var total float64
+	var tagSet = make(map[string]bool)
+	
+	for _, record := range records {
+		total += record.Value
+		for _, tag := range record.Tags {
+			tagSet[tag] = true
+		}
+	}
+	
+	avg := total / float64(len(records))
+	tags := make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+	
+	return fmt.Sprintf("Processed %d records. Average value: %.2f. Unique tags: %s", 
+		len(records), avg, strings.Join(tags, ", "))
 }
