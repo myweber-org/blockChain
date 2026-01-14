@@ -1,26 +1,22 @@
-package auth
+package middleware
 
 import (
-	"context"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
-type Authenticator struct {
-	secretKey []byte
+type Claims struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	jwt.RegisteredClaims
 }
 
-func NewAuthenticator(secretKey string) *Authenticator {
-	return &Authenticator{
-		secretKey: []byte(secretKey),
-	}
-}
+var jwtKey = []byte("your-secret-key-here")
 
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -34,33 +30,42 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		token := parts[1]
-		userID, err := a.validateToken(token)
-		if err != nil {
+		tokenStr := parts[1]
+		claims := &Claims{}
+
+		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtKey, nil
+		})
+
+		if err != nil || !token.Valid {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		if time.Until(claims.ExpiresAt.Time) < 30*time.Second {
+			http.Error(w, "Token expiring soon", http.StatusUnauthorized)
+			return
+		}
+
+		r.Header.Set("X-User-ID", claims.UserID)
+		r.Header.Set("X-Username", claims.Username)
+
+		next.ServeHTTP(w, r)
 	})
 }
 
-func (a *Authenticator) validateToken(token string) (string, error) {
-	// Token validation logic would go here
-	// For this example, we'll assume a simple validation
-	if token == "" {
-		return "", http.ErrNoCookie
+func GenerateToken(userID, username string) (string, error) {
+	expirationTime := time.Now().Add(24 * time.Hour)
+	claims := &Claims{
+		UserID:   userID,
+		Username: username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "auth-service",
+		},
 	}
-	
-	// In a real implementation, this would parse and verify JWT
-	// For now, return a mock user ID if token is non-empty
-	return "user-123", nil
-}
 
-func GetUserID(ctx context.Context) string {
-	if userID, ok := ctx.Value(userIDKey).(string); ok {
-		return userID
-	}
-	return ""
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtKey)
 }
