@@ -1,64 +1,50 @@
 package main
 
-import "fmt"
-
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]struct{})
-	result := make([]string, 0, len(input))
-
-	for _, item := range input {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func main() {
-	data := []string{"apple", "banana", "apple", "orange", "banana", "grape"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}
-package main
-
 import (
 	"fmt"
-	"strings"
+	"sort"
 )
 
-type DataCleaner struct {
-	Data []string
+type Record struct {
+	ID   int
+	Name string
+	Data string
 }
 
-func NewDataCleaner(data []string) *DataCleaner {
-	return &DataCleaner{Data: data}
-}
+func removeDuplicates(records []Record) []Record {
+	seen := make(map[int]bool)
+	var unique []Record
 
-func (dc *DataCleaner) RemoveDuplicates() []string {
-	seen := make(map[string]bool)
-	result := []string{}
-	for _, item := range dc.Data {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
-			continue
-		}
-		if !seen[trimmed] {
-			seen[trimmed] = true
-			result = append(result, trimmed)
+	for _, record := range records {
+		if !seen[record.ID] {
+			seen[record.ID] = true
+			unique = append(unique, record)
 		}
 	}
-	return result
+	return unique
 }
 
-func (dc *DataCleaner) Clean() []string {
-	return dc.RemoveDuplicates()
+func sortRecords(records []Record) {
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].ID < records[j].ID
+	})
 }
 
 func main() {
-	rawData := []string{"  apple ", "banana", "  apple", "cherry  ", "", "banana", "  "}
-	cleaner := NewDataCleaner(rawData)
-	cleaned := cleaner.Clean()
-	fmt.Println("Cleaned data:", cleaned)
+	records := []Record{
+		{ID: 3, Name: "Item C", Data: "Sample data C"},
+		{ID: 1, Name: "Item A", Data: "Sample data A"},
+		{ID: 2, Name: "Item B", Data: "Sample data B"},
+		{ID: 1, Name: "Item A", Data: "Sample data A"},
+		{ID: 4, Name: "Item D", Data: "Sample data D"},
+	}
+
+	fmt.Println("Original records:", len(records))
+	uniqueRecords := removeDuplicates(records)
+	sortRecords(uniqueRecords)
+
+	fmt.Println("Unique records:", len(uniqueRecords))
+	for _, r := range uniqueRecords {
+		fmt.Printf("ID: %d, Name: %s\n", r.ID, r.Name)
+	}
 }
