@@ -6,31 +6,44 @@ import (
 	"time"
 )
 
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
+type ActivityLog struct {
+	UserID    string
+	IPAddress string
+	Endpoint  string
+	Method    string
+	Timestamp time.Time
 }
 
 func ActivityLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		activity := ActivityLog{
+			UserID:    extractUserID(r),
+			IPAddress: r.RemoteAddr,
+			Endpoint:  r.URL.Path,
+			Method:    r.Method,
+			Timestamp: time.Now().UTC(),
+		}
 
-		next.ServeHTTP(rw, r)
+		logActivity(activity)
 
-		duration := time.Since(start)
-		log.Printf(
-			"[%s] %s %s %d %v",
-			time.Now().Format(time.RFC3339),
-			r.Method,
-			r.URL.Path,
-			rw.statusCode,
-			duration,
-		)
+		next.ServeHTTP(w, r)
 	})
+}
+
+func extractUserID(r *http.Request) string {
+	if user := r.Context().Value("userID"); user != nil {
+		if id, ok := user.(string); ok {
+			return id
+		}
+	}
+	return "anonymous"
+}
+
+func logActivity(activity ActivityLog) {
+	log.Printf("ACTIVITY: User=%s IP=%s %s %s at %s",
+		activity.UserID,
+		activity.IPAddress,
+		activity.Method,
+		activity.Endpoint,
+		activity.Timestamp.Format(time.RFC3339))
 }
