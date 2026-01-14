@@ -97,4 +97,58 @@ func CalculateStatistics(records []DataRecord) (float64, float64, error) {
 	variance := varianceSum / float64(count)
 
 	return average, variance, nil
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type UserData struct {
+	ID    int
+	Name  string
+	Email string
+}
+
+func ValidateUserData(data UserData) error {
+	if data.ID <= 0 {
+		return fmt.Errorf("invalid user ID: must be positive integer")
+	}
+	if strings.TrimSpace(data.Name) == "" {
+		return fmt.Errorf("user name cannot be empty")
+	}
+	if !strings.Contains(data.Email, "@") {
+		return fmt.Errorf("invalid email format")
+	}
+	return nil
+}
+
+func TransformUserName(data UserData) UserData {
+	data.Name = strings.ToUpper(strings.TrimSpace(data.Name))
+	return data
+}
+
+func ProcessUserInput(data UserData) (UserData, error) {
+	if err := ValidateUserData(data); err != nil {
+		return UserData{}, err
+	}
+	transformedData := TransformUserName(data)
+	return transformedData, nil
+}
+
+func main() {
+	testData := UserData{
+		ID:    1001,
+		Name:  "  john doe  ",
+		Email: "john@example.com",
+	}
+
+	result, err := ProcessUserInput(testData)
+	if err != nil {
+		fmt.Printf("Processing failed: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Processed user: ID=%d, Name='%s', Email='%s'\n",
+		result.ID, result.Name, result.Email)
 }
