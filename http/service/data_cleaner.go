@@ -24,4 +24,54 @@ func main() {
 	uniqueStrings := RemoveDuplicates(strings)
 	fmt.Println("Original:", strings)
 	fmt.Println("Unique:", uniqueStrings)
+}package datautils
+
+import "sort"
+
+func RemoveDuplicates[T comparable](input []T) []T {
+	if len(input) == 0 {
+		return input
+	}
+
+	seen := make(map[T]struct{})
+	result := make([]T, 0, len(input))
+
+	for _, item := range input {
+		if _, exists := seen[item]; !exists {
+			seen[item] = struct{}{}
+			result = append(result, item)
+		}
+	}
+
+	return result
+}
+
+func RemoveDuplicatesSorted[T comparable](input []T) []T {
+	if len(input) == 0 {
+		return input
+	}
+
+	result := make([]T, 0, len(input))
+	sort.Slice(input, func(i, j int) bool {
+		switch v := any(input[i]).(type) {
+		case int:
+			return v < any(input[j]).(int)
+		case string:
+			return v < any(input[j]).(string)
+		default:
+			return false
+		}
+	})
+
+	prev := input[0]
+	result = append(result, prev)
+
+	for i := 1; i < len(input); i++ {
+		if input[i] != prev {
+			result = append(result, input[i])
+			prev = input[i]
+		}
+	}
+
+	return result
 }
