@@ -245,3 +245,105 @@ func main() {
 
 	fmt.Printf("Operation completed successfully\nKey: %x\n", key)
 }
+package main
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+)
+
+type EncryptionService struct {
+	key []byte
+}
+
+func NewEncryptionService(key string) (*EncryptionService, error) {
+	decodedKey, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 key: %w", err)
+	}
+	if len(decodedKey) != 32 {
+		return nil, errors.New("key must be 32 bytes for AES-256")
+	}
+	return &EncryptionService{key: decodedKey}, nil
+}
+
+func (es *EncryptionService) Encrypt(plaintext []byte) (string, error) {
+	block, err := aes.NewCipher(es.key)
+	if err != nil {
+		return "", fmt.Errorf("cipher creation failed: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("GCM mode initialization failed: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("nonce generation failed: %w", err)
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func (es *EncryptionService) Decrypt(encrypted string) ([]byte, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 ciphertext: %w", err)
+	}
+
+	block, err := aes.NewCipher(es.key)
+	if err != nil {
+		return nil, fmt.Errorf("cipher creation failed: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("GCM mode initialization failed: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed: %w", err)
+	}
+
+	return plaintext, nil
+}
+
+func main() {
+	key := base64.StdEncoding.EncodeToString([]byte("32-byte-long-secret-key-here!!!"))
+	
+	service, err := NewEncryptionService(key)
+	if err != nil {
+		fmt.Printf("Service initialization error: %v\n", err)
+		return
+	}
+
+	secretMessage := []byte("Sensitive data requiring protection")
+	
+	encrypted, err := service.Encrypt(secretMessage)
+	if err != nil {
+		fmt.Printf("Encryption error: %v\n", err)
+		return
+	}
+	fmt.Printf("Encrypted: %s\n", encrypted)
+
+	decrypted, err := service.Decrypt(encrypted)
+	if err != nil {
+		fmt.Printf("Decryption error: %v\n", err)
+		return
+	}
+	fmt.Printf("Decrypted: %s\n", decrypted)
+}
