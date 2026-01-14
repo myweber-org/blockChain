@@ -1,53 +1,91 @@
+
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"regexp"
 	"strings"
+	"time"
 )
 
-type UserData struct {
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Age      int    `json:"age"`
+type DataRecord struct {
+	ID        string
+	Value     float64
+	Timestamp time.Time
+	Tags      []string
 }
 
-func ValidateEmail(email string) bool {
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	return emailRegex.MatchString(email)
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("record ID cannot be empty")
+	}
+	if record.Value < 0 {
+		return errors.New("record value must be non-negative")
+	}
+	if record.Timestamp.IsZero() {
+		return errors.New("record timestamp must be set")
+	}
+	return nil
 }
 
-func SanitizeUsername(username string) string {
-	return strings.TrimSpace(username)
+func TransformRecord(record DataRecord, multiplier float64) (DataRecord, error) {
+	if err := ValidateRecord(record); err != nil {
+		return DataRecord{}, err
+	}
+
+	transformed := DataRecord{
+		ID:        strings.ToUpper(record.ID),
+		Value:     record.Value * multiplier,
+		Timestamp: record.Timestamp.UTC(),
+		Tags:      append([]string{"processed"}, record.Tags...),
+	}
+
+	return transformed, nil
 }
 
-func ProcessUserData(rawData []byte) (*UserData, error) {
-	var data UserData
-	err := json.Unmarshal(rawData, &data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+func ProcessRecords(records []DataRecord, multiplier float64) ([]DataRecord, error) {
+	var processed []DataRecord
+	var errors []string
+
+	for i, record := range records {
+		transformed, err := TransformRecord(record, multiplier)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("record %d: %v", i, err))
+			continue
+		}
+		processed = append(processed, transformed)
 	}
 
-	if !ValidateEmail(data.Email) {
-		return nil, fmt.Errorf("invalid email format: %s", data.Email)
+	if len(errors) > 0 {
+		return processed, fmt.Errorf("processing completed with errors: %s", strings.Join(errors, "; "))
 	}
 
-	data.Username = SanitizeUsername(data.Username)
-
-	if data.Age < 0 || data.Age > 150 {
-		return nil, fmt.Errorf("age out of valid range: %d", data.Age)
-	}
-
-	return &data, nil
+	return processed, nil
 }
 
-func main() {
-	rawJSON := `{"email":"test@example.com","username":"  john_doe  ","age":25}`
-	processedData, err := ProcessUserData([]byte(rawJSON))
-	if err != nil {
-		fmt.Printf("Error processing data: %v\n", err)
-		return
+func CalculateStatistics(records []DataRecord) (float64, float64) {
+	if len(records) == 0 {
+		return 0, 0
 	}
-	fmt.Printf("Processed data: %+v\n", processedData)
+
+	var sum float64
+	var min, max float64
+
+	for i, record := range records {
+		sum += record.Value
+		if i == 0 {
+			min = record.Value
+			max = record.Value
+		} else {
+			if record.Value < min {
+				min = record.Value
+			}
+			if record.Value > max {
+				max = record.Value
+			}
+		}
+	}
+
+	average := sum / float64(len(records))
+	return average, max - min
 }
