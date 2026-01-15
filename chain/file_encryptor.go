@@ -4,14 +4,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 )
 
+const keySize = 32
+
 func generateKey() ([]byte, error) {
-	key := make([]byte, 32)
+	key := make([]byte, keySize)
 	_, err := rand.Read(key)
 	if err != nil {
 		return nil, err
@@ -30,14 +32,17 @@ func encryptFile(inputPath, outputPath string, key []byte) error {
 		return err
 	}
 
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
 		return err
 	}
 
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
 	return os.WriteFile(outputPath, ciphertext, 0644)
 }
@@ -53,28 +58,30 @@ func decryptFile(inputPath, outputPath string, key []byte) error {
 		return err
 	}
 
-	if len(ciphertext) < aes.BlockSize {
-		return fmt.Errorf("ciphertext too short")
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return err
 	}
 
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return errors.New("ciphertext too short")
+	}
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(ciphertext, ciphertext)
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return err
+	}
 
-	return os.WriteFile(outputPath, ciphertext, 0644)
+	return os.WriteFile(outputPath, plaintext, 0644)
 }
 
 func main() {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output>")
+		fmt.Println("Usage: file_encryptor <encrypt|decrypt> <input> <output>")
 		os.Exit(1)
 	}
-
-	action := os.Args[1]
-	inputFile := os.Args[2]
-	outputFile := os.Args[3]
 
 	key, err := generateKey()
 	if err != nil {
@@ -82,31 +89,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	switch action {
+	mode := os.Args[1]
+	input := os.Args[2]
+	output := os.Args[3]
+
+	switch mode {
 	case "encrypt":
-		err = encryptFile(inputFile, outputFile, key)
-		if err != nil {
-			fmt.Printf("Encryption failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Encryption successful. Key: %s\n", hex.EncodeToString(key))
+		err = encryptFile(input, output, key)
 	case "decrypt":
-		fmt.Print("Enter encryption key (hex): ")
-		var keyHex string
-		fmt.Scanln(&keyHex)
-		key, err = hex.DecodeString(keyHex)
-		if err != nil {
-			fmt.Printf("Invalid key: %v\n", err)
-			os.Exit(1)
-		}
-		err = decryptFile(inputFile, outputFile, key)
-		if err != nil {
-			fmt.Printf("Decryption failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Decryption successful.")
+		err = decryptFile(input, output, key)
 	default:
-		fmt.Println("Invalid action. Use 'encrypt' or 'decrypt'.")
+		fmt.Println("Invalid mode. Use 'encrypt' or 'decrypt'")
 		os.Exit(1)
 	}
+
+	if err != nil {
+		fmt.Printf("Operation failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Key (hex): %x\n", key)
+	fmt.Printf("Operation completed successfully\n")
 }
