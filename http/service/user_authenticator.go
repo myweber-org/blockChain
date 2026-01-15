@@ -142,4 +142,51 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
+}package middleware
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+)
+
+type Authenticator struct {
+	secretKey string
+}
+
+func NewAuthenticator(secretKey string) *Authenticator {
+	return &Authenticator{secretKey: secretKey}
+}
+
+func (a *Authenticator) ValidateToken(token string) (bool, error) {
+	if token == "" {
+		return false, fmt.Errorf("empty token")
+	}
+	
+	// Simulate token validation logic
+	valid := strings.HasPrefix(token, "valid_") && len(token) > 10
+	if !valid {
+		return false, fmt.Errorf("invalid token format")
+	}
+	
+	return true, nil
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+		
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		valid, err := a.ValidateToken(token)
+		if err != nil || !valid {
+			http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
 }
