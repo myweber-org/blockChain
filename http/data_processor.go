@@ -152,3 +152,58 @@ func main() {
 	fmt.Printf("Processed user: ID=%d, Name='%s', Email='%s'\n",
 		result.ID, result.Name, result.Email)
 }
+package data_processor
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    string
+	Email string
+	Value float64
+}
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("ID cannot be empty")
+	}
+	if !emailRegex.MatchString(record.Email) {
+		return errors.New("invalid email format")
+	}
+	if record.Value < 0 || record.Value > 10000 {
+		return errors.New("value must be between 0 and 10000")
+	}
+	return nil
+}
+
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func TransformRecords(records []DataRecord) ([]DataRecord, error) {
+	var validRecords []DataRecord
+	for _, record := range records {
+		record.Email = NormalizeEmail(record.Email)
+		if err := ValidateRecord(record); err != nil {
+			return nil, err
+		}
+		validRecords = append(validRecords, record)
+	}
+	return validRecords, nil
+}
+
+func CalculateAverage(records []DataRecord) float64 {
+	if len(records) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, record := range records {
+		sum += record.Value
+	}
+	return sum / float64(len(records))
+}
