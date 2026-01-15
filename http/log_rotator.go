@@ -265,4 +265,90 @@ func main() {
         logger.Write([]byte(msg))
         time.Sleep(10 * time.Millisecond)
     }
+}package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+)
+
+type LogRotator struct {
+    filePath    string
+    maxSize     int64
+    backupCount int
+}
+
+func NewLogRotator(filePath string, maxSize int64, backupCount int) *LogRotator {
+    return &LogRotator{
+        filePath:    filePath,
+        maxSize:     maxSize,
+        backupCount: backupCount,
+    }
+}
+
+func (lr *LogRotator) Write(p []byte) (n int, err error) {
+    if err := lr.rotateIfNeeded(); err != nil {
+        return 0, err
+    }
+
+    file, err := os.OpenFile(lr.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return 0, err
+    }
+    defer file.Close()
+
+    return file.Write(p)
+}
+
+func (lr *LogRotator) rotateIfNeeded() error {
+    info, err := os.Stat(lr.filePath)
+    if os.IsNotExist(err) {
+        return nil
+    }
+    if err != nil {
+        return err
+    }
+
+    if info.Size() < lr.maxSize {
+        return nil
+    }
+
+    for i := lr.backupCount - 1; i >= 0; i-- {
+        oldPath := lr.backupPath(i)
+        newPath := lr.backupPath(i + 1)
+
+        if _, err := os.Stat(oldPath); err == nil {
+            if err := os.Rename(oldPath, newPath); err != nil {
+                return err
+            }
+        }
+    }
+
+    if err := os.Rename(lr.filePath, lr.backupPath(0)); err != nil {
+        return err
+    }
+
+    return nil
+}
+
+func (lr *LogRotator) backupPath(index int) string {
+    if index == 0 {
+        return lr.filePath + ".1"
+    }
+    return fmt.Sprintf("%s.%d", lr.filePath, index+1)
+}
+
+func main() {
+    rotator := NewLogRotator("app.log", 1024*1024, 5)
+
+    for i := 0; i < 100; i++ {
+        message := fmt.Sprintf("Log entry %d: This is a sample log message.\n", i)
+        if _, err := rotator.Write([]byte(message)); err != nil {
+            fmt.Printf("Error writing log: %v\n", err)
+        }
+    }
+
+    fmt.Println("Log rotation test completed")
 }
