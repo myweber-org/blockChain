@@ -6,26 +6,25 @@ import (
 )
 
 type User struct {
-	ID       int
-	Username string
-	Role     string
+	ID    string
+	Roles []string
 }
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractToken(r)
 		if token == "" {
-			http.Error(w, "Authorization token required", http.StatusUnauthorized)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		user, err := validateToken(token)
 		if err != nil {
-			http.Error(w, "Invalid authentication token", http.StatusForbidden)
+			http.Error(w, "Invalid token", http.StatusForbidden)
 			return
 		}
 
-		if !hasRequiredRole(user, r.URL.Path) {
+		if !hasRequiredRole(user, r) {
 			http.Error(w, "Insufficient permissions", http.StatusForbidden)
 			return
 		}
@@ -41,137 +40,51 @@ func extractToken(r *http.Request) string {
 	if authHeader == "" {
 		return ""
 	}
-	parts := strings.Split(authHeader, "Bearer ")
-	if len(parts) != 2 {
+
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
 		return ""
 	}
-	return strings.TrimSpace(parts[1])
+
+	return parts[1]
 }
 
 func validateToken(token string) (*User, error) {
-	// Token validation logic would go here
-	// This is a simplified example
-	if token == "valid-admin-token" {
-		return &User{ID: 1, Username: "admin", Role: "admin"}, nil
-	}
-	if token == "valid-user-token" {
-		return &User{ID: 2, Username: "user", Role: "user"}, nil
+	// Token validation logic here
+	// This is a placeholder implementation
+	if token == "valid_token_example" {
+		return &User{
+			ID:    "user123",
+			Roles: []string{"admin", "user"},
+		}, nil
 	}
 	return nil, fmt.Errorf("invalid token")
 }
 
-func hasRequiredRole(user *User, path string) bool {
-	if strings.HasPrefix(path, "/admin") && user.Role != "admin" {
-		return false
+func hasRequiredRole(user *User, r *http.Request) bool {
+	// Role-based access control logic
+	// This is a simplified example
+	requiredRole := getRequiredRoleForPath(r.URL.Path)
+	for _, role := range user.Roles {
+		if role == requiredRole {
+			return true
+		}
 	}
-	return true
-}package middleware
-
-import (
-	"context"
-	"net/http"
-	"strings"
-)
-
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		token := tokenParts[1]
-		userID, err := validateToken(token)
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+	return false
 }
 
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userIDKey).(string)
-	return userID, ok
-}
-
-func validateToken(token string) (string, error) {
-	// Token validation logic here
-	// For now, return a mock user ID
-	return "user-123", nil
-}package middleware
-
-import (
-	"context"
-	"net/http"
-	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
-)
-
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
-func AuthMiddleware(secretKey string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Authorization header required", http.StatusUnauthorized)
-				return
-			}
-
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-			if tokenString == authHeader {
-				http.Error(w, "Bearer token required", http.StatusUnauthorized)
-				return
-			}
-
-			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, jwt.ErrSignatureInvalid
-				}
-				return []byte(secretKey), nil
-			})
-
-			if err != nil || !token.Valid {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
-
-			claims, ok := token.Claims.(jwt.MapClaims)
-			if !ok {
-				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-				return
-			}
-
-			userID, ok := claims["user_id"].(string)
-			if !ok || userID == "" {
-				http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), userIDKey, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+func getRequiredRoleForPath(path string) string {
+	// Define role requirements for different paths
+	roleMap := map[string]string{
+		"/admin":    "admin",
+		"/settings": "admin",
+		"/api":      "user",
 	}
-}
 
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userIDKey).(string)
-	return userID, ok
+	for prefix, role := range roleMap {
+		if strings.HasPrefix(path, prefix) {
+			return role
+		}
+	}
+	return "user"
 }
