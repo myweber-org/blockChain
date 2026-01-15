@@ -1,128 +1,52 @@
+
 package main
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
-	"os"
-	"strconv"
+	"errors"
 	"strings"
+	"unicode"
 )
 
-type Record struct {
-	ID      int
-	Name    string
-	Value   float64
-	Active  bool
+type UserData struct {
+	Username string
+	Email    string
+	Age      int
 }
 
-func processCSVFile(inputPath string, outputPath string) error {
-	inputFile, err := os.Open(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input file: %w", err)
-	}
-	defer inputFile.Close()
-
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outputFile.Close()
-
-	csvReader := csv.NewReader(inputFile)
-	csvWriter := csv.NewWriter(outputFile)
-	defer csvWriter.Flush()
-
-	headers, err := csvReader.Read()
-	if err != nil {
-		return fmt.Errorf("failed to read headers: %w", err)
+func ValidateUserData(data UserData) error {
+	if strings.TrimSpace(data.Username) == "" {
+		return errors.New("username cannot be empty")
 	}
 
-	outputHeaders := []string{"ID", "Name", "ProcessedValue", "Status"}
-	if err := csvWriter.Write(outputHeaders); err != nil {
-		return fmt.Errorf("failed to write headers: %w", err)
+	if len(data.Username) < 3 || len(data.Username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
 	}
 
-	recordCount := 0
-	for {
-		row, err := csvReader.Read()
-		if err == io.EOF {
-			break
+	for _, char := range data.Username {
+		if !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_' {
+			return errors.New("username can only contain letters, digits, and underscores")
 		}
-		if err != nil {
-			return fmt.Errorf("failed to read row: %w", err)
-		}
-
-		if len(row) < 4 {
-			continue
-		}
-
-		id, err := strconv.Atoi(strings.TrimSpace(row[0]))
-		if err != nil {
-			continue
-		}
-
-		name := strings.TrimSpace(row[1])
-		if name == "" {
-			continue
-		}
-
-		value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
-		if err != nil {
-			continue
-		}
-
-		active := strings.ToLower(strings.TrimSpace(row[3])) == "true"
-
-		record := Record{
-			ID:     id,
-			Name:   name,
-			Value:  value,
-			Active: active,
-		}
-
-		processedValue := record.Value * 1.1
-		status := "inactive"
-		if record.Active {
-			status = "active"
-		}
-
-		outputRow := []string{
-			strconv.Itoa(record.ID),
-			record.Name,
-			fmt.Sprintf("%.2f", processedValue),
-			status,
-		}
-
-		if err := csvWriter.Write(outputRow); err != nil {
-			return fmt.Errorf("failed to write row: %w", err)
-		}
-
-		recordCount++
 	}
 
-	fmt.Printf("Processed %d valid records\n", recordCount)
+	if !strings.Contains(data.Email, "@") || !strings.Contains(data.Email, ".") {
+		return errors.New("invalid email format")
+	}
+
+	if data.Age < 13 || data.Age > 120 {
+		return errors.New("age must be between 13 and 120")
+	}
+
 	return nil
 }
 
-func validateFileExists(filePath string) bool {
-	_, err := os.Stat(filePath)
-	return !os.IsNotExist(err)
+func NormalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
 }
 
-func main() {
-	inputFile := "input_data.csv"
-	outputFile := "processed_data.csv"
-
-	if !validateFileExists(inputFile) {
-		fmt.Println("Input file does not exist")
-		return
+func TransformUserData(data UserData) UserData {
+	return UserData{
+		Username: NormalizeUsername(data.Username),
+		Email:    strings.ToLower(strings.TrimSpace(data.Email)),
+		Age:      data.Age,
 	}
-
-	if err := processCSVFile(inputFile, outputFile); err != nil {
-		fmt.Printf("Error processing file: %v\n", err)
-		return
-	}
-
-	fmt.Println("Data processing completed successfully")
 }
