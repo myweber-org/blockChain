@@ -1,118 +1,31 @@
-
 package main
-
-import (
-	"fmt"
-	"strings"
-)
-
-type DataCleaner struct {
-	seen map[string]bool
-}
-
-func NewDataCleaner() *DataCleaner {
-	return &DataCleaner{
-		seen: make(map[string]bool),
-	}
-}
-
-func (dc *DataCleaner) RemoveDuplicates(items []string) []string {
-	var unique []string
-	for _, item := range items {
-		normalized := strings.ToLower(strings.TrimSpace(item))
-		if !dc.seen[normalized] && dc.isValid(item) {
-			dc.seen[normalized] = true
-			unique = append(unique, item)
-		}
-	}
-	return unique
-}
-
-func (dc *DataCleaner) isValid(item string) bool {
-	return len(item) > 0 && len(item) < 100
-}
-
-func (dc *DataCleaner) Reset() {
-	dc.seen = make(map[string]bool)
-}
-
-func main() {
-	cleaner := NewDataCleaner()
-	
-	data := []string{"apple", "Apple", "banana", "  BANANA  ", "", "cherry", "cherry"}
-	
-	cleaned := cleaner.RemoveDuplicates(data)
-	
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-	
-	cleaner.Reset()
-	
-	moreData := []string{"grape", "GRAPE", "kiwi"}
-	secondBatch := cleaner.RemoveDuplicates(moreData)
-	
-	fmt.Println("Second batch:", secondBatch)
-}package datautils
-
-import "sort"
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-	if len(slice) == 0 {
-		return slice
-	}
-
-	seen := make(map[T]bool)
-	result := make([]T, 0, len(slice))
-
-	for _, item := range slice {
-		if !seen[item] {
-			seen[item] = true
-			result = append(result, item)
-		}
-	}
-
-	return result
-}
-
-func RemoveDuplicatesSorted[T comparable](slice []T) []T {
-	if len(slice) == 0 {
-		return slice
-	}
-
-	sort.Slice(slice, func(i, j int) bool {
-		// This is a placeholder - in real implementation
-		// you'd need type-specific comparison
-		return false
-	})
-
-	result := slice[:1]
-	for i := 1; i < len(slice); i++ {
-		if slice[i] != slice[i-1] {
-			result = append(result, slice[i])
-		}
-	}
-
-	return result
-}package main
 
 import (
 	"encoding/csv"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
+
+type Record struct {
+	ID    int
+	Name  string
+	Email string
+	Score float64
+}
 
 func cleanCSV(inputPath, outputPath string) error {
 	inFile, err := os.Open(inputPath)
 	if err != nil {
-		return fmt.Errorf("failed to open input file: %w", err)
+		return fmt.Errorf("cannot open input file: %w", err)
 	}
 	defer inFile.Close()
 
 	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+		return fmt.Errorf("cannot create output file: %w", err)
 	}
 	defer outFile.Close()
 
@@ -120,28 +33,75 @@ func cleanCSV(inputPath, outputPath string) error {
 	writer := csv.NewWriter(outFile)
 	defer writer.Flush()
 
+	headers, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("cannot read headers: %w", err)
+	}
+
+	headers = append(headers, "Valid")
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("cannot write headers: %w", err)
+	}
+
 	for {
-		record, err := reader.Read()
+		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read CSV record: %w", err)
+			return fmt.Errorf("error reading row: %w", err)
 		}
 
-		cleanedRecord := make([]string, len(record))
-		for i, field := range record {
-			cleanedField := strings.TrimSpace(field)
-			cleanedField = strings.ToLower(cleanedField)
-			cleanedRecord[i] = cleanedField
+		record, validationErr := validateRow(row)
+		isValid := validationErr == nil
+
+		outputRow := []string{
+			strconv.Itoa(record.ID),
+			strings.TrimSpace(record.Name),
+			strings.ToLower(strings.TrimSpace(record.Email)),
+			fmt.Sprintf("%.2f", record.Score),
+			strconv.FormatBool(isValid),
 		}
 
-		if err := writer.Write(cleanedRecord); err != nil {
-			return fmt.Errorf("failed to write CSV record: %w", err)
+		if err := writer.Write(outputRow); err != nil {
+			return fmt.Errorf("error writing row: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func validateRow(row []string) (Record, error) {
+	if len(row) < 4 {
+		return Record{}, fmt.Errorf("insufficient columns")
+	}
+
+	id, err := strconv.Atoi(row[0])
+	if err != nil || id <= 0 {
+		return Record{}, fmt.Errorf("invalid ID")
+	}
+
+	name := strings.TrimSpace(row[1])
+	if name == "" {
+		return Record{}, fmt.Errorf("empty name")
+	}
+
+	email := strings.TrimSpace(row[2])
+	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+		return Record{}, fmt.Errorf("invalid email format")
+	}
+
+	score, err := strconv.ParseFloat(row[3], 64)
+	if err != nil || score < 0 || score > 100 {
+		return Record{}, fmt.Errorf("score out of range")
+	}
+
+	return Record{
+		ID:    id,
+		Name:  name,
+		Email: email,
+		Score: score,
+	}, nil
 }
 
 func main() {
@@ -158,5 +118,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully cleaned data from %s to %s\n", inputFile, outputFile)
+	fmt.Printf("Data cleaning completed. Output saved to %s\n", outputFile)
 }
