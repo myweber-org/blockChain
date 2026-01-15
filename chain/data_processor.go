@@ -3,50 +3,89 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
 	"strings"
-	"unicode"
+	"time"
 )
 
-type UserData struct {
-	Username string
-	Email    string
-	Age      int
+type DataRecord struct {
+	ID        string
+	Email     string
+	Timestamp time.Time
+	Status    string
 }
 
-func ValidateUserData(data UserData) error {
-	if strings.TrimSpace(data.Username) == "" {
-		return errors.New("username cannot be empty")
+func ValidateEmail(email string) error {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, err := regexp.MatchString(pattern, email)
+	if err != nil {
+		return fmt.Errorf("regex validation failed: %w", err)
 	}
-
-	if len(data.Username) < 3 || len(data.Username) > 20 {
-		return errors.New("username must be between 3 and 20 characters")
-	}
-
-	for _, char := range data.Username {
-		if !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_' {
-			return errors.New("username can only contain letters, digits, and underscores")
-		}
-	}
-
-	if !strings.Contains(data.Email, "@") || !strings.Contains(data.Email, ".") {
+	if !matched {
 		return errors.New("invalid email format")
 	}
-
-	if data.Age < 13 || data.Age > 120 {
-		return errors.New("age must be between 13 and 120")
-	}
-
 	return nil
 }
 
-func NormalizeUsername(username string) string {
-	return strings.ToLower(strings.TrimSpace(username))
+func NormalizeString(input string) string {
+	return strings.TrimSpace(strings.ToLower(input))
 }
 
-func TransformUserData(data UserData) UserData {
-	return UserData{
-		Username: NormalizeUsername(data.Username),
-		Email:    strings.ToLower(strings.TrimSpace(data.Email)),
-		Age:      data.Age,
+func ProcessRecord(record DataRecord) (DataRecord, error) {
+	if record.ID == "" {
+		return record, errors.New("record ID cannot be empty")
+	}
+
+	if err := ValidateEmail(record.Email); err != nil {
+		return record, fmt.Errorf("email validation failed: %w", err)
+	}
+
+	record.Email = NormalizeString(record.Email)
+	record.Status = NormalizeString(record.Status)
+
+	if record.Timestamp.IsZero() {
+		record.Timestamp = time.Now().UTC()
+	}
+
+	return record, nil
+}
+
+func TransformRecords(records []DataRecord) ([]DataRecord, []error) {
+	var processed []DataRecord
+	var errs []error
+
+	for i, record := range records {
+		processedRecord, err := ProcessRecord(record)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("record %d: %w", i, err))
+			continue
+		}
+		processed = append(processed, processedRecord)
+	}
+
+	return processed, errs
+}
+
+func main() {
+	records := []DataRecord{
+		{ID: "001", Email: "USER@EXAMPLE.COM", Timestamp: time.Now(), Status: "ACTIVE"},
+		{ID: "002", Email: "invalid-email", Status: "PENDING"},
+		{ID: "", Email: "test@domain.com", Status: "inactive"},
+	}
+
+	processed, errs := TransformRecords(records)
+
+	fmt.Printf("Processed %d records successfully\n", len(processed))
+	if len(errs) > 0 {
+		fmt.Printf("Encountered %d errors:\n", len(errs))
+		for _, err := range errs {
+			fmt.Printf("  - %v\n", err)
+		}
+	}
+
+	for _, record := range processed {
+		fmt.Printf("ID: %s, Email: %s, Status: %s\n",
+			record.ID, record.Email, record.Status)
 	}
 }
