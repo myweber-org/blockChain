@@ -7,43 +7,47 @@ import (
 )
 
 type ActivityLogger struct {
-	Logger *log.Logger
+	rateLimiter map[string]time.Time
+	window      time.Duration
 }
 
-func NewActivityLogger(logger *log.Logger) *ActivityLogger {
-	return &ActivityLogger{Logger: logger}
+func NewActivityLogger(window time.Duration) *ActivityLogger {
+	return &ActivityLogger{
+		rateLimiter: make(map[string]time.Time),
+		window:      window,
+	}
 }
 
 func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		
-		recorder := &responseRecorder{
-			ResponseWriter: w,
-			statusCode:     http.StatusOK,
+		clientIP := r.RemoteAddr
+		now := time.Now()
+
+		if last, exists := al.rateLimiter[clientIP]; exists {
+			if now.Sub(last) < al.window {
+				http.Error(w, "Too many requests", http.StatusTooManyRequests)
+				return
+			}
 		}
-		
-		next.ServeHTTP(recorder, r)
-		
-		duration := time.Since(start)
-		
-		al.Logger.Printf(
-			"%s %s %d %s %s",
-			r.Method,
-			r.URL.Path,
-			recorder.statusCode,
-			duration,
-			r.RemoteAddr,
-		)
+
+		al.rateLimiter[clientIP] = now
+
+		log.Printf("Activity: %s %s from %s", r.Method, r.URL.Path, clientIP)
+
+		next.ServeHTTP(w, r)
 	})
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
+func (al *ActivityLogger) CleanupOldEntries() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+	for range ticker.C {
+		now := time.Now()
+		for ip, lastSeen := range al.rateLimiter {
+			if now.Sub(lastSeen) > 24*time.Hour {
+				delete(al.rateLimiter, ip)
+			}
+		}
+	}
 }
