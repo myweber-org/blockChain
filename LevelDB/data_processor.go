@@ -113,3 +113,89 @@ func main() {
 		os.Exit(1)
 	}
 }
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type DataRecord struct {
+	ID        string
+	Timestamp time.Time
+	Value     float64
+	Category  string
+	Valid     bool
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("ID cannot be empty")
+	}
+	if record.Value < 0 {
+		return errors.New("value cannot be negative")
+	}
+	if record.Category == "" {
+		return errors.New("category cannot be empty")
+	}
+	return nil
+}
+
+func TransformRecord(record DataRecord) DataRecord {
+	transformed := record
+	transformed.Category = strings.ToUpper(record.Category)
+	transformed.Timestamp = record.Timestamp.UTC()
+	transformed.Valid = true
+	return transformed
+}
+
+func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
+	var processed []DataRecord
+	
+	for _, record := range records {
+		if err := ValidateRecord(record); err != nil {
+			return nil, fmt.Errorf("validation failed for record %s: %w", record.ID, err)
+		}
+		
+		transformed := TransformRecord(record)
+		processed = append(processed, transformed)
+	}
+	
+	return processed, nil
+}
+
+func CalculateAverage(records []DataRecord) float64 {
+	if len(records) == 0 {
+		return 0
+	}
+	
+	var sum float64
+	validCount := 0
+	
+	for _, record := range records {
+		if record.Valid {
+			sum += record.Value
+			validCount++
+		}
+	}
+	
+	if validCount == 0 {
+		return 0
+	}
+	
+	return sum / float64(validCount)
+}
+
+func FilterByCategory(records []DataRecord, category string) []DataRecord {
+	var filtered []DataRecord
+	
+	for _, record := range records {
+		if strings.EqualFold(record.Category, category) {
+			filtered = append(filtered, record)
+		}
+	}
+	
+	return filtered
+}
