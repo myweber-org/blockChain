@@ -4,27 +4,19 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"errors"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 )
 
-const keySize = 32
-
-func generateKey() ([]byte, error) {
-	key := make([]byte, keySize)
-	_, err := rand.Read(key)
+func encryptFile(inputPath, outputPath, keyHex string) error {
+	key, err := hex.DecodeString(keyHex)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("invalid key: %v", err)
 	}
-	return key, nil
-}
-
-func encryptFile(inputPath, outputPath string, key []byte) error {
-	plaintext, err := os.ReadFile(inputPath)
-	if err != nil {
-		return err
+	if len(key) != 32 {
+		return fmt.Errorf("key must be 32 bytes for AES-256")
 	}
 
 	block, err := aes.NewCipher(key)
@@ -42,15 +34,23 @@ func encryptFile(inputPath, outputPath string, key []byte) error {
 		return err
 	}
 
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	inputData, err := os.ReadFile(inputPath)
+	if err != nil {
+		return err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, inputData, nil)
 
 	return os.WriteFile(outputPath, ciphertext, 0644)
 }
 
-func decryptFile(inputPath, outputPath string, key []byte) error {
-	ciphertext, err := os.ReadFile(inputPath)
+func decryptFile(inputPath, outputPath, keyHex string) error {
+	key, err := hex.DecodeString(keyHex)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid key: %v", err)
+	}
+	if len(key) != 32 {
+		return fmt.Errorf("key must be 32 bytes for AES-256")
 	}
 
 	block, err := aes.NewCipher(key)
@@ -63,9 +63,14 @@ func decryptFile(inputPath, outputPath string, key []byte) error {
 		return err
 	}
 
+	ciphertext, err := os.ReadFile(inputPath)
+	if err != nil {
+		return err
+	}
+
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return errors.New("ciphertext too short")
+		return fmt.Errorf("ciphertext too short")
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
@@ -78,36 +83,31 @@ func decryptFile(inputPath, outputPath string, key []byte) error {
 }
 
 func main() {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: file_encryptor <encrypt|decrypt> <input> <output>")
+	if len(os.Args) < 5 {
+		fmt.Println("Usage: file_encryptor <encrypt|decrypt> <input> <output> <hex_key>")
 		os.Exit(1)
 	}
 
-	key, err := generateKey()
-	if err != nil {
-		fmt.Printf("Key generation failed: %v\n", err)
-		os.Exit(1)
-	}
+	operation := os.Args[1]
+	inputPath := os.Args[2]
+	outputPath := os.Args[3]
+	keyHex := os.Args[4]
 
-	mode := os.Args[1]
-	input := os.Args[2]
-	output := os.Args[3]
-
-	switch mode {
+	var err error
+	switch operation {
 	case "encrypt":
-		err = encryptFile(input, output, key)
+		err = encryptFile(inputPath, outputPath, keyHex)
 	case "decrypt":
-		err = decryptFile(input, output, key)
+		err = decryptFile(inputPath, outputPath, keyHex)
 	default:
-		fmt.Println("Invalid mode. Use 'encrypt' or 'decrypt'")
+		fmt.Println("Operation must be 'encrypt' or 'decrypt'")
 		os.Exit(1)
 	}
 
 	if err != nil {
-		fmt.Printf("Operation failed: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Key (hex): %x\n", key)
-	fmt.Printf("Operation completed successfully\n")
+	fmt.Println("Operation completed successfully")
 }
