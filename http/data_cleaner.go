@@ -1,50 +1,23 @@
 package main
 
-import (
-	"fmt"
-	"sort"
-)
+import "fmt"
 
-type Record struct {
-	ID   int
-	Name string
-	Data string
-}
+func RemoveDuplicates(input []string) []string {
+	seen := make(map[string]bool)
+	result := []string{}
 
-func removeDuplicates(records []Record) []Record {
-	seen := make(map[int]bool)
-	var unique []Record
-
-	for _, record := range records {
-		if !seen[record.ID] {
-			seen[record.ID] = true
-			unique = append(unique, record)
+	for _, item := range input {
+		if !seen[item] {
+			seen[item] = true
+			result = append(result, item)
 		}
 	}
-	return unique
-}
-
-func sortRecords(records []Record) {
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].ID < records[j].ID
-	})
+	return result
 }
 
 func main() {
-	records := []Record{
-		{ID: 3, Name: "Item C", Data: "Sample data C"},
-		{ID: 1, Name: "Item A", Data: "Sample data A"},
-		{ID: 2, Name: "Item B", Data: "Sample data B"},
-		{ID: 1, Name: "Item A", Data: "Sample data A"},
-		{ID: 4, Name: "Item D", Data: "Sample data D"},
-	}
-
-	fmt.Println("Original records:", len(records))
-	uniqueRecords := removeDuplicates(records)
-	sortRecords(uniqueRecords)
-
-	fmt.Println("Unique records:", len(uniqueRecords))
-	for _, r := range uniqueRecords {
-		fmt.Printf("ID: %d, Name: %s\n", r.ID, r.Name)
-	}
+	data := []string{"apple", "banana", "apple", "orange", "banana", "grape"}
+	cleaned := RemoveDuplicates(data)
+	fmt.Println("Original:", data)
+	fmt.Println("Cleaned:", cleaned)
 }
