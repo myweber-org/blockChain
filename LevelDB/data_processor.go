@@ -2,71 +2,114 @@
 package main
 
 import (
-	"errors"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"os"
 	"strings"
-	"time"
 )
 
-type DataRecord struct {
-	ID        string
-	Value     float64
-	Timestamp time.Time
-	Tags      []string
+type DataProcessor struct {
+	InputPath  string
+	OutputPath string
 }
 
-func ValidateRecord(record DataRecord) error {
-	if record.ID == "" {
-		return errors.New("ID cannot be empty")
+func NewDataProcessor(input, output string) *DataProcessor {
+	return &DataProcessor{
+		InputPath:  input,
+		OutputPath: output,
 	}
-	if record.Value < 0 {
-		return errors.New("value must be non-negative")
+}
+
+func (dp *DataProcessor) Process() error {
+	inputFile, err := os.Open(dp.InputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
 	}
-	if record.Timestamp.IsZero() {
-		return errors.New("timestamp must be set")
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(dp.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
+	defer outputFile.Close()
+
+	reader := csv.NewReader(inputFile)
+	writer := csv.NewWriter(outputFile)
+	defer writer.Flush()
+
+	headers, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read headers: %w", err)
+	}
+
+	cleanedHeaders := dp.cleanHeaders(headers)
+	if err := writer.Write(cleanedHeaders); err != nil {
+		return fmt.Errorf("failed to write headers: %w", err)
+	}
+
+	recordCount := 0
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read record: %w", err)
+		}
+
+		cleanedRecord := dp.cleanRecord(record)
+		if dp.isValidRecord(cleanedRecord) {
+			if err := writer.Write(cleanedRecord); err != nil {
+				return fmt.Errorf("failed to write record: %w", err)
+			}
+			recordCount++
+		}
+	}
+
+	fmt.Printf("Processed %d valid records\n", recordCount)
 	return nil
 }
 
-func TransformRecord(record DataRecord) DataRecord {
-	transformed := record
-	transformed.Value = record.Value * 1.1
-	transformed.Tags = append(record.Tags, "processed")
-	return transformed
+func (dp *DataProcessor) cleanHeaders(headers []string) []string {
+	cleaned := make([]string, len(headers))
+	for i, header := range headers {
+		cleaned[i] = strings.TrimSpace(header)
+		cleaned[i] = strings.ToLower(cleaned[i])
+		cleaned[i] = strings.ReplaceAll(cleaned[i], " ", "_")
+	}
+	return cleaned
 }
 
-func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
-	var processed []DataRecord
-	for _, record := range records {
-		if err := ValidateRecord(record); err != nil {
-			return nil, fmt.Errorf("validation failed for record %s: %w", record.ID, err)
+func (dp *DataProcessor) cleanRecord(record []string) []string {
+	cleaned := make([]string, len(record))
+	for i, field := range record {
+		cleaned[i] = strings.TrimSpace(field)
+		if cleaned[i] == "" {
+			cleaned[i] = "N/A"
 		}
-		processed = append(processed, TransformRecord(record))
 	}
-	return processed, nil
+	return cleaned
 }
 
-func GenerateSummary(records []DataRecord) string {
-	if len(records) == 0 {
-		return "No records to summarize"
-	}
-	
-	var total float64
-	var tagSet = make(map[string]bool)
-	
-	for _, record := range records {
-		total += record.Value
-		for _, tag := range record.Tags {
-			tagSet[tag] = true
+func (dp *DataProcessor) isValidRecord(record []string) bool {
+	for _, field := range record {
+		if field == "" {
+			return false
 		}
 	}
-	
-	avg := total / float64(len(records))
-	tags := make([]string, 0, len(tagSet))
-	for tag := range tagSet {
-		tags = append(tags, tag)
+	return true
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_processor <input.csv> <output.csv>")
+		os.Exit(1)
 	}
-	
-	return fmt.Sprintf("Processed %d records. Average value: %.2f. Unique tags: %s", 
-		len(records), avg, strings.Join(tags, ", "))
+
+	processor := NewDataProcessor(os.Args[1], os.Args[2])
+	if err := processor.Process(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 }
