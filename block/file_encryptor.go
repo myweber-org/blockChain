@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -78,17 +77,30 @@ func decryptFile(inputPath, outputPath string, key []byte) error {
 func main() {
 	key := []byte("32-byte-long-key-here-123456789012")
 	
-	err := encryptFile("plain.txt", "encrypted.bin", key)
-	if err != nil {
-		fmt.Printf("Encryption failed: %v\n", err)
-		return
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output>")
+		os.Exit(1)
 	}
-	fmt.Println("File encrypted successfully")
 
-	err = decryptFile("encrypted.bin", "decrypted.txt", key)
-	if err != nil {
-		fmt.Printf("Decryption failed: %v\n", err)
-		return
+	operation := os.Args[1]
+	inputFile := os.Args[2]
+	outputFile := os.Args[3]
+
+	switch operation {
+	case "encrypt":
+		if err := encryptFile(inputFile, outputFile, key); err != nil {
+			fmt.Printf("Encryption failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("File encrypted successfully")
+	case "decrypt":
+		if err := decryptFile(inputFile, outputFile, key); err != nil {
+			fmt.Printf("Decryption failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("File decrypted successfully")
+	default:
+		fmt.Println("Invalid operation. Use 'encrypt' or 'decrypt'")
+		os.Exit(1)
 	}
-	fmt.Println("File decrypted successfully")
 }
