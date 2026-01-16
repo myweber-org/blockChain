@@ -273,3 +273,52 @@ func main() {
 	validRecords := ValidateRecords(records)
 	GenerateReport(validRecords)
 }
+package main
+
+import (
+	"fmt"
+	"sort"
+)
+
+type User struct {
+	ID    int
+	Name  string
+	Email string
+	Age   int
+}
+
+func filterUsers(users []User, minAge int) []User {
+	var filtered []User
+	for _, user := range users {
+		if user.Age >= minAge {
+			filtered = append(filtered, user)
+		}
+	}
+	return filtered
+}
+
+func sortUsersByName(users []User) []User {
+	sorted := make([]User, len(users))
+	copy(sorted, users)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+	return sorted
+}
+
+func main() {
+	users := []User{
+		{1, "Alice", "alice@example.com", 25},
+		{2, "Bob", "bob@example.com", 30},
+		{3, "Charlie", "charlie@example.com", 22},
+		{4, "David", "david@example.com", 35},
+	}
+
+	filtered := filterUsers(users, 25)
+	sorted := sortUsersByName(filtered)
+
+	fmt.Println("Filtered and sorted users:")
+	for _, user := range sorted {
+		fmt.Printf("ID: %d, Name: %s, Email: %s, Age: %d\n", user.ID, user.Name, user.Email, user.Age)
+	}
+}
