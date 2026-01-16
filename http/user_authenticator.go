@@ -1,41 +1,56 @@
 package middleware
 
 import (
-    "net/http"
-    "strings"
-    "github.com/dgrijalva/jwt-go"
+	"context"
+	"net/http"
+	"strings"
 )
 
-type Claims struct {
-    Username string `json:"username"`
-    Role     string `json:"role"`
-    jwt.StandardClaims
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
+type TokenValidator interface {
+	ValidateToken(tokenString string) (string, error)
 }
 
-var jwtKey = []byte("your_secret_key")
+type Authenticator struct {
+	tokenValidator TokenValidator
+}
 
-func AuthMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        authHeader := r.Header.Get("Authorization")
-        if authHeader == "" {
-            http.Error(w, "Authorization header required", http.StatusUnauthorized)
-            return
-        }
+func NewAuthenticator(validator TokenValidator) *Authenticator {
+	return &Authenticator{
+		tokenValidator: validator,
+	}
+}
 
-        tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-        claims := &Claims{}
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
 
-        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-            return jwtKey, nil
-        })
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
 
-        if err != nil || !token.Valid {
-            http.Error(w, "Invalid token", http.StatusUnauthorized)
-            return
-        }
+		tokenString := parts[1]
+		userID, err := a.tokenValidator.ValidateToken(tokenString)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
 
-        r.Header.Set("X-Username", claims.Username)
-        r.Header.Set("X-Role", claims.Role)
-        next.ServeHTTP(w, r)
-    })
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
 }
