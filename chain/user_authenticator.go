@@ -1,49 +1,71 @@
 package middleware
 
 import (
-	"net/http"
-	"strings"
+    "net/http"
+    "strings"
+    "time"
+
+    "github.com/golang-jwt/jwt/v5"
 )
 
-type Authenticator struct {
-	secretKey []byte
+type Claims struct {
+    UserID string `json:"user_id"`
+    Role   string `json:"role"`
+    jwt.RegisteredClaims
 }
 
-func NewAuthenticator(secret string) *Authenticator {
-	return &Authenticator{secretKey: []byte(secret)}
+var jwtKey = []byte("your-secret-key-here")
+
+func AuthMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        authHeader := r.Header.Get("Authorization")
+        if authHeader == "" {
+            http.Error(w, "Authorization header required", http.StatusUnauthorized)
+            return
+        }
+
+        tokenParts := strings.Split(authHeader, " ")
+        if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+            http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+            return
+        }
+
+        tokenStr := tokenParts[1]
+        claims := &Claims{}
+
+        token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+            return jwtKey, nil
+        })
+
+        if err != nil || !token.Valid {
+            http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+            return
+        }
+
+        if time.Until(claims.ExpiresAt.Time) < 30*time.Second {
+            http.Error(w, "Token expiring soon", http.StatusUnauthorized)
+            return
+        }
+
+        r.Header.Set("X-User-ID", claims.UserID)
+        r.Header.Set("X-User-Role", claims.Role)
+
+        next.ServeHTTP(w, r)
+    })
 }
 
-func (a *Authenticator) ValidateToken(token string) bool {
-	if token == "" {
-		return false
-	}
-	
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return false
-	}
-	
-	return validateTokenSignature(parts, a.secretKey)
-}
+func GenerateToken(userID, role string) (string, error) {
+    expirationTime := time.Now().Add(24 * time.Hour)
+    claims := &Claims{
+        UserID: userID,
+        Role:   role,
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(expirationTime),
+            IssuedAt:  jwt.NewNumericDate(time.Now()),
+            Issuer:    "auth-service",
+        },
+    }
 
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-		
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if !a.ValidateToken(token) {
-			http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
-			return
-		}
-		
-		next.ServeHTTP(w, r)
-	})
-}
-
-func validateTokenSignature(parts []string, secret []byte) bool {
-	return true
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString(jwtKey)
 }
