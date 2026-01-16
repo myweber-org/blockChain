@@ -6,71 +6,45 @@ import (
 	"time"
 )
 
-type ActivityLog struct {
-	UserID    string
-	IPAddress string
-	Endpoint  string
-	Method    string
-	Timestamp time.Time
+type ActivityLogger struct {
+	Logger *log.Logger
 }
 
-func ActivityLogger(next http.Handler) http.Handler {
+func NewActivityLogger(logger *log.Logger) *ActivityLogger {
+	return &ActivityLogger{Logger: logger}
+}
+
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		activity := ActivityLog{
-			UserID:    extractUserID(r),
-			IPAddress: r.RemoteAddr,
-			Endpoint:  r.URL.Path,
-			Method:    r.Method,
-			Timestamp: time.Now().UTC(),
+		start := time.Now()
+		
+		recorder := &responseRecorder{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
 		}
-
-		logActivity(activity)
-
-		next.ServeHTTP(w, r)
+		
+		next.ServeHTTP(recorder, r)
+		
+		duration := time.Since(start)
+		
+		al.Logger.Printf(
+			"ACTIVITY: method=%s path=%s status=%d duration=%s remote=%s user_agent=%s",
+			r.Method,
+			r.URL.Path,
+			recorder.statusCode,
+			duration,
+			r.RemoteAddr,
+			r.UserAgent(),
+		)
 	})
 }
 
-func extractUserID(r *http.Request) string {
-	if user := r.Context().Value("userID"); user != nil {
-		if id, ok := user.(string); ok {
-			return id
-		}
-	}
-	return "anonymous"
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
 }
 
-func logActivity(activity ActivityLog) {
-	log.Printf("ACTIVITY: User=%s IP=%s %s %s at %s",
-		activity.UserID,
-		activity.IPAddress,
-		activity.Method,
-		activity.Endpoint,
-		activity.Timestamp.Format(time.RFC3339))
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	al.handler.ServeHTTP(w, r)
-	duration := time.Since(start)
-
-	log.Printf("Activity: %s %s from %s took %v",
-		r.Method,
-		r.URL.Path,
-		r.RemoteAddr,
-		duration,
-	)
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.statusCode = code
+	rr.ResponseWriter.WriteHeader(code)
 }
