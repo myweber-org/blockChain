@@ -10,32 +10,30 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
-func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Authorization header required", http.StatusUnauthorized)
-				return
-			}
+func Authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
 
-			parts := strings.Split(authHeader, " ")
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-				return
-			}
+		tokenParts := strings.Split(authHeader, " ")
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
 
-			tokenString := parts[1]
-			userID, err := validateToken(tokenString, jwtSecret)
-			if err != nil {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
+		token := tokenParts[1]
+		userID, err := validateToken(token)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
 
-			ctx := context.WithValue(r.Context(), userIDKey, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 func GetUserID(ctx context.Context) (string, bool) {
@@ -43,17 +41,12 @@ func GetUserID(ctx context.Context) (string, bool) {
 	return userID, ok
 }
 
-func validateToken(tokenString, secret string) (string, error) {
-	// Simplified token validation - in production use a proper JWT library
-	// This is a placeholder implementation
-	if tokenString == "" || secret == "" {
-		return "", http.ErrAbortHandler
+func validateToken(token string) (string, error) {
+	// Token validation logic would go here
+	// For example, parse JWT and verify signature
+	// This is a simplified placeholder implementation
+	if token == "" {
+		return "", http.ErrNoCookie
 	}
-	
-	// Mock validation logic
-	if strings.HasPrefix(tokenString, "valid_") {
-		return strings.TrimPrefix(tokenString, "valid_"), nil
-	}
-	
-	return "", http.ErrAbortHandler
+	return "user123", nil
 }
