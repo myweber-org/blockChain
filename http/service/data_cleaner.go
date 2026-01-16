@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -5,56 +6,35 @@ import (
 	"strings"
 )
 
-type DataRecord struct {
-	ID    int
-	Email string
-	Valid bool
+func CleanString(input string) string {
+	trimmed := strings.TrimSpace(input)
+	lower := strings.ToLower(trimmed)
+	return lower
 }
 
-func deduplicateRecords(records []DataRecord) []DataRecord {
-	seen := make(map[string]bool)
-	var unique []DataRecord
-	for _, record := range records {
-		normalizedEmail := strings.ToLower(strings.TrimSpace(record.Email))
-		if !seen[normalizedEmail] {
-			seen[normalizedEmail] = true
-			unique = append(unique, record)
+func RemoveDuplicates(elements []string) []string {
+	encountered := map[string]bool{}
+	result := []string{}
+
+	for _, v := range elements {
+		if !encountered[v] {
+			encountered[v] = true
+			result = append(result, v)
 		}
 	}
-	return unique
+	return result
 }
 
-func validateEmail(email string) bool {
-	if len(email) == 0 {
-		return false
+func ProcessData(data []string) []string {
+	cleaned := []string{}
+	for _, item := range data {
+		cleaned = append(cleaned, CleanString(item))
 	}
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
-}
-
-func cleanData(records []DataRecord) []DataRecord {
-	var cleaned []DataRecord
-	for _, record := range records {
-		if validateEmail(record.Email) {
-			record.Valid = true
-			cleaned = append(cleaned, record)
-		}
-	}
-	return deduplicateRecords(cleaned)
+	return RemoveDuplicates(cleaned)
 }
 
 func main() {
-	sampleData := []DataRecord{
-		{1, "user@example.com", false},
-		{2, "invalid-email", false},
-		{3, "USER@EXAMPLE.COM", false},
-		{4, "another@test.org", false},
-		{5, "user@example.com", false},
-	}
-
-	cleaned := cleanData(sampleData)
-	fmt.Printf("Original: %d records\n", len(sampleData))
-	fmt.Printf("Cleaned: %d records\n", len(cleaned))
-	for _, record := range cleaned {
-		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", record.ID, record.Email, record.Valid)
-	}
+	sampleData := []string{"  Apple ", "banana", "  APPLE", "Banana ", "Cherry"}
+	result := ProcessData(sampleData)
+	fmt.Println("Cleaned data:", result)
 }
