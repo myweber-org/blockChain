@@ -37,4 +37,41 @@ func main() {
 	sampleData := []string{"  Apple ", "banana", "  APPLE", "Banana ", "Cherry"}
 	result := ProcessData(sampleData)
 	fmt.Println("Cleaned data:", result)
+}package datautils
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+func SanitizeString(input string) string {
+	// Remove any null characters
+	cleaned := strings.ReplaceAll(input, "\x00", "")
+	
+	// Trim whitespace from both ends
+	cleaned = strings.TrimSpace(cleaned)
+	
+	// Normalize multiple spaces to single space
+	spaceRegex := regexp.MustCompile(`\s+`)
+	cleaned = spaceRegex.ReplaceAllString(cleaned, " ")
+	
+	// Remove any non-printable characters except standard whitespace
+	var result strings.Builder
+	for _, r := range cleaned {
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			result.WriteRune(r)
+		}
+	}
+	
+	return result.String()
+}
+
+func NormalizeWhitespace(input string) string {
+	// Replace various whitespace characters with standard space
+	whitespaceRegex := regexp.MustCompile(`[\t\n\r\f\v]+`)
+	normalized := whitespaceRegex.ReplaceAllString(input, " ")
+	
+	// Trim and collapse multiple spaces
+	return strings.Join(strings.Fields(normalized), " ")
 }
