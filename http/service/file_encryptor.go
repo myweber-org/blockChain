@@ -4,199 +4,86 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"errors"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
 )
 
-func encryptFile(inputPath, outputPath string, key []byte) error {
-	plaintext, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("read input file: %w", err)
-	}
-
+func encryptData(plaintext []byte, key []byte) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return fmt.Errorf("create cipher: %w", err)
+		return "", err
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("create GCM: %w", err)
+		return "", err
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return fmt.Errorf("generate nonce: %w", err)
+		return "", err
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-
-	if err := os.WriteFile(outputPath, ciphertext, 0644); err != nil {
-		return fmt.Errorf("write output file: %w", err)
-	}
-
-	return nil
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-func decryptFile(inputPath, outputPath string, key []byte) error {
-	ciphertext, err := os.ReadFile(inputPath)
+func decryptData(encrypted string, key []byte) ([]byte, error) {
+	data, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
-		return fmt.Errorf("read input file: %w", err)
+		return nil, err
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return fmt.Errorf("create cipher: %w", err)
+		return nil, err
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("create GCM: %w", err)
+		return nil, err
 	}
 
 	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return errors.New("ciphertext too short")
+	if len(data) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
 	}
 
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return fmt.Errorf("decrypt data: %w", err)
-	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	return gcm.Open(nil, nonce, ciphertext, nil)
+}
 
-	if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
-		return fmt.Errorf("write output file: %w", err)
+func generateKey() ([]byte, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
 	}
-
-	return nil
+	return key, nil
 }
 
 func main() {
-	if len(os.Args) < 5 {
-		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output> <key>")
+	key, err := generateKey()
+	if err != nil {
+		fmt.Printf("Key generation failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	action := os.Args[1]
-	inputPath := os.Args[2]
-	outputPath := os.Args[3]
-	key := []byte(os.Args[4])
-
-	if len(key) != 32 {
-		fmt.Println("Key must be exactly 32 bytes for AES-256")
-		os.Exit(1)
-	}
-
-	var err error
-	switch action {
-	case "encrypt":
-		err = encryptFile(inputPath, outputPath, key)
-	case "decrypt":
-		err = decryptFile(inputPath, outputPath, key)
-	default:
-		fmt.Println("Action must be 'encrypt' or 'decrypt'")
-		os.Exit(1)
-	}
-
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Operation completed successfully\n")
-}package main
-
-import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-)
-
-func encryptFile(inputPath, outputPath string, key []byte) error {
-	plaintext, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("read input file: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return fmt.Errorf("create cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return fmt.Errorf("create GCM: %w", err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return fmt.Errorf("generate nonce: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-
-	if err := os.WriteFile(outputPath, ciphertext, 0644); err != nil {
-		return fmt.Errorf("write output file: %w", err)
-	}
-
-	return nil
-}
-
-func decryptFile(inputPath, outputPath string, key []byte) error {
-	ciphertext, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("read input file: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return fmt.Errorf("create cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return fmt.Errorf("create GCM: %w", err)
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return errors.New("ciphertext too short")
-	}
-
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return fmt.Errorf("decrypt data: %w", err)
-	}
-
-	if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
-		return fmt.Errorf("write output file: %w", err)
-	}
-
-	return nil
-}
-
-func main() {
-	key := []byte("32-byte-long-key-here-123456789012")
-	
-	err := encryptFile("plain.txt", "encrypted.bin", key)
+	secretMessage := "Confidential data requiring protection"
+	encrypted, err := encryptData([]byte(secretMessage), key)
 	if err != nil {
 		fmt.Printf("Encryption failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	fmt.Println("File encrypted successfully")
 
-	err = decryptFile("encrypted.bin", "decrypted.txt", key)
+	fmt.Printf("Encrypted: %s\n", encrypted)
+
+	decrypted, err := decryptData(encrypted, key)
 	if err != nil {
 		fmt.Printf("Decryption failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	fmt.Println("File decrypted successfully")
+
+	fmt.Printf("Decrypted: %s\n", decrypted)
 }
