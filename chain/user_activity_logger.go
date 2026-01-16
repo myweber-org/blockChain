@@ -149,4 +149,55 @@ func ActivityLogger(next http.Handler) http.Handler {
 
 func extractUserID(token string) string {
 	return "user_" + token[:8]
+}package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type ActivityLog struct {
+	Timestamp  time.Time
+	Method     string
+	Path       string
+	RemoteAddr string
+	UserAgent  string
+	StatusCode int
+}
+
+func ActivityLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		
+		lw := &responseWriter{ResponseWriter: w}
+		next.ServeHTTP(lw, r)
+		
+		activity := ActivityLog{
+			Timestamp:  start,
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			RemoteAddr: r.RemoteAddr,
+			UserAgent:  r.UserAgent(),
+			StatusCode: lw.statusCode,
+		}
+		
+		log.Printf("ACTIVITY: %s %s %s %s %d %v",
+			activity.Timestamp.Format(time.RFC3339),
+			activity.Method,
+			activity.Path,
+			activity.RemoteAddr,
+			activity.StatusCode,
+			time.Since(start))
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
