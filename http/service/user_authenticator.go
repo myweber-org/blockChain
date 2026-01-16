@@ -1,9 +1,16 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
 )
+
+type contextKey string
+
+const UserIDKey contextKey = "userID"
 
 type Authenticator struct {
 	secretKey []byte
@@ -11,19 +18,6 @@ type Authenticator struct {
 
 func NewAuthenticator(secretKey string) *Authenticator {
 	return &Authenticator{secretKey: []byte(secretKey)}
-}
-
-func (a *Authenticator) ValidateToken(tokenString string) (bool, error) {
-	if tokenString == "" {
-		return false, nil
-	}
-
-	// In a real implementation, this would validate JWT tokens
-	// For this example, we'll simulate validation
-	if strings.HasPrefix(tokenString, "valid_") {
-		return true, nil
-	}
-	return false, nil
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
@@ -34,23 +28,38 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
 			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
 			return
 		}
 
-		valid, err := a.ValidateToken(tokenParts[1])
-		if err != nil {
-			http.Error(w, "Token validation error", http.StatusInternalServerError)
-			return
-		}
+		tokenStr := parts[1]
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return a.secretKey, nil
+		})
 
-		if !valid {
+		if err != nil || !token.Valid {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		userID, ok := claims["user_id"].(string)
+		if !ok {
+			http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
