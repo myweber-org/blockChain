@@ -339,3 +339,20 @@ func main() {
 
 	fmt.Printf("%.2f %s = %.2f %s\n", amount, from, result, to)
 }
+package main
+
+import (
+    "fmt"
+)
+
+const exchangeRate = 0.85
+
+func ConvertUSDToEUR(amount float64) float64 {
+    return amount * exchangeRate
+}
+
+func main() {
+    usdAmount := 100.0
+    eurAmount := ConvertUSDToEUR(usdAmount)
+    fmt.Printf("%.2f USD = %.2f EUR\n", usdAmount, eurAmount)
+}
