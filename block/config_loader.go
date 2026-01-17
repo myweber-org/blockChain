@@ -72,4 +72,46 @@ func setFromEnvInt(field *int, envVar string) {
 			*field = intVal
 		}
 	}
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort int
+    DatabaseURL string
+    DebugMode bool
+    AllowedHosts []string
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnv("SERVER_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
+    if err != nil {
+        return nil, err
+    }
+    cfg.ServerPort = port
+    
+    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    debugStr := getEnv("DEBUG_MODE", "false")
+    cfg.DebugMode = strings.ToLower(debugStr) == "true"
+    
+    hostsStr := getEnv("ALLOWED_HOSTS", "localhost,127.0.0.1")
+    cfg.AllowedHosts = strings.Split(hostsStr, ",")
+    
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    value := os.Getenv(key)
+    if value == "" {
+        return defaultValue
+    }
+    return value
 }
