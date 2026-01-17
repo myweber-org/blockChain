@@ -250,3 +250,57 @@ func main() {
 
 	fmt.Printf("Parsed user: %+v\n", user)
 }
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+type UserData struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func ProcessUserInput(rawInput string) (*UserData, error) {
+	rawInput = strings.TrimSpace(rawInput)
+	if rawInput == "" {
+		return nil, fmt.Errorf("input cannot be empty")
+	}
+
+	var data UserData
+	err := json.Unmarshal([]byte(rawInput), &data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON format: %v", err)
+	}
+
+	if data.ID <= 0 {
+		return nil, fmt.Errorf("ID must be a positive integer")
+	}
+
+	if strings.TrimSpace(data.Name) == "" {
+		return nil, fmt.Errorf("name cannot be empty")
+	}
+
+	if !strings.Contains(data.Email, "@") {
+		return nil, fmt.Errorf("email must contain '@' symbol")
+	}
+
+	data.Name = strings.Title(strings.ToLower(data.Name))
+	data.Email = strings.ToLower(data.Email)
+
+	return &data, nil
+}
+
+func main() {
+	input := `{"id": 123, "name": "JOHN DOE", "email": "JOHN@EXAMPLE.COM"}`
+	processed, err := ProcessUserInput(input)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Processed Data: %+v\n", processed)
+}
