@@ -1,127 +1,72 @@
 
 package main
 
-import "fmt"
-
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
-
-	for _, item := range input {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func main() {
-	data := []string{"apple", "banana", "apple", "orange", "banana", "grape"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}
-package main
-
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
 
-type DataCleaner struct {
-	seen map[string]bool
+type DataRecord struct {
+	ID    string
+	Email string
+	Phone string
+	Valid bool
 }
 
-func NewDataCleaner() *DataCleaner {
-	return &DataCleaner{
-		seen: make(map[string]bool),
-	}
-}
+func deduplicateRecords(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var unique []DataRecord
 
-func (dc *DataCleaner) Deduplicate(items []string) []string {
-	var unique []string
-	for _, item := range items {
-		normalized := strings.ToLower(strings.TrimSpace(item))
-		if !dc.seen[normalized] && dc.isValid(normalized) {
-			dc.seen[normalized] = true
-			unique = append(unique, item)
+	for _, record := range records {
+		key := generateHash(record.Email + record.Phone)
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, record)
 		}
 	}
 	return unique
 }
 
-func (dc *DataCleaner) isValid(item string) bool {
-	return len(item) > 0 && !strings.ContainsAny(item, "!@#$%")
+func validateRecords(records []DataRecord) []DataRecord {
+	var validated []DataRecord
+	for _, record := range records {
+		record.Valid = isValidEmail(record.Email) && isValidPhone(record.Phone)
+		validated = append(validated, record)
+	}
+	return validated
 }
 
-func (dc *DataCleaner) Reset() {
-	dc.seen = make(map[string]bool)
+func generateHash(input string) string {
+	hash := md5.Sum([]byte(input))
+	return hex.EncodeToString(hash[:])
+}
+
+func isValidEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func isValidPhone(phone string) bool {
+	return len(phone) >= 10 && strings.Count(phone, "") > 5
+}
+
+func processDataPipeline(records []DataRecord) []DataRecord {
+	unique := deduplicateRecords(records)
+	validated := validateRecords(unique)
+	return validated
 }
 
 func main() {
-	cleaner := NewDataCleaner()
-	
-	data := []string{"apple", "Apple", "banana", "", "cherry!", "banana", "date"}
-	cleaned := cleaner.Deduplicate(data)
-	
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-	
-	cleaner.Reset()
-	anotherSet := []string{"repeat", "repeat", "unique"}
-	fmt.Println("Second batch:", cleaner.Deduplicate(anotherSet))
-}package datautils
-
-import "sort"
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-	if len(slice) == 0 {
-		return slice
+	sampleData := []DataRecord{
+		{ID: "1", Email: "test@example.com", Phone: "1234567890"},
+		{ID: "2", Email: "duplicate@example.com", Phone: "0987654321"},
+		{ID: "3", Email: "test@example.com", Phone: "1234567890"},
+		{ID: "4", Email: "invalid-email", Phone: "123"},
 	}
 
-	seen := make(map[T]bool)
-	result := make([]T, 0, len(slice))
-
-	for _, item := range slice {
-		if !seen[item] {
-			seen[item] = true
-			result = append(result, item)
-		}
+	processed := processDataPipeline(sampleData)
+	for _, record := range processed {
+		fmt.Printf("ID: %s, Valid: %v\n", record.ID, record.Valid)
 	}
-
-	return result
-}
-
-func RemoveDuplicatesSorted[T comparable](slice []T) []T {
-	if len(slice) == 0 {
-		return slice
-	}
-
-	sort.Slice(slice, func(i, j int) bool {
-		switch v := any(slice).(type) {
-		case []string:
-			return v[i] < v[j]
-		case []int:
-			return v[i] < v[j]
-		case []float64:
-			return v[i] < v[j]
-		default:
-			return false
-		}
-	})
-
-	result := make([]T, 0, len(slice))
-	var prev T
-	first := true
-
-	for _, item := range slice {
-		if first || item != prev {
-			result = append(result, item)
-			prev = item
-			first = false
-		}
-	}
-
-	return result
 }
