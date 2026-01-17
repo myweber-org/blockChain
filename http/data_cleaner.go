@@ -150,3 +150,57 @@ func main() {
 	fmt.Println("Original data:", data)
 	fmt.Println("Cleaned data:", cleaned)
 }
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func DeduplicateStrings(slice []string) []string {
+    seen := make(map[string]struct{})
+    result := []string{}
+    for _, item := range slice {
+        if _, exists := seen[item]; !exists {
+            seen[item] = struct{}{}
+            result = append(result, item)
+        }
+    }
+    return result
+}
+
+func ValidateEmail(email string) bool {
+    if !strings.Contains(email, "@") {
+        return false
+    }
+    parts := strings.Split(email, "@")
+    if len(parts) != 2 {
+        return false
+    }
+    if len(parts[0]) == 0 || len(parts[1]) == 0 {
+        return false
+    }
+    return true
+}
+
+func main() {
+    emails := []string{
+        "test@example.com",
+        "user@domain.org",
+        "test@example.com",
+        "invalid-email",
+        "another@test.net",
+        "user@domain.org",
+    }
+
+    fmt.Println("Original list:", emails)
+    
+    uniqueEmails := DeduplicateStrings(emails)
+    fmt.Println("Deduplicated list:", uniqueEmails)
+    
+    fmt.Println("\nEmail validation:")
+    for _, email := range uniqueEmails {
+        valid := ValidateEmail(email)
+        fmt.Printf("%s: %v\n", email, valid)
+    }
+}
