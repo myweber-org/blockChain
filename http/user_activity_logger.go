@@ -7,47 +7,21 @@ import (
 )
 
 type ActivityLogger struct {
-	rateLimiter map[string]time.Time
-	window      time.Duration
+	handler http.Handler
 }
 
-func NewActivityLogger(window time.Duration) *ActivityLogger {
-	return &ActivityLogger{
-		rateLimiter: make(map[string]time.Time),
-		window:      window,
-	}
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
 }
 
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		clientIP := r.RemoteAddr
-		now := time.Now()
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	userAgent := r.UserAgent()
+	ipAddress := r.RemoteAddr
+	requestPath := r.URL.Path
 
-		if last, exists := al.rateLimiter[clientIP]; exists {
-			if now.Sub(last) < al.window {
-				http.Error(w, "Too many requests", http.StatusTooManyRequests)
-				return
-			}
-		}
+	al.handler.ServeHTTP(w, r)
 
-		al.rateLimiter[clientIP] = now
-
-		log.Printf("Activity: %s %s from %s", r.Method, r.URL.Path, clientIP)
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (al *ActivityLogger) CleanupOldEntries() {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		now := time.Now()
-		for ip, lastSeen := range al.rateLimiter {
-			if now.Sub(lastSeen) > 24*time.Hour {
-				delete(al.rateLimiter, ip)
-			}
-		}
-	}
+	duration := time.Since(start)
+	log.Printf("Activity: %s | %s | %s | %v", ipAddress, userAgent, requestPath, duration)
 }
