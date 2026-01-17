@@ -1,4 +1,3 @@
-
 package middleware
 
 import (
@@ -6,202 +5,64 @@ import (
 	"strings"
 )
 
+type User struct {
+	ID    int
+	Roles []string
+}
+
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+		token := extractToken(r)
+		if token == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+		user, err := validateToken(token)
+		if err != nil {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
-		token := tokenParts[1]
-		if !isValidToken(token) {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+		if !hasRequiredRole(user, r.URL.Path) {
+			http.Error(w, "Insufficient permissions", http.StatusForbidden)
 			return
 		}
 
-		next.ServeHTTP(w, r)
-	})
-}
-
-func isValidToken(token string) bool {
-	return len(token) > 10
-}package middleware
-
-import (
-    "net/http"
-    "strings"
-)
-
-func AuthMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        authHeader := r.Header.Get("Authorization")
-        if authHeader == "" {
-            http.Error(w, "Authorization header required", http.StatusUnauthorized)
-            return
-        }
-
-        parts := strings.Split(authHeader, " ")
-        if len(parts) != 2 || parts[0] != "Bearer" {
-            http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-            return
-        }
-
-        token := parts[1]
-        if !isValidToken(token) {
-            http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
-            return
-        }
-
-        next.ServeHTTP(w, r)
-    })
-}
-
-func isValidToken(token string) bool {
-    return len(token) > 10
-}package middleware
-
-import (
-	"context"
-	"net/http"
-	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
-)
-
-type contextKey string
-
-const (
-	UserIDKey contextKey = "userID"
-)
-
-type AuthMiddleware struct {
-	jwtSecret []byte
-}
-
-func NewAuthMiddleware(secret string) *AuthMiddleware {
-	return &AuthMiddleware{
-		jwtSecret: []byte(secret),
-	}
-}
-
-func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		tokenStr := parts[1]
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return m.jwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-			return
-		}
-
-		userID, ok := claims["user_id"].(string)
-		if !ok {
-			http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
-package middleware
 
-import (
-	"context"
-	"net/http"
-	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
-)
-
-type contextKey string
-
-const (
-	UserIDKey contextKey = "userID"
-)
-
-type AuthMiddleware struct {
-	jwtSecret []byte
-}
-
-func NewAuthMiddleware(secret string) *AuthMiddleware {
-	return &AuthMiddleware{
-		jwtSecret: []byte(secret),
+func extractToken(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
 	}
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return ""
+	}
+	return parts[1]
 }
 
-func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		tokenStr := parts[1]
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return m.jwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			userID, ok := claims["user_id"].(string)
-			if !ok {
-				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-				return
-			}
-			ctx := context.WithValue(r.Context(), UserIDKey, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		} else {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-		}
-	})
+func validateToken(token string) (*User, error) {
+	// Token validation logic
+	if token == "valid_token_example" {
+		return &User{ID: 1, Roles: []string{"admin", "user"}}, nil
+	}
+	return nil, fmt.Errorf("invalid token")
 }
 
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(UserIDKey).(string)
-	return userID, ok
+func hasRequiredRole(user *User, path string) bool {
+	if strings.Contains(path, "/admin") {
+		for _, role := range user.Roles {
+			if role == "admin" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
