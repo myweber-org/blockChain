@@ -436,4 +436,128 @@ func overrideBool(field *bool, envVar string) {
 	if val := os.Getenv(envVar); val != "" {
 		*field = val == "true" || val == "1" || val == "yes"
 	}
+}package config
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DatabaseConfig struct {
+	Host     string `json:"host" env:"DB_HOST"`
+	Port     int    `json:"port" env:"DB_PORT"`
+	Username string `json:"username" env:"DB_USER"`
+	Password string `json:"password" env:"DB_PASS"`
+	SSLMode  string `json:"ssl_mode" env:"DB_SSL_MODE"`
+}
+
+type ServerConfig struct {
+	Port         int    `json:"port" env:"SERVER_PORT"`
+	ReadTimeout  int    `json:"read_timeout" env:"SERVER_READ_TIMEOUT"`
+	WriteTimeout int    `json:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
+	DebugMode    bool   `json:"debug_mode" env:"SERVER_DEBUG"`
+	LogLevel     string `json:"log_level" env:"LOG_LEVEL"`
+}
+
+type AppConfig struct {
+	Database DatabaseConfig `json:"database"`
+	Server   ServerConfig   `json:"server"`
+	Version  string         `json:"version"`
+}
+
+func LoadConfig(configPath string) (*AppConfig, error) {
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer file.Close()
+
+	var config AppConfig
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, fmt.Errorf("failed to decode config: %w", err)
+	}
+
+	if err := overrideFromEnv(&config); err != nil {
+		return nil, err
+	}
+
+	if err := validateConfig(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func overrideFromEnv(config *AppConfig) error {
+	if err := overrideStruct(&config.Database); err != nil {
+		return fmt.Errorf("database config error: %w", err)
+	}
+	if err := overrideStruct(&config.Server); err != nil {
+		return fmt.Errorf("server config error: %w", err)
+	}
+	return nil
+}
+
+func overrideStruct(target interface{}) error {
+	// Implementation would use reflection to read struct tags
+	// and override values from environment variables
+	// Simplified version for demonstration
+	return nil
+}
+
+func validateConfig(config *AppConfig) error {
+	var validationErrors []string
+
+	if config.Database.Host == "" {
+		validationErrors = append(validationErrors, "database host is required")
+	}
+	if config.Database.Port < 1 || config.Database.Port > 65535 {
+		validationErrors = append(validationErrors, "database port must be between 1 and 65535")
+	}
+	if config.Server.Port < 1024 || config.Server.Port > 65535 {
+		validationErrors = append(validationErrors, "server port must be between 1024 and 65535")
+	}
+	if config.Server.ReadTimeout < 0 {
+		validationErrors = append(validationErrors, "read timeout cannot be negative")
+	}
+	if config.Server.WriteTimeout < 0 {
+		validationErrors = append(validationErrors, "write timeout cannot be negative")
+	}
+	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLogLevels[strings.ToLower(config.Server.LogLevel)] {
+		validationErrors = append(validationErrors, "invalid log level")
+	}
+
+	if len(validationErrors) > 0 {
+		return errors.New("config validation failed: " + strings.Join(validationErrors, ", "))
+	}
+	return nil
+}
+
+func GetEnv(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+func GetEnvInt(key string, defaultValue int) (int, error) {
+	valueStr := GetEnv(key, "")
+	if valueStr == "" {
+		return defaultValue, nil
+	}
+	return strconv.Atoi(valueStr)
+}
+
+func GetEnvBool(key string, defaultValue bool) (bool, error) {
+	valueStr := GetEnv(key, "")
+	if valueStr == "" {
+		return defaultValue, nil
+	}
+	return strconv.ParseBool(valueStr)
 }
