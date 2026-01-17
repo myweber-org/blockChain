@@ -3,75 +3,98 @@ package config
 import (
     "fmt"
     "os"
-    "strconv"
-    "strings"
+    "path/filepath"
+
+    "gopkg.in/yaml.v2"
 )
 
+type DatabaseConfig struct {
+    Host     string `yaml:"host" env:"DB_HOST"`
+    Port     int    `yaml:"port" env:"DB_PORT"`
+    Username string `yaml:"username" env:"DB_USER"`
+    Password string `yaml:"password" env:"DB_PASS"`
+    Name     string `yaml:"name" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+    Port         int    `yaml:"port" env:"SERVER_PORT"`
+    ReadTimeout  int    `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT"`
+    WriteTimeout int    `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
+    Debug        bool   `yaml:"debug" env:"SERVER_DEBUG"`
+}
+
 type AppConfig struct {
-    ServerPort int
-    DatabaseURL string
-    LogLevel string
-    EnableCache bool
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
 }
 
-func LoadConfig() (*AppConfig, error) {
-    cfg := &AppConfig{
-        ServerPort:  getEnvAsInt("SERVER_PORT", 8080),
-        DatabaseURL: getEnv("DATABASE_URL", "postgres://localhost:5432/app"),
-        LogLevel:    getEnv("LOG_LEVEL", "info"),
-        EnableCache: getEnvAsBool("ENABLE_CACHE", true),
-    }
-
-    if err := validateConfig(cfg); err != nil {
-        return nil, fmt.Errorf("config validation failed: %w", err)
-    }
-
-    return cfg, nil
-}
-
-func getEnv(key, defaultValue string) string {
-    if value, exists := os.LookupEnv(key); exists {
-        return value
-    }
-    return defaultValue
-}
-
-func getEnvAsInt(key string, defaultValue int) int {
-    strValue := getEnv(key, "")
-    if strValue == "" {
-        return defaultValue
-    }
-    value, err := strconv.Atoi(strValue)
+func LoadConfig(configPath string) (*AppConfig, error) {
+    data, err := os.ReadFile(configPath)
     if err != nil {
-        return defaultValue
+        return nil, fmt.Errorf("failed to read config file: %w", err)
     }
-    return value
+
+    var config AppConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML config: %w", err)
+    }
+
+    overrideFromEnv(&config)
+
+    return &config, nil
 }
 
-func getEnvAsBool(key string, defaultValue bool) bool {
-    strValue := getEnv(key, "")
-    if strValue == "" {
-        return defaultValue
-    }
-    strValue = strings.ToLower(strValue)
-    return strValue == "true" || strValue == "1" || strValue == "yes"
+func overrideFromEnv(config *AppConfig) {
+    overrideString(&config.Database.Host, "DB_HOST")
+    overrideInt(&config.Database.Port, "DB_PORT")
+    overrideString(&config.Database.Username, "DB_USER")
+    overrideString(&config.Database.Password, "DB_PASS")
+    overrideString(&config.Database.Name, "DB_NAME")
+    
+    overrideInt(&config.Server.Port, "SERVER_PORT")
+    overrideInt(&config.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
+    overrideInt(&config.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
+    overrideBool(&config.Server.Debug, "SERVER_DEBUG")
+    
+    overrideString(&config.LogLevel, "LOG_LEVEL")
 }
 
-func validateConfig(cfg *AppConfig) error {
-    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
-        return fmt.Errorf("invalid server port: %d", cfg.ServerPort)
+func overrideString(field *string, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val
     }
-    if cfg.DatabaseURL == "" {
-        return fmt.Errorf("database URL cannot be empty")
+}
+
+func overrideInt(field *int, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        var temp int
+        if _, err := fmt.Sscanf(val, "%d", &temp); err == nil {
+            *field = temp
+        }
     }
-    allowedLogLevels := map[string]bool{
-        "debug": true,
-        "info":  true,
-        "warn":  true,
-        "error": true,
+}
+
+func overrideBool(field *bool, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val == "true" || val == "1" || val == "yes"
     }
-    if !allowedLogLevels[strings.ToLower(cfg.LogLevel)] {
-        return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
+}
+
+func DefaultConfigPath() string {
+    paths := []string{
+        "config.yaml",
+        "config.yml",
+        filepath.Join("config", "config.yaml"),
+        filepath.Join("config", "config.yml"),
+        filepath.Join("..", "config", "config.yaml"),
     }
-    return nil
+    
+    for _, path := range paths {
+        if _, err := os.Stat(path); err == nil {
+            return path
+        }
+    }
+    
+    return ""
 }
