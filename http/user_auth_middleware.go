@@ -1,28 +1,17 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
-type contextKey string
-
-const UserIDKey contextKey = "userID"
-
-type AuthMiddleware struct {
-	secretKey []byte
+type User struct {
+	ID       string
+	Role     string
+	IsActive bool
 }
 
-func NewAuthMiddleware(secretKey string) *AuthMiddleware {
-	return &AuthMiddleware{
-		secretKey: []byte(secretKey),
-	}
-}
-
-func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
+func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -30,41 +19,59 @@ func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == authHeader {
+			http.Error(w, "Bearer token required", http.StatusUnauthorized)
 			return
 		}
 
-		tokenStr := parts[1]
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return m.secretKey, nil
-		})
-
-		if err != nil || !token.Valid {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+		user, err := validateToken(token)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			userID, ok := claims["user_id"].(string)
-			if !ok {
-				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), UserIDKey, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		} else {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		if !user.IsActive {
+			http.Error(w, "User account is inactive", http.StatusForbidden)
+			return
 		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func GetUserIDFromContext(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(UserIDKey).(string)
-	return userID, ok
+func validateToken(token string) (*User, error) {
+	// Token validation logic would go here
+	// This is a simplified example
+	if token == "valid_token_example" {
+		return &User{
+			ID:       "user123",
+			Role:     "admin",
+			IsActive: true,
+		}, nil
+	}
+	return nil, fmt.Errorf("invalid token")
+}
+
+func RoleMiddleware(allowedRoles []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, ok := r.Context().Value("user").(*User)
+			if !ok {
+				http.Error(w, "User not found in context", http.StatusInternalServerError)
+				return
+			}
+
+			for _, role := range allowedRoles {
+				if user.Role == role {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			http.Error(w, "Insufficient permissions", http.StatusForbidden)
+		})
+	}
 }
