@@ -321,4 +321,91 @@ func main() {
 	for _, user := range sorted {
 		fmt.Printf("ID: %d, Name: %s, Email: %s, Age: %d\n", user.ID, user.Name, user.Email, user.Age)
 	}
+}package main
+
+import (
+    "encoding/csv"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+    "strings"
+)
+
+type DataRecord struct {
+    ID      string
+    Name    string
+    Value   string
+    Valid   bool
+}
+
+func ProcessCSVFile(filePath string) ([]DataRecord, error) {
+    file, err := os.Open(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    records := make([]DataRecord, 0)
+    lineNumber := 0
+
+    for {
+        lineNumber++
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+        }
+
+        if len(row) < 3 {
+            continue
+        }
+
+        record := DataRecord{
+            ID:    strings.TrimSpace(row[0]),
+            Name:  strings.TrimSpace(row[1]),
+            Value: strings.TrimSpace(row[2]),
+            Valid: validateRecord(row),
+        }
+
+        if record.ID != "" && record.Name != "" {
+            records = append(records, record)
+        }
+    }
+
+    if len(records) == 0 {
+        return nil, errors.New("no valid records found in file")
+    }
+
+    return records, nil
+}
+
+func validateRecord(fields []string) bool {
+    if len(fields) < 3 {
+        return false
+    }
+
+    for _, field := range fields[:3] {
+        if strings.TrimSpace(field) == "" {
+            return false
+        }
+    }
+
+    return true
+}
+
+func GenerateSummary(records []DataRecord) {
+    validCount := 0
+    for _, record := range records {
+        if record.Valid {
+            validCount++
+        }
+    }
+
+    fmt.Printf("Total records processed: %d\n", len(records))
+    fmt.Printf("Valid records: %d\n", validCount)
+    fmt.Printf("Invalid records: %d\n", len(records)-validCount)
 }
