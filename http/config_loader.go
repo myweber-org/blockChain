@@ -1,76 +1,42 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
+    "io"
+    "os"
 
-	"gopkg.in/yaml.v3"
+    "gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server struct {
-		Host string `yaml:"host" env:"SERVER_HOST"`
-		Port int    `yaml:"port" env:"SERVER_PORT"`
-	} `yaml:"server"`
-	Database struct {
-		Host     string `yaml:"host" env:"DB_HOST"`
-		Port     int    `yaml:"port" env:"DB_PORT"`
-		Name     string `yaml:"name" env:"DB_NAME"`
-		User     string `yaml:"user" env:"DB_USER"`
-		Password string `yaml:"password" env:"DB_PASSWORD"`
-		SSLMode  string `yaml:"ssl_mode" env:"DB_SSL_MODE"`
-	} `yaml:"database"`
-	Logging struct {
-		Level  string `yaml:"level" env:"LOG_LEVEL"`
-		Format string `yaml:"format" env:"LOG_FORMAT"`
-	} `yaml:"logging"`
+    Server struct {
+        Host string `yaml:"host"`
+        Port int    `yaml:"port"`
+    } `yaml:"server"`
+    Database struct {
+        Host     string `yaml:"host"`
+        Name     string `yaml:"name"`
+        Username string `yaml:"username"`
+        Password string `yaml:"password"`
+    } `yaml:"database"`
+    LogLevel string `yaml:"log_level"`
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	absPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, err
-	}
+func LoadConfig(path string) (*Config, error) {
+    file, err := os.Open(path)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
 
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, err
-	}
+    data, err := io.ReadAll(file)
+    if err != nil {
+        return nil, err
+    }
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
+    var config Config
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, err
+    }
 
-	overrideFromEnv(&cfg)
-
-	return &cfg, nil
-}
-
-func overrideFromEnv(cfg *Config) {
-	overrideString(&cfg.Server.Host, "SERVER_HOST")
-	overrideInt(&cfg.Server.Port, "SERVER_PORT")
-	overrideString(&cfg.Database.Host, "DB_HOST")
-	overrideInt(&cfg.Database.Port, "DB_PORT")
-	overrideString(&cfg.Database.Name, "DB_NAME")
-	overrideString(&cfg.Database.User, "DB_USER")
-	overrideString(&cfg.Database.Password, "DB_PASSWORD")
-	overrideString(&cfg.Database.SSLMode, "DB_SSL_MODE")
-	overrideString(&cfg.Logging.Level, "LOG_LEVEL")
-	overrideString(&cfg.Logging.Format, "LOG_FORMAT")
-}
-
-func overrideString(field *string, envVar string) {
-	if val := os.Getenv(envVar); val != "" {
-		*field = val
-	}
-}
-
-func overrideInt(field *int, envVar string) {
-	if val := os.Getenv(envVar); val != "" {
-		var intVal int
-		if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
-			*field = intVal
-		}
-	}
+    return &config, nil
 }
