@@ -234,4 +234,49 @@ func getEnvBool(key string, defaultValue bool) (bool, error) {
 		return false, errors.New("invalid boolean value for " + key)
 	}
 	return defaultValue, nil
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort int
+    DatabaseURL string
+    EnableCache bool
+    LogLevel string
+    AllowedOrigins []string
+}
+
+func Load() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnv("SERVER_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
+    if err != nil {
+        return nil, err
+    }
+    cfg.ServerPort = port
+    
+    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    enableCache := getEnv("ENABLE_CACHE", "true")
+    cfg.EnableCache = strings.ToLower(enableCache) == "true"
+    
+    cfg.LogLevel = getEnv("LOG_LEVEL", "info")
+    
+    origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000")
+    cfg.AllowedOrigins = strings.Split(origins, ",")
+    
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    value := os.Getenv(key)
+    if value == "" {
+        return defaultValue
+    }
+    return value
 }
