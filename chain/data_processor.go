@@ -52,4 +52,64 @@ func ProcessUserInput(email, username string, age int) (UserData, error) {
 	}
 	
 	return normalizedData, nil
+}package main
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+)
+
+type UserProfile struct {
+	Email     string
+	Username  string
+	Age       int
+	Biography string
+}
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+
+func ValidateUserProfile(profile UserProfile) error {
+	if !emailRegex.MatchString(profile.Email) {
+		return errors.New("invalid email format")
+	}
+
+	if strings.TrimSpace(profile.Username) == "" {
+		return errors.New("username cannot be empty")
+	}
+
+	if len(profile.Username) < 3 || len(profile.Username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
+	}
+
+	if profile.Age < 0 || profile.Age > 120 {
+		return errors.New("age must be between 0 and 120")
+	}
+
+	if len(profile.Biography) > 500 {
+		return errors.New("biography cannot exceed 500 characters")
+	}
+
+	return nil
+}
+
+func TransformProfile(profile UserProfile) UserProfile {
+	transformed := profile
+	transformed.Username = strings.ToLower(strings.TrimSpace(profile.Username))
+	transformed.Email = strings.ToLower(strings.TrimSpace(profile.Email))
+	transformed.Biography = strings.TrimSpace(profile.Biography)
+
+	if transformed.Biography == "" {
+		transformed.Biography = "No biography provided."
+	}
+
+	return transformed
+}
+
+func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
+	if err := ValidateUserProfile(profile); err != nil {
+		return UserProfile{}, err
+	}
+
+	return TransformProfile(profile), nil
 }
