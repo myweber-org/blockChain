@@ -122,4 +122,70 @@ func validateConfig(config *AppConfig) error {
 	}
 
 	return nil
+}package config
+
+import (
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type AppConfig struct {
+    ServerPort    int
+    DatabaseURL   string
+    LogLevel      string
+    CacheEnabled  bool
+    MaxWorkers    int
+}
+
+func LoadConfig() (*AppConfig, error) {
+    port, err := getEnvInt("APP_PORT", 8080)
+    if err != nil {
+        return nil, fmt.Errorf("invalid port configuration: %w", err)
+    }
+
+    dbURL := getEnv("DATABASE_URL", "postgres://localhost:5432/appdb")
+    if dbURL == "" {
+        return nil, fmt.Errorf("database URL cannot be empty")
+    }
+
+    logLevel := getEnv("LOG_LEVEL", "info")
+    validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+    if !validLevels[strings.ToLower(logLevel)] {
+        return nil, fmt.Errorf("invalid log level: %s", logLevel)
+    }
+
+    cacheEnabled, _ := strconv.ParseBool(getEnv("CACHE_ENABLED", "true"))
+    
+    maxWorkers, err := getEnvInt("MAX_WORKERS", 10)
+    if err != nil || maxWorkers <= 0 {
+        return nil, fmt.Errorf("invalid max workers configuration")
+    }
+
+    return &AppConfig{
+        ServerPort:    port,
+        DatabaseURL:   dbURL,
+        LogLevel:      logLevel,
+        CacheEnabled:  cacheEnabled,
+        MaxWorkers:    maxWorkers,
+    }, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) (int, error) {
+    if value := os.Getenv(key); value != "" {
+        intValue, err := strconv.Atoi(value)
+        if err != nil {
+            return 0, err
+        }
+        return intValue, nil
+    }
+    return defaultValue, nil
 }
