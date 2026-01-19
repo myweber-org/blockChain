@@ -380,4 +380,131 @@ func main() {
 		logger.Write([]byte(fmt.Sprintf("Log entry %d: %s\n", i, time.Now().Format(time.RFC3339))))
 		time.Sleep(10 * time.Millisecond)
 	}
+}package main
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "sync"
+    "time"
+)
+
+type Rotator struct {
+    mu          sync.Mutex
+    filePath    string
+    maxSize     int64
+    maxAge      time.Duration
+    currentSize int64
+    file        *os.File
+    createdAt   time.Time
+}
+
+func NewRotator(filePath string, maxSize int64, maxAge time.Duration) (*Rotator, error) {
+    r := &Rotator{
+        filePath:  filePath,
+        maxSize:   maxSize,
+        maxAge:    maxAge,
+        createdAt: time.Now(),
+    }
+
+    if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+        return nil, err
+    }
+
+    if err := r.openFile(); err != nil {
+        return nil, err
+    }
+
+    return r, nil
+}
+
+func (r *Rotator) openFile() error {
+    file, err := os.OpenFile(r.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+
+    r.file = file
+    r.currentSize = info.Size()
+    return nil
+}
+
+func (r *Rotator) Write(p []byte) (int, error) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+
+    if r.shouldRotate(len(p)) {
+        if err := r.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := r.file.Write(p)
+    if err == nil {
+        r.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (r *Rotator) shouldRotate(appendSize int) bool {
+    if r.maxSize > 0 && r.currentSize+int64(appendSize) > r.maxSize {
+        return true
+    }
+
+    if r.maxAge > 0 && time.Since(r.createdAt) > r.maxAge {
+        return true
+    }
+
+    return false
+}
+
+func (r *Rotator) rotate() error {
+    if r.file != nil {
+        r.file.Close()
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    backupPath := fmt.Sprintf("%s.%s", r.filePath, timestamp)
+
+    if err := os.Rename(r.filePath, backupPath); err != nil && !os.IsNotExist(err) {
+        return err
+    }
+
+    r.createdAt = time.Now()
+    r.currentSize = 0
+    return r.openFile()
+}
+
+func (r *Rotator) Close() error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+
+    if r.file != nil {
+        return r.file.Close()
+    }
+    return nil
+}
+
+func main() {
+    rotator, err := NewRotator("/var/log/app/app.log", 10*1024*1024, 24*time.Hour)
+    if err != nil {
+        fmt.Printf("Failed to create rotator: %v\n", err)
+        return
+    }
+    defer rotator.Close()
+
+    for i := 0; i < 100; i++ {
+        msg := fmt.Sprintf("Log entry %d at %s\n", i, time.Now().Format(time.RFC3339))
+        if _, err := rotator.Write([]byte(msg)); err != nil {
+            fmt.Printf("Write error: %v\n", err)
+        }
+        time.Sleep(100 * time.Millisecond)
+    }
 }
