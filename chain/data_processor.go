@@ -226,3 +226,106 @@ func CalculateAverage(records []DataRecord) float64 {
 	}
 	return sum / float64(count)
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+func readCSVFile(filePath string) ([][]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV: %w", err)
+	}
+	return records, nil
+}
+
+func validateCSVData(records [][]string) error {
+	if len(records) == 0 {
+		return fmt.Errorf("CSV file is empty")
+	}
+
+	header := records[0]
+	expectedColumns := 3
+	if len(header) != expectedColumns {
+		return fmt.Errorf("invalid header length: expected %d, got %d", expectedColumns, len(header))
+	}
+
+	for i, record := range records[1:] {
+		if len(record) != expectedColumns {
+			return fmt.Errorf("row %d: invalid column count", i+2)
+		}
+		for j, field := range record {
+			if strings.TrimSpace(field) == "" {
+				return fmt.Errorf("row %d, column %d: empty field", i+2, j+1)
+			}
+		}
+	}
+	return nil
+}
+
+func processCSVData(records [][]string) []map[string]string {
+	if len(records) < 2 {
+		return []map[string]string{}
+	}
+
+	header := records[0]
+	var result []map[string]string
+
+	for _, row := range records[1:] {
+		rowMap := make(map[string]string)
+		for j, value := range row {
+			if j < len(header) {
+				rowMap[header[j]] = strings.TrimSpace(value)
+			}
+		}
+		result = append(result, rowMap)
+	}
+	return result
+}
+
+func writeProcessedData(data []map[string]string, outputPath string) error {
+	if len(data) == 0 {
+		return fmt.Errorf("no data to write")
+	}
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	var headers []string
+	for key := range data[0] {
+		headers = append(headers, key)
+	}
+
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("failed to write headers: %w", err)
+	}
+
+	for _, record := range data {
+		var row []string
+		for _, header := range headers {
+			row = append(row, record[header])
+		}
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write row: %w", err)
+		}
+	}
+	return nil
+}
