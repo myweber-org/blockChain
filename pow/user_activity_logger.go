@@ -6,40 +6,6 @@ import (
 	"time"
 )
 
-type ActivityLog struct {
-	Timestamp time.Time
-	Method    string
-	Path      string
-	UserAgent string
-	IP        string
-}
-
-func ActivityLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		lw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(lw, r)
-
-		activity := ActivityLog{
-			Timestamp: start,
-			Method:    r.Method,
-			Path:      r.URL.Path,
-			UserAgent: r.UserAgent(),
-			IP:        r.RemoteAddr,
-		}
-
-		log.Printf("ACTIVITY: %s %s %s %s %d %v",
-			activity.Timestamp.Format(time.RFC3339),
-			activity.IP,
-			activity.Method,
-			activity.Path,
-			lw.statusCode,
-			time.Since(start),
-		)
-	})
-}
-
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -48,49 +14,23 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
+func ActivityLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
-	}
-	
-	al.handler.ServeHTTP(recorder, r)
-	
-	duration := time.Since(start)
-	
-	log.Printf(
-		"[%s] %s %s %d %v",
-		time.Now().Format(time.RFC3339),
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-	)
-}
+		next.ServeHTTP(rw, r)
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+		duration := time.Since(start)
+		log.Printf(
+			"%s %s %d %s %s",
+			r.Method,
+			r.URL.Path,
+			rw.statusCode,
+			duration,
+			r.RemoteAddr,
+		)
+	})
 }
