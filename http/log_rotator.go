@@ -331,4 +331,128 @@ func main() {
 	}
 
 	fmt.Println("Log rotation demonstration completed")
+}package main
+
+import (
+    "fmt"
+    "io"
+    "log"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+const (
+    maxFileSize = 1024 * 1024 // 1MB
+    maxBackups  = 5
+    logDir      = "./logs"
+)
+
+type RotatingWriter struct {
+    currentFile *os.File
+    currentSize int64
+    basePath    string
+}
+
+func NewRotatingWriter(baseName string) (*RotatingWriter, error) {
+    if err := os.MkdirAll(logDir, 0755); err != nil {
+        return nil, err
+    }
+
+    basePath := filepath.Join(logDir, baseName)
+    w := &RotatingWriter{basePath: basePath}
+    if err := w.openCurrent(); err != nil {
+        return nil, err
+    }
+    return w, nil
+}
+
+func (w *RotatingWriter) openCurrent() error {
+    path := w.basePath + ".log"
+    file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+    if err != nil {
+        return err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+
+    w.currentFile = file
+    w.currentSize = info.Size()
+    return nil
+}
+
+func (w *RotatingWriter) Write(p []byte) (int, error) {
+    if w.currentSize+int64(len(p)) > maxFileSize {
+        if err := w.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := w.currentFile.Write(p)
+    w.currentSize += int64(n)
+    return n, err
+}
+
+func (w *RotatingWriter) rotate() error {
+    if w.currentFile != nil {
+        w.currentFile.Close()
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    newPath := fmt.Sprintf("%s_%s.log", w.basePath, timestamp)
+    oldPath := w.basePath + ".log"
+
+    if err := os.Rename(oldPath, newPath); err != nil {
+        return err
+    }
+
+    if err := w.cleanupOld(); err != nil {
+        log.Printf("Cleanup error: %v", err)
+    }
+
+    return w.openCurrent()
+}
+
+func (w *RotatingWriter) cleanupOld() error {
+    pattern := w.basePath + "_*.log"
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return err
+    }
+
+    if len(matches) > maxBackups {
+        toDelete := matches[:len(matches)-maxBackups]
+        for _, path := range toDelete {
+            if err := os.Remove(path); err != nil {
+                return err
+            }
+        }
+    }
+    return nil
+}
+
+func (w *RotatingWriter) Close() error {
+    if w.currentFile != nil {
+        return w.currentFile.Close()
+    }
+    return nil
+}
+
+func main() {
+    writer, err := NewRotatingWriter("app")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer writer.Close()
+
+    logger := log.New(io.MultiWriter(os.Stdout, writer), "", log.LstdFlags)
+
+    for i := 0; i < 1000; i++ {
+        logger.Printf("Log entry %d: Application event occurred", i)
+        time.Sleep(10 * time.Millisecond)
+    }
 }
