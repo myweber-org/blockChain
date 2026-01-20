@@ -2,281 +2,58 @@ package config
 
 import (
     "fmt"
+    "io/ioutil"
     "os"
-    "path/filepath"
 
-    "gopkg.in/yaml.v3"
+    "gopkg.in/yaml.v2"
 )
 
 type DatabaseConfig struct {
-    Host     string `yaml:"host" env:"DB_HOST"`
-    Port     int    `yaml:"port" env:"DB_PORT"`
-    Username string `yaml:"username" env:"DB_USER"`
-    Password string `yaml:"password" env:"DB_PASS"`
-    Name     string `yaml:"name" env:"DB_NAME"`
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
 }
 
 type ServerConfig struct {
-    Port         int    `yaml:"port" env:"SERVER_PORT"`
-    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
-    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug_mode" env:"DEBUG_MODE"`
+    Port         int            `yaml:"port"`
+    Debug        bool           `yaml:"debug"`
+    Database     DatabaseConfig `yaml:"database"`
+    AllowedHosts []string       `yaml:"allowed_hosts"`
 }
 
-type AppConfig struct {
-    Database DatabaseConfig `yaml:"database"`
-    Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
-}
-
-func LoadConfig(configPath string) (*AppConfig, error) {
-    var config AppConfig
-
-    absPath, err := filepath.Abs(configPath)
-    if err != nil {
-        return nil, fmt.Errorf("invalid config path: %w", err)
+func LoadConfig(path string) (*ServerConfig, error) {
+    if _, err := os.Stat(path); os.IsNotExist(err) {
+        return nil, fmt.Errorf("config file not found: %s", path)
     }
 
-    data, err := os.ReadFile(absPath)
+    data, err := ioutil.ReadFile(path)
     if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
+        return nil, fmt.Errorf("failed to read config file: %v", err)
     }
 
+    var config ServerConfig
     if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+        return nil, fmt.Errorf("failed to parse YAML config: %v", err)
     }
 
-    overrideFromEnv(&config)
+    if config.Server.Port == 0 {
+        config.Server.Port = 8080
+    }
 
     return &config, nil
 }
 
-func overrideFromEnv(config *AppConfig) {
-    if val := os.Getenv("DB_HOST"); val != "" {
-        config.Database.Host = val
+func (c *ServerConfig) Validate() error {
+    if c.Database.Host == "" {
+        return fmt.Errorf("database host is required")
     }
-    if val := os.Getenv("DB_PORT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Database.Port)
+    if c.Database.Port < 1 || c.Database.Port > 65535 {
+        return fmt.Errorf("database port must be between 1 and 65535")
     }
-    if val := os.Getenv("DB_USER"); val != "" {
-        config.Database.Username = val
+    if len(c.AllowedHosts) == 0 {
+        c.AllowedHosts = []string{"localhost", "127.0.0.1"}
     }
-    if val := os.Getenv("DB_PASS"); val != "" {
-        config.Database.Password = val
-    }
-    if val := os.Getenv("DB_NAME"); val != "" {
-        config.Database.Name = val
-    }
-    if val := os.Getenv("SERVER_PORT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Server.Port)
-    }
-    if val := os.Getenv("READ_TIMEOUT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Server.ReadTimeout)
-    }
-    if val := os.Getenv("WRITE_TIMEOUT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Server.WriteTimeout)
-    }
-    if val := os.Getenv("DEBUG_MODE"); val != "" {
-        config.Server.DebugMode = val == "true" || val == "1"
-    }
-    if val := os.Getenv("LOG_LEVEL"); val != "" {
-        config.LogLevel = val
-    }
-}package config
-
-import (
-	"errors"
-	"fmt"
-	"io/ioutil"
-	"os"
-
-	"gopkg.in/yaml.v2"
-)
-
-type Config struct {
-	Server struct {
-		Host string `yaml:"host"`
-		Port int    `yaml:"port"`
-	} `yaml:"server"`
-	Database struct {
-		Host     string `yaml:"host"`
-		Port     int    `yaml:"port"`
-		Username string `yaml:"username"`
-		Password string `yaml:"password"`
-		Name     string `yaml:"name"`
-	} `yaml:"database"`
-	Logging struct {
-		Level  string `yaml:"level"`
-		Output string `yaml:"output"`
-	} `yaml:"logging"`
-}
-
-func LoadConfig(path string) (*Config, error) {
-	if path == "" {
-		return nil, errors.New("config path cannot be empty")
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open config file: %w", err)
-	}
-	defer file.Close()
-
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	var config Config
-	err = yaml.Unmarshal(data, &config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse YAML config: %w", err)
-	}
-
-	if err := validateConfig(&config); err != nil {
-		return nil, fmt.Errorf("config validation failed: %w", err)
-	}
-
-	return &config, nil
-}
-
-func validateConfig(c *Config) error {
-	if c.Server.Host == "" {
-		return errors.New("server host cannot be empty")
-	}
-	if c.Server.Port <= 0 || c.Server.Port > 65535 {
-		return errors.New("server port must be between 1 and 65535")
-	}
-	if c.Database.Host == "" {
-		return errors.New("database host cannot be empty")
-	}
-	if c.Database.Name == "" {
-		return errors.New("database name cannot be empty")
-	}
-	if c.Logging.Level != "debug" && c.Logging.Level != "info" && c.Logging.Level != "warn" && c.Logging.Level != "error" {
-		return errors.New("logging level must be one of: debug, info, warn, error")
-	}
-
-	return nil
-}package config
-
-import (
-	"errors"
-	"os"
-	"strconv"
-	"strings"
-)
-
-type Config struct {
-	ServerPort int
-	DBHost     string
-	DBPort     int
-	DebugMode  bool
-	APIKey     string
-}
-
-func LoadConfig() (*Config, error) {
-	cfg := &Config{}
-	var err error
-
-	cfg.ServerPort, err = getEnvInt("SERVER_PORT", 8080)
-	if err != nil {
-		return nil, err
-	}
-
-	cfg.DBHost = getEnvString("DB_HOST", "localhost")
-	
-	cfg.DBPort, err = getEnvInt("DB_PORT", 5432)
-	if err != nil {
-		return nil, err
-	}
-
-	cfg.DebugMode, err = getEnvBool("DEBUG_MODE", false)
-	if err != nil {
-		return nil, err
-	}
-
-	cfg.APIKey = getEnvString("API_KEY", "")
-	if cfg.APIKey == "" {
-		return nil, errors.New("API_KEY environment variable is required")
-	}
-
-	return cfg, nil
-}
-
-func getEnvString(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) (int, error) {
-	if value := os.Getenv(key); value != "" {
-		intValue, err := strconv.Atoi(value)
-		if err != nil {
-			return 0, errors.New("invalid integer value for " + key)
-		}
-		return intValue, nil
-	}
-	return defaultValue, nil
-}
-
-func getEnvBool(key string, defaultValue bool) (bool, error) {
-	if value := os.Getenv(key); value != "" {
-		lowerValue := strings.ToLower(value)
-		if lowerValue == "true" || lowerValue == "1" {
-			return true, nil
-		}
-		if lowerValue == "false" || lowerValue == "0" {
-			return false, nil
-		}
-		return false, errors.New("invalid boolean value for " + key)
-	}
-	return defaultValue, nil
-}package config
-
-import (
-    "os"
-    "strconv"
-    "strings"
-)
-
-type Config struct {
-    ServerPort int
-    DatabaseURL string
-    EnableCache bool
-    LogLevel string
-    AllowedOrigins []string
-}
-
-func Load() (*Config, error) {
-    cfg := &Config{}
-    
-    portStr := getEnv("SERVER_PORT", "8080")
-    port, err := strconv.Atoi(portStr)
-    if err != nil {
-        return nil, err
-    }
-    cfg.ServerPort = port
-    
-    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
-    
-    enableCache := getEnv("ENABLE_CACHE", "true")
-    cfg.EnableCache = strings.ToLower(enableCache) == "true"
-    
-    cfg.LogLevel = getEnv("LOG_LEVEL", "info")
-    
-    origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000")
-    cfg.AllowedOrigins = strings.Split(origins, ",")
-    
-    return cfg, nil
-}
-
-func getEnv(key, defaultValue string) string {
-    value := os.Getenv(key)
-    if value == "" {
-        return defaultValue
-    }
-    return value
+    return nil
 }
