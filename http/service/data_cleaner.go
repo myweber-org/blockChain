@@ -1,80 +1,50 @@
 package main
 
-import "fmt"
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-	seen := make(map[T]bool)
-	result := []T{}
-
-	for _, item := range slice {
-		if !seen[item] {
-			seen[item] = true
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func main() {
-	numbers := []int{1, 2, 2, 3, 4, 4, 5}
-	uniqueNumbers := RemoveDuplicates(numbers)
-	fmt.Println("Original:", numbers)
-	fmt.Println("Unique:", uniqueNumbers)
-
-	strings := []string{"apple", "banana", "apple", "orange"}
-	uniqueStrings := RemoveDuplicates(strings)
-	fmt.Println("Original:", strings)
-	fmt.Println("Unique:", uniqueStrings)
-}package main
-
 import (
 	"fmt"
 	"strings"
 )
 
-type DataCleaner struct {
-	seen map[string]bool
+type DataRecord struct {
+	ID    string
+	Email string
+	Valid bool
 }
 
-func NewDataCleaner() *DataCleaner {
-	return &DataCleaner{
-		seen: make(map[string]bool),
-	}
-}
-
-func (dc *DataCleaner) Normalize(input string) string {
-	return strings.ToLower(strings.TrimSpace(input))
-}
-
-func (dc *DataCleaner) IsDuplicate(value string) bool {
-	normalized := dc.Normalize(value)
-	if dc.seen[normalized] {
-		return true
-	}
-	dc.seen[normalized] = true
-	return false
-}
-
-func (dc *DataCleaner) Deduplicate(values []string) []string {
-	dc.seen = make(map[string]bool)
-	var result []string
-	for _, v := range values {
-		if !dc.IsDuplicate(v) {
-			result = append(result, v)
+func DeduplicateRecords(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var unique []DataRecord
+	for _, record := range records {
+		if !seen[record.ID] {
+			seen[record.ID] = true
+			unique = append(unique, record)
 		}
 	}
-	return result
+	return unique
+}
+
+func ValidateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func CleanData(records []DataRecord) []DataRecord {
+	records = DeduplicateRecords(records)
+	for i := range records {
+		records[i].Valid = ValidateEmail(records[i].Email)
+	}
+	return records
 }
 
 func main() {
-	cleaner := NewDataCleaner()
-	
-	data := []string{"Apple", "apple ", " BANANA", "banana", "Cherry"}
-	fmt.Println("Original:", data)
-	
-	deduped := cleaner.Deduplicate(data)
-	fmt.Println("Deduplicated:", deduped)
-	
-	testValue := "  APPLE  "
-	fmt.Printf("Is '%s' duplicate? %v\n", testValue, cleaner.IsDuplicate(testValue))
+	records := []DataRecord{
+		{ID: "1", Email: "test@example.com"},
+		{ID: "2", Email: "invalid-email"},
+		{ID: "1", Email: "duplicate@example.com"},
+		{ID: "3", Email: "another@test.org"},
+	}
+
+	cleaned := CleanData(records)
+	for _, r := range cleaned {
+		fmt.Printf("ID: %s, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
+	}
 }
