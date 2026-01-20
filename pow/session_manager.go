@@ -1,4 +1,4 @@
-package main
+package session
 
 import (
     "sync"
@@ -7,96 +7,75 @@ import (
 
 type Session struct {
     ID        string
-    UserID    int
     Data      map[string]interface{}
     ExpiresAt time.Time
 }
 
-type SessionManager struct {
+type Manager struct {
     sessions map[string]*Session
     mu       sync.RWMutex
-    stopChan chan struct{}
+    ttl      time.Duration
 }
 
-func NewSessionManager(cleanupInterval time.Duration) *SessionManager {
-    sm := &SessionManager{
+func NewManager(ttl time.Duration) *Manager {
+    m := &Manager{
         sessions: make(map[string]*Session),
-        stopChan: make(chan struct{}),
+        ttl:      ttl,
     }
-    go sm.startCleanup(cleanupInterval)
-    return sm
+    go m.cleanupLoop()
+    return m
 }
 
-func (sm *SessionManager) CreateSession(userID int, ttl time.Duration) *Session {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
+func (m *Manager) Create() *Session {
+    m.mu.Lock()
+    defer m.mu.Unlock()
 
+    id := generateID()
     session := &Session{
-        ID:        generateSessionID(),
-        UserID:    userID,
+        ID:        id,
         Data:      make(map[string]interface{}),
-        ExpiresAt: time.Now().Add(ttl),
+        ExpiresAt: time.Now().Add(m.ttl),
     }
-    sm.sessions[session.ID] = session
+    m.sessions[id] = session
     return session
 }
 
-func (sm *SessionManager) GetSession(sessionID string) *Session {
-    sm.mu.RLock()
-    defer sm.mu.RUnlock()
+func (m *Manager) Get(id string) (*Session, bool) {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
 
-    session, exists := sm.sessions[sessionID]
+    session, exists := m.sessions[id]
     if !exists || time.Now().After(session.ExpiresAt) {
-        return nil
+        return nil, false
     }
-    return session
+    return session, true
 }
 
-func (sm *SessionManager) InvalidateSession(sessionID string) {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
-    delete(sm.sessions, sessionID)
-}
-
-func (sm *SessionManager) startCleanup(interval time.Duration) {
-    ticker := time.NewTicker(interval)
+func (m *Manager) cleanupLoop() {
+    ticker := time.NewTicker(time.Minute)
     defer ticker.Stop()
 
-    for {
-        select {
-        case <-ticker.C:
-            sm.cleanupExpired()
-        case <-sm.stopChan:
-            return
+    for range ticker.C {
+        m.mu.Lock()
+        now := time.Now()
+        for id, session := range m.sessions {
+            if now.After(session.ExpiresAt) {
+                delete(m.sessions, id)
+            }
         }
+        m.mu.Unlock()
     }
 }
 
-func (sm *SessionManager) cleanupExpired() {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
-
-    now := time.Now()
-    for id, session := range sm.sessions {
-        if now.After(session.ExpiresAt) {
-            delete(sm.sessions, id)
-        }
-    }
+func generateID() string {
+    return time.Now().Format("20060102150405") + "-" + randomString(8)
 }
 
-func (sm *SessionManager) Stop() {
-    close(sm.stopChan)
-}
-
-func generateSessionID() string {
-    return "sess_" + time.Now().Format("20060102150405") + "_" + randomString(8)
-}
-
-func randomString(length int) string {
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    b := make([]byte, length)
+func randomString(n int) string {
+    const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    b := make([]byte, n)
     for i := range b {
-        b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+        b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
     }
     return string(b)
 }
