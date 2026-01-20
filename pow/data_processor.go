@@ -1,102 +1,121 @@
+
 package main
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
-	"os"
-	"strings"
+    "encoding/csv"
+    "encoding/json"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
 )
 
-type DataRecord struct {
-	ID    string
-	Name  string
-	Value string
+type Record struct {
+    ID      int    `json:"id"`
+    Name    string `json:"name"`
+    Value   int    `json:"value"`
+    Active  bool   `json:"active"`
 }
 
-func ProcessCSVFile(filename string) ([]DataRecord, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
+func parseCSVFile(filename string) ([]Record, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
 
-	reader := csv.NewReader(file)
-	reader.TrimLeadingSpace = true
+    reader := csv.NewReader(file)
+    records := []Record{}
+    lineNumber := 0
 
-	var records []DataRecord
-	lineNumber := 0
+    for {
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
 
-	for {
-		lineNumber++
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
-		}
+        if lineNumber == 0 {
+            lineNumber++
+            continue
+        }
 
-		if len(row) < 3 {
-			return nil, fmt.Errorf("insufficient columns at line %d", lineNumber)
-		}
+        id, _ := strconv.Atoi(row[0])
+        value, _ := strconv.Atoi(row[2])
+        active, _ := strconv.ParseBool(row[3])
 
-		record := DataRecord{
-			ID:    strings.TrimSpace(row[0]),
-			Name:  strings.TrimSpace(row[1]),
-			Value: strings.TrimSpace(row[2]),
-		}
-
-		if record.ID == "" || record.Name == "" {
-			return nil, fmt.Errorf("missing required fields at line %d", lineNumber)
-		}
-
-		records = append(records, record)
-	}
-
-	if len(records) == 0 {
-		return nil, fmt.Errorf("no valid records found in file")
-	}
-
-	return records, nil
+        record := Record{
+            ID:     id,
+            Name:   row[1],
+            Value:  value,
+            Active: active,
+        }
+        records = append(records, record)
+        lineNumber++
+    }
+    return records, nil
 }
 
-func ValidateRecords(records []DataRecord) error {
-	seenIDs := make(map[string]bool)
+func convertToJSON(records []Record) (string, error) {
+    jsonData, err := json.MarshalIndent(records, "", "  ")
+    if err != nil {
+        return "", err
+    }
+    return string(jsonData), nil
+}
 
-	for _, record := range records {
-		if seenIDs[record.ID] {
-			return fmt.Errorf("duplicate ID found: %s", record.ID)
-		}
-		seenIDs[record.ID] = true
+func filterActiveRecords(records []Record) []Record {
+    var active []Record
+    for _, record := range records {
+        if record.Active {
+            active = append(active, record)
+        }
+    }
+    return active
+}
 
-		if len(record.Name) > 100 {
-			return fmt.Errorf("name too long for ID %s", record.ID)
-		}
-	}
-
-	return nil
+func calculateTotalValue(records []Record) int {
+    total := 0
+    for _, record := range records {
+        total += record.Value
+    }
+    return total
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <csv_file>")
-		os.Exit(1)
-	}
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: data_processor <csv_file>")
+        return
+    }
 
-	records, err := ProcessCSVFile(os.Args[1])
-	if err != nil {
-		fmt.Printf("Processing error: %v\n", err)
-		os.Exit(1)
-	}
+    records, err := parseCSVFile(os.Args[1])
+    if err != nil {
+        fmt.Printf("Error parsing CSV: %v\n", err)
+        return
+    }
 
-	if err := ValidateRecords(records); err != nil {
-		fmt.Printf("Validation error: %v\n", err)
-		os.Exit(1)
-	}
+    fmt.Printf("Total records: %d\n", len(records))
+    
+    activeRecords := filterActiveRecords(records)
+    fmt.Printf("Active records: %d\n", len(activeRecords))
+    
+    totalValue := calculateTotalValue(records)
+    fmt.Printf("Total value: %d\n", totalValue)
 
-	fmt.Printf("Successfully processed %d records\n", len(records))
-	for i, record := range records {
-		fmt.Printf("%d: ID=%s, Name=%s, Value=%s\n", i+1, record.ID, record.Name, record.Value)
-	}
+    jsonOutput, err := convertToJSON(records)
+    if err != nil {
+        fmt.Printf("Error converting to JSON: %v\n", err)
+        return
+    }
+
+    outputFile := "output.json"
+    err = os.WriteFile(outputFile, []byte(jsonOutput), 0644)
+    if err != nil {
+        fmt.Printf("Error writing JSON file: %v\n", err)
+        return
+    }
+    
+    fmt.Printf("JSON output written to %s\n", outputFile)
 }
