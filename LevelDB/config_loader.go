@@ -1,100 +1,60 @@
 package config
 
 import (
-    "fmt"
+    "encoding/json"
     "os"
     "path/filepath"
-
-    "gopkg.in/yaml.v2"
 )
 
-type DatabaseConfig struct {
-    Host     string `yaml:"host" env:"DB_HOST"`
-    Port     int    `yaml:"port" env:"DB_PORT"`
-    Username string `yaml:"username" env:"DB_USER"`
-    Password string `yaml:"password" env:"DB_PASS"`
-    Name     string `yaml:"name" env:"DB_NAME"`
+type Config struct {
+    ServerPort string `json:"server_port"`
+    DatabaseURL string `json:"database_url"`
+    LogLevel string `json:"log_level"`
+    CacheTTL int `json:"cache_ttl"`
 }
 
-type ServerConfig struct {
-    Port         int    `yaml:"port" env:"SERVER_PORT"`
-    ReadTimeout  int    `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT"`
-    WriteTimeout int    `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
-    Debug        bool   `yaml:"debug" env:"SERVER_DEBUG"`
-}
-
-type AppConfig struct {
-    Database DatabaseConfig `yaml:"database"`
-    Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
-}
-
-func LoadConfig(configPath string) (*AppConfig, error) {
-    data, err := os.ReadFile(configPath)
+func LoadConfig(configPath string) (*Config, error) {
+    var cfg Config
+    
+    file, err := os.Open(configPath)
     if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
+        return nil, err
     }
-
-    var config AppConfig
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML config: %w", err)
-    }
-
-    overrideFromEnv(&config)
-
-    return &config, nil
-}
-
-func overrideFromEnv(config *AppConfig) {
-    overrideString(&config.Database.Host, "DB_HOST")
-    overrideInt(&config.Database.Port, "DB_PORT")
-    overrideString(&config.Database.Username, "DB_USER")
-    overrideString(&config.Database.Password, "DB_PASS")
-    overrideString(&config.Database.Name, "DB_NAME")
+    defer file.Close()
     
-    overrideInt(&config.Server.Port, "SERVER_PORT")
-    overrideInt(&config.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
-    overrideInt(&config.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
-    overrideBool(&config.Server.Debug, "SERVER_DEBUG")
-    
-    overrideString(&config.LogLevel, "LOG_LEVEL")
-}
-
-func overrideString(field *string, envVar string) {
-    if val := os.Getenv(envVar); val != "" {
-        *field = val
-    }
-}
-
-func overrideInt(field *int, envVar string) {
-    if val := os.Getenv(envVar); val != "" {
-        var temp int
-        if _, err := fmt.Sscanf(val, "%d", &temp); err == nil {
-            *field = temp
-        }
-    }
-}
-
-func overrideBool(field *bool, envVar string) {
-    if val := os.Getenv(envVar); val != "" {
-        *field = val == "true" || val == "1" || val == "yes"
-    }
-}
-
-func DefaultConfigPath() string {
-    paths := []string{
-        "config.yaml",
-        "config.yml",
-        filepath.Join("config", "config.yaml"),
-        filepath.Join("config", "config.yml"),
-        filepath.Join("..", "config", "config.yaml"),
+    decoder := json.NewDecoder(file)
+    if err := decoder.Decode(&cfg); err != nil {
+        return nil, err
     }
     
-    for _, path := range paths {
-        if _, err := os.Stat(path); err == nil {
-            return path
-        }
+    if port := os.Getenv("SERVER_PORT"); port != "" {
+        cfg.ServerPort = port
     }
     
-    return ""
+    if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+        cfg.DatabaseURL = dbURL
+    }
+    
+    if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
+        cfg.LogLevel = logLevel
+    }
+    
+    return &cfg, nil
+}
+
+func SaveConfig(configPath string, cfg *Config) error {
+    dir := filepath.Dir(configPath)
+    if err := os.MkdirAll(dir, 0755); err != nil {
+        return err
+    }
+    
+    file, err := os.Create(configPath)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    return encoder.Encode(cfg)
 }
