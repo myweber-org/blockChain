@@ -1,71 +1,83 @@
-
 package main
 
 import (
 	"fmt"
+	"math"
+)
+
+type Currency string
+
+const (
+	USD Currency = "USD"
+	EUR Currency = "EUR"
+	GBP Currency = "GBP"
+	JPY Currency = "JPY"
 )
 
 type ExchangeRate struct {
-	FromCurrency string
-	ToCurrency   string
-	Rate         float64
+	From Currency
+	To   Currency
+	Rate float64
 }
 
 type CurrencyConverter struct {
-	rates []ExchangeRate
+	rates map[string]float64
 }
 
 func NewCurrencyConverter() *CurrencyConverter {
-	return &CurrencyConverter{
-		rates: []ExchangeRate{
-			{"USD", "EUR", 0.92},
-			{"EUR", "USD", 1.09},
-			{"USD", "JPY", 147.50},
-			{"JPY", "USD", 0.0068},
-			{"GBP", "USD", 1.27},
-			{"USD", "GBP", 0.79},
-		},
+	rates := map[string]float64{
+		"USD_EUR": 0.92,
+		"USD_GBP": 0.79,
+		"USD_JPY": 148.50,
+		"EUR_USD": 1.09,
+		"EUR_GBP": 0.86,
+		"EUR_JPY": 161.20,
+		"GBP_USD": 1.27,
+		"GBP_EUR": 1.16,
+		"GBP_JPY": 187.50,
+		"JPY_USD": 0.0067,
+		"JPY_EUR": 0.0062,
+		"JPY_GBP": 0.0053,
 	}
+	return &CurrencyConverter{rates: rates}
 }
 
-func (c *CurrencyConverter) Convert(amount float64, fromCurrency, toCurrency string) (float64, error) {
-	if fromCurrency == toCurrency {
+func (c *CurrencyConverter) Convert(amount float64, from, to Currency) (float64, error) {
+	if from == to {
 		return amount, nil
 	}
 
-	for _, rate := range c.rates {
-		if rate.FromCurrency == fromCurrency && rate.ToCurrency == toCurrency {
-			return amount * rate.Rate, nil
-		}
+	key := fmt.Sprintf("%s_%s", from, to)
+	rate, exists := c.rates[key]
+	if !exists {
+		return 0, fmt.Errorf("exchange rate not available for %s to %s", from, to)
 	}
 
-	return 0, fmt.Errorf("conversion rate not found for %s to %s", fromCurrency, toCurrency)
+	converted := amount * rate
+	return math.Round(converted*100) / 100, nil
 }
 
-func (c *CurrencyConverter) AddRate(fromCurrency, toCurrency string, rate float64) {
-	c.rates = append(c.rates, ExchangeRate{
-		FromCurrency: fromCurrency,
-		ToCurrency:   toCurrency,
-		Rate:         rate,
-	})
+func (c *CurrencyConverter) AddRate(from, to Currency, rate float64) {
+	key := fmt.Sprintf("%s_%s", from, to)
+	c.rates[key] = rate
 }
 
 func main() {
 	converter := NewCurrencyConverter()
 
 	amount := 100.0
-	result, err := converter.Convert(amount, "USD", "EUR")
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
-	fmt.Printf("%.2f USD = %.2f EUR\n", amount, result)
+	from := USD
+	to := EUR
 
-	converter.AddRate("EUR", "JPY", 160.33)
-	result, err = converter.Convert(50.0, "EUR", "JPY")
+	result, err := converter.Convert(amount, from, to)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	fmt.Printf("%.2f EUR = %.2f JPY\n", 50.0, result)
+
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, from, result, to)
+
+	converter.AddRate(USD, GBP, 0.78)
+	testResult, _ := converter.Convert(50.0, USD, GBP)
+	fmt.Printf("50.00 USD = %.2f GBP (with custom rate)\n", testResult)
 }
