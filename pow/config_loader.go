@@ -1,58 +1,49 @@
 package config
 
 import (
-	"io/ioutil"
-	"log"
-
-	"gopkg.in/yaml.v2"
+    "fmt"
+    "io/ioutil"
+    "gopkg.in/yaml.v2"
 )
 
-type Config struct {
-	Server struct {
-		Host string `yaml:"host"`
-		Port int    `yaml:"port"`
-	} `yaml:"server"`
-	Database struct {
-		Host     string `yaml:"host"`
-		Username string `yaml:"username"`
-		Password string `yaml:"password"`
-		Name     string `yaml:"name"`
-	} `yaml:"database"`
-	LogLevel string `yaml:"log_level"`
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
 }
 
-func LoadConfig(path string) (*Config, error) {
-	config := &Config{}
-
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	err = yaml.Unmarshal(data, config)
-	if err != nil {
-		return nil, err
-	}
-
-	return config, nil
+type ServerConfig struct {
+    Port         int            `yaml:"port"`
+    ReadTimeout  int            `yaml:"read_timeout"`
+    WriteTimeout int            `yaml:"write_timeout"`
+    Database     DatabaseConfig `yaml:"database"`
 }
 
-func DefaultConfig() *Config {
-	config := &Config{}
-	config.Server.Host = "localhost"
-	config.Server.Port = 8080
-	config.Database.Host = "localhost"
-	config.Database.Name = "appdb"
-	config.LogLevel = "info"
-	return config
+func LoadConfig(filePath string) (*ServerConfig, error) {
+    data, err := ioutil.ReadFile(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var config ServerConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    return &config, nil
 }
 
-func (c *Config) Validate() error {
-	if c.Server.Port <= 0 || c.Server.Port > 65535 {
-		return fmt.Errorf("invalid port number: %d", c.Server.Port)
-	}
-	if c.Database.Name == "" {
-		return fmt.Errorf("database name cannot be empty")
-	}
-	return nil
+func ValidateConfig(config *ServerConfig) error {
+    if config.Port <= 0 || config.Port > 65535 {
+        return fmt.Errorf("invalid server port: %d", config.Port)
+    }
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host cannot be empty")
+    }
+    if config.Database.Name == "" {
+        return fmt.Errorf("database name cannot be empty")
+    }
+    return nil
 }
