@@ -475,3 +475,79 @@ func main() {
 
 	fmt.Printf("Operation completed successfully\n")
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+)
+
+func xorCipher(input []byte, key string) []byte {
+	keyBytes := []byte(key)
+	output := make([]byte, len(input))
+	for i := 0; i < len(input); i++ {
+		output[i] = input[i] ^ keyBytes[i%len(keyBytes)]
+	}
+	return output
+}
+
+func processFile(inputPath, outputPath, key string, encrypt bool) error {
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inputFile.Close()
+
+	inputData, err := io.ReadAll(inputFile)
+	if err != nil {
+		return fmt.Errorf("failed to read input file: %w", err)
+	}
+
+	outputData := xorCipher(inputData, key)
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	_, err = outputFile.Write(outputData)
+	if err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	action := "encrypted"
+	if !encrypt {
+		action = "decrypted"
+	}
+	fmt.Printf("File successfully %s: %s -> %s\n", action, inputPath, outputPath)
+	return nil
+}
+
+func main() {
+	if len(os.Args) < 5 {
+		fmt.Println("Usage: go run file_encryptor.go <input> <output> <key> <mode>")
+		fmt.Println("Mode: encrypt or decrypt")
+		os.Exit(1)
+	}
+
+	inputPath := os.Args[1]
+	outputPath := os.Args[2]
+	key := os.Args[3]
+	mode := os.Args[4]
+
+	encrypt := true
+	if mode == "decrypt" {
+		encrypt = false
+	} else if mode != "encrypt" {
+		fmt.Println("Error: mode must be 'encrypt' or 'decrypt'")
+		os.Exit(1)
+	}
+
+	err := processFile(inputPath, outputPath, key, encrypt)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+}
