@@ -513,4 +513,78 @@ func CalculateStats(records []Record) (float64, float64) {
 
 	average := sum / float64(len(records))
 	return average, max
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Active    bool   `json:"active"`
+	Tags      []string `json:"tags"`
+}
+
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
+
+func NormalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func FilterInactiveUsers(users []UserProfile) []UserProfile {
+	var activeUsers []UserProfile
+	for _, user := range users {
+		if user.Active && user.Age >= 18 {
+			activeUsers = append(activeUsers, user)
+		}
+	}
+	return activeUsers
+}
+
+func ProcessUserData(input []byte) ([]UserProfile, error) {
+	var users []UserProfile
+	err := json.Unmarshal(input, &users)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %v", err)
+	}
+
+	for i := range users {
+		users[i].Username = NormalizeUsername(users[i].Username)
+		
+		if !ValidateEmail(users[i].Email) {
+			return nil, fmt.Errorf("invalid email for user %d: %s", users[i].ID, users[i].Email)
+		}
+	}
+
+	return FilterInactiveUsers(users), nil
+}
+
+func main() {
+	jsonData := `[
+		{"id":1,"username":" JohnDoe ","email":"john@example.com","age":25,"active":true,"tags":["admin","user"]},
+		{"id":2,"username":"jane_smith","email":"invalid-email","age":30,"active":true,"tags":["user"]},
+		{"id":3,"username":"bob","email":"bob@test.org","age":16,"active":true,"tags":["guest"]},
+		{"id":4,"username":"alice","email":"alice@domain.com","age":22,"active":false,"tags":["user"]}
+	]`
+
+	processed, err := ProcessUserData([]byte(jsonData))
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Processed %d active users\n", len(processed))
+	for _, user := range processed {
+		fmt.Printf("ID: %d, Username: %s, Email: %s\n", user.ID, user.Username, user.Email)
+	}
 }
