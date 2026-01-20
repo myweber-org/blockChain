@@ -6,31 +6,25 @@ import (
 	"time"
 )
 
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
+type ActivityLogger struct {
+	handler http.Handler
 }
 
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
 }
 
-func ActivityLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
-		next.ServeHTTP(rw, r)
-
-		duration := time.Since(start)
-		log.Printf(
-			"%s %s %d %s %s",
-			r.Method,
-			r.URL.Path,
-			rw.statusCode,
-			duration,
-			r.RemoteAddr,
-		)
-	})
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	
+	al.handler.ServeHTTP(w, r)
+	
+	duration := time.Since(start)
+	
+	log.Printf("Activity: %s %s from %s took %v",
+		r.Method,
+		r.URL.Path,
+		r.RemoteAddr,
+		duration,
+	)
 }
