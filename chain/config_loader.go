@@ -188,4 +188,108 @@ func getEnvInt(key string, defaultValue int) (int, error) {
         return intValue, nil
     }
     return defaultValue, nil
+}package config
+
+import (
+	"errors"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Config struct {
+	Server struct {
+		Host string `yaml:"host"`
+		Port int    `yaml:"port"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		Name     string `yaml:"name"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level"`
+		Output string `yaml:"output"`
+	} `yaml:"logging"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	if configPath == "" {
+		return nil, errors.New("config path cannot be empty")
+	}
+
+	data, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+
+	overrideFromEnv(&config)
+
+	return &config, nil
+}
+
+func overrideFromEnv(config *Config) {
+	if val := os.Getenv("SERVER_HOST"); val != "" {
+		config.Server.Host = val
+	}
+	if val := os.Getenv("SERVER_PORT"); val != "" {
+		if port, err := parseInt(val); err == nil {
+			config.Server.Port = port
+		}
+	}
+	if val := os.Getenv("DB_HOST"); val != "" {
+		config.Database.Host = val
+	}
+	if val := os.Getenv("DB_PORT"); val != "" {
+		if port, err := parseInt(val); err == nil {
+			config.Database.Port = port
+		}
+	}
+	if val := os.Getenv("DB_USERNAME"); val != "" {
+		config.Database.Username = val
+	}
+	if val := os.Getenv("DB_PASSWORD"); val != "" {
+		config.Database.Password = val
+	}
+	if val := os.Getenv("DB_NAME"); val != "" {
+		config.Database.Name = val
+	}
+	if val := os.Getenv("LOG_LEVEL"); val != "" {
+		config.Logging.Level = strings.ToUpper(val)
+	}
+	if val := os.Getenv("LOG_OUTPUT"); val != "" {
+		config.Logging.Output = val
+	}
+}
+
+func FindConfigFile(filename string) (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		path := filepath.Join(dir, filename)
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", errors.New("config file not found")
 }
