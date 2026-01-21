@@ -1,205 +1,75 @@
 package config
 
 import (
+    "errors"
     "fmt"
+    "io"
     "os"
-    "strconv"
-    "strings"
+
+    "gopkg.in/yaml.v3"
 )
 
 type Config struct {
-    ServerPort int
-    DBHost     string
-    DBPort     int
-    DebugMode  bool
-    AllowedIPs []string
+    Server struct {
+        Host string `yaml:"host"`
+        Port int    `yaml:"port"`
+    } `yaml:"server"`
+    Database struct {
+        Host     string `yaml:"host"`
+        Username string `yaml:"username"`
+        Password string `yaml:"password"`
+        Name     string `yaml:"name"`
+    } `yaml:"database"`
+    LogLevel string `yaml:"log_level"`
 }
 
-func Load() (*Config, error) {
-    cfg := &Config{}
-    var err error
-
-    cfg.ServerPort, err = getIntEnv("SERVER_PORT", 8080)
+func LoadConfig(path string) (*Config, error) {
+    file, err := os.Open(path)
     if err != nil {
-        return nil, fmt.Errorf("invalid SERVER_PORT: %w", err)
+        return nil, fmt.Errorf("failed to open config file: %w", err)
     }
+    defer file.Close()
 
-    cfg.DBHost = getStringEnv("DB_HOST", "localhost")
-    
-    cfg.DBPort, err = getIntEnv("DB_PORT", 5432)
+    data, err := io.ReadAll(file)
     if err != nil {
-        return nil, fmt.Errorf("invalid DB_PORT: %w", err)
+        return nil, fmt.Errorf("failed to read config file: %w", err)
     }
 
-    cfg.DebugMode, err = getBoolEnv("DEBUG_MODE", false)
-    if err != nil {
-        return nil, fmt.Errorf("invalid DEBUG_MODE: %w", err)
+    var cfg Config
+    if err := yaml.Unmarshal(data, &cfg); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
     }
 
-    cfg.AllowedIPs = getStringSliceEnv("ALLOWED_IPS", []string{"127.0.0.1"})
-
-    return cfg, nil
-}
-
-func getStringEnv(key, defaultValue string) string {
-    if value := os.Getenv(key); value != "" {
-        return value
+    if err := validateConfig(&cfg); err != nil {
+        return nil, fmt.Errorf("config validation failed: %w", err)
     }
-    return defaultValue
+
+    return &cfg, nil
 }
 
-func getIntEnv(key string, defaultValue int) (int, error) {
-    if value := os.Getenv(key); value != "" {
-        return strconv.Atoi(value)
+func validateConfig(cfg *Config) error {
+    if cfg.Server.Host == "" {
+        return errors.New("server host cannot be empty")
     }
-    return defaultValue, nil
-}
-
-func getBoolEnv(key string, defaultValue bool) (bool, error) {
-    if value := os.Getenv(key); value != "" {
-        return strconv.ParseBool(value)
+    if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
+        return errors.New("server port must be between 1 and 65535")
     }
-    return defaultValue, nil
-}
-
-func getStringSliceEnv(key string, defaultValue []string) []string {
-    if value := os.Getenv(key); value != "" {
-        return strings.Split(value, ",")
+    if cfg.Database.Host == "" {
+        return errors.New("database host cannot be empty")
     }
-    return defaultValue
-}package config
+    if cfg.LogLevel == "" {
+        cfg.LogLevel = "info"
+    }
 
-import (
-	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
-	"strings"
-)
+    validLogLevels := map[string]bool{
+        "debug": true,
+        "info":  true,
+        "warn":  true,
+        "error": true,
+    }
+    if !validLogLevels[cfg.LogLevel] {
+        return errors.New("invalid log level")
+    }
 
-type DatabaseConfig struct {
-	Host     string `json:"host" env:"DB_HOST"`
-	Port     int    `json:"port" env:"DB_PORT"`
-	Username string `json:"username" env:"DB_USER"`
-	Password string `json:"password" env:"DB_PASS"`
-	Database string `json:"database" env:"DB_NAME"`
-}
-
-type ServerConfig struct {
-	Port         int    `json:"port" env:"SERVER_PORT"`
-	ReadTimeout  int    `json:"read_timeout" env:"READ_TIMEOUT"`
-	WriteTimeout int    `json:"write_timeout" env:"WRITE_TIMEOUT"`
-	DebugMode    bool   `json:"debug_mode" env:"DEBUG_MODE"`
-	LogLevel     string `json:"log_level" env:"LOG_LEVEL"`
-}
-
-type Config struct {
-	Database DatabaseConfig `json:"database"`
-	Server   ServerConfig   `json:"server"`
-	Version  string         `json:"version"`
-}
-
-func LoadConfig(configPath string) (*Config, error) {
-	var config Config
-
-	if configPath == "" {
-		configPath = "config.json"
-	}
-
-	absPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	fileData, err := os.ReadFile(absPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-	} else {
-		if err := json.Unmarshal(fileData, &config); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := loadEnvOverrides(&config); err != nil {
-		return nil, err
-	}
-
-	if err := validateConfig(&config); err != nil {
-		return nil, err
-	}
-
-	return &config, nil
-}
-
-func loadEnvOverrides(config *Config) error {
-	overrideStringField := func(field *string, envVar string) {
-		if val := os.Getenv(envVar); val != "" {
-			*field = val
-		}
-	}
-
-	overrideIntField := func(field *int, envVar string) {
-		if val := os.Getenv(envVar); val != "" {
-			var intVal int
-			if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
-				*field = intVal
-			}
-		}
-	}
-
-	overrideBoolField := func(field *bool, envVar string) {
-		if val := os.Getenv(envVar); val != "" {
-			*field = strings.ToLower(val) == "true" || val == "1"
-		}
-	}
-
-	overrideStringField(&config.Database.Host, "DB_HOST")
-	overrideIntField(&config.Database.Port, "DB_PORT")
-	overrideStringField(&config.Database.Username, "DB_USER")
-	overrideStringField(&config.Database.Password, "DB_PASS")
-	overrideStringField(&config.Database.Database, "DB_NAME")
-
-	overrideIntField(&config.Server.Port, "SERVER_PORT")
-	overrideIntField(&config.Server.ReadTimeout, "READ_TIMEOUT")
-	overrideIntField(&config.Server.WriteTimeout, "WRITE_TIMEOUT")
-	overrideBoolField(&config.Server.DebugMode, "DEBUG_MODE")
-	overrideStringField(&config.Server.LogLevel, "LOG_LEVEL")
-
-	return nil
-}
-
-func validateConfig(config *Config) error {
-	if config.Database.Host == "" {
-		return errors.New("database host is required")
-	}
-	if config.Database.Port <= 0 || config.Database.Port > 65535 {
-		return errors.New("database port must be between 1 and 65535")
-	}
-	if config.Database.Username == "" {
-		return errors.New("database username is required")
-	}
-	if config.Server.Port <= 0 || config.Server.Port > 65535 {
-		return errors.New("server port must be between 1 and 65535")
-	}
-	if config.Server.ReadTimeout < 0 {
-		return errors.New("read timeout cannot be negative")
-	}
-	if config.Server.WriteTimeout < 0 {
-		return errors.New("write timeout cannot be negative")
-	}
-
-	validLogLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
-		"fatal": true,
-	}
-	if !validLogLevels[strings.ToLower(config.Server.LogLevel)] {
-		return errors.New("invalid log level")
-	}
-
-	return nil
+    return nil
 }
