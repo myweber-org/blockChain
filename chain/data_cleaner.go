@@ -1,24 +1,23 @@
+package utils
 
-package main
+import (
+	"regexp"
+	"strings"
+)
 
-import "fmt"
+func SanitizeInput(input string) string {
+	// Remove leading and trailing whitespace
+	trimmed := strings.TrimSpace(input)
 
-func RemoveDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
+	// Remove any HTML/XML tags
+	re := regexp.MustCompile(`<[^>]*>`)
+	cleaned := re.ReplaceAllString(trimmed, "")
 
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	return result
-}
+	// Escape potentially dangerous characters
+	re = regexp.MustCompile(`['"\\;]`)
+	escaped := re.ReplaceAllStringFunc(cleaned, func(match string) string {
+		return "\\" + match
+	})
 
-func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
+	return escaped
 }
