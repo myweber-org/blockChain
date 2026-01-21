@@ -263,3 +263,88 @@ func main() {
 	fmt.Printf("Valid records: %d\n", len(validRecords))
 	fmt.Printf("Total value: %.2f\n", total)
 }
+package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strings"
+)
+
+type DataProcessor struct {
+    InputPath  string
+    OutputPath string
+}
+
+func NewDataProcessor(input, output string) *DataProcessor {
+    return &DataProcessor{
+        InputPath:  input,
+        OutputPath: output,
+    }
+}
+
+func (dp *DataProcessor) Process() error {
+    inputFile, err := os.Open(dp.InputPath)
+    if err != nil {
+        return fmt.Errorf("failed to open input file: %w", err)
+    }
+    defer inputFile.Close()
+
+    outputFile, err := os.Create(dp.OutputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
+
+    reader := csv.NewReader(inputFile)
+    writer := csv.NewWriter(outputFile)
+    defer writer.Flush()
+
+    lineCount := 0
+    for {
+        record, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return fmt.Errorf("csv read error at line %d: %w", lineCount+1, err)
+        }
+
+        cleanedRecord := dp.cleanRecord(record)
+        if len(cleanedRecord) > 0 {
+            if err := writer.Write(cleanedRecord); err != nil {
+                return fmt.Errorf("csv write error at line %d: %w", lineCount+1, err)
+            }
+        }
+        lineCount++
+    }
+
+    fmt.Printf("Processed %d lines successfully\n", lineCount)
+    return nil
+}
+
+func (dp *DataProcessor) cleanRecord(record []string) []string {
+    cleaned := make([]string, 0, len(record))
+    for _, field := range record {
+        trimmed := strings.TrimSpace(field)
+        if trimmed != "" {
+            cleaned = append(cleaned, trimmed)
+        }
+    }
+    return cleaned
+}
+
+func main() {
+    if len(os.Args) != 3 {
+        fmt.Println("Usage: data_processor <input.csv> <output.csv>")
+        os.Exit(1)
+    }
+
+    processor := NewDataProcessor(os.Args[1], os.Args[2])
+    if err := processor.Process(); err != nil {
+        fmt.Printf("Error: %v\n", err)
+        os.Exit(1)
+    }
+}
