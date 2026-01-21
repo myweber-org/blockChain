@@ -204,3 +204,34 @@ func ValidateRecords(records []DataRecord) []error {
 
     return errors
 }
+package data_processor
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+func CleanInput(input string) string {
+	processed := strings.TrimSpace(input)
+	processed = removeExtraSpaces(processed)
+	processed = normalizeCase(processed)
+	return processed
+}
+
+func removeExtraSpaces(s string) string {
+	spaceRegex := regexp.MustCompile(`\s+`)
+	return spaceRegex.ReplaceAllString(s, " ")
+}
+
+func normalizeCase(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	for i := 1; i < len(runes); i++ {
+		runes[i] = unicode.ToLower(runes[i])
+	}
+	return string(runes)
+}
