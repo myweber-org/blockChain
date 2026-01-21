@@ -1,8 +1,8 @@
+
 package main
 
 import (
     "encoding/csv"
-    "errors"
     "fmt"
     "io"
     "os"
@@ -15,7 +15,7 @@ type Record struct {
     Value float64
 }
 
-func ParseCSVFile(filename string) ([]Record, error) {
+func processCSV(filename string) ([]Record, error) {
     file, err := os.Open(filename)
     if err != nil {
         return nil, fmt.Errorf("failed to open file: %w", err)
@@ -23,51 +23,48 @@ func ParseCSVFile(filename string) ([]Record, error) {
     defer file.Close()
 
     reader := csv.NewReader(file)
-    records := make([]Record, 0)
+    var records []Record
+    lineNum := 0
 
-    for lineNum := 1; ; lineNum++ {
-        row, err := reader.Read()
+    for {
+        line, err := reader.Read()
         if err == io.EOF {
             break
         }
         if err != nil {
-            return nil, fmt.Errorf("csv read error at line %d: %w", lineNum, err)
+            return nil, fmt.Errorf("csv read error: %w", err)
         }
 
-        if len(row) != 3 {
-            return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", lineNum, len(row))
+        lineNum++
+        if lineNum == 1 {
+            continue
         }
 
-        id, err := strconv.Atoi(row[0])
+        if len(line) != 3 {
+            return nil, fmt.Errorf("invalid columns at line %d", lineNum)
+        }
+
+        id, err := strconv.Atoi(line[0])
         if err != nil {
             return nil, fmt.Errorf("invalid ID at line %d: %w", lineNum, err)
         }
 
-        name := row[1]
-        if name == "" {
-            return nil, fmt.Errorf("empty name at line %d", lineNum)
-        }
-
-        value, err := strconv.ParseFloat(row[2], 64)
+        value, err := strconv.ParseFloat(line[2], 64)
         if err != nil {
             return nil, fmt.Errorf("invalid value at line %d: %w", lineNum, err)
         }
 
         records = append(records, Record{
             ID:    id,
-            Name:  name,
+            Name:  line[1],
             Value: value,
         })
-    }
-
-    if len(records) == 0 {
-        return nil, errors.New("no valid records found in file")
     }
 
     return records, nil
 }
 
-func CalculateStats(records []Record) (float64, float64) {
+func calculateStats(records []Record) (float64, float64) {
     if len(records) == 0 {
         return 0, 0
     }
@@ -83,21 +80,25 @@ func CalculateStats(records []Record) (float64, float64) {
         diff := r.Value - average
         variance += diff * diff
     }
-    variance = variance / float64(len(records))
+    stdDev := variance / float64(len(records))
 
-    return average, variance
+    return average, stdDev
 }
 
-func ValidateRecords(records []Record) error {
-    seenIDs := make(map[int]bool)
-    for _, r := range records {
-        if r.ID <= 0 {
-            return fmt.Errorf("invalid record ID: %d must be positive", r.ID)
-        }
-        if seenIDs[r.ID] {
-            return fmt.Errorf("duplicate record ID: %d", r.ID)
-        }
-        seenIDs[r.ID] = true
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: data_processor <csv_file>")
+        os.Exit(1)
     }
-    return nil
+
+    records, err := processCSV(os.Args[1])
+    if err != nil {
+        fmt.Printf("Error processing file: %v\n", err)
+        os.Exit(1)
+    }
+
+    avg, stdDev := calculateStats(records)
+    fmt.Printf("Processed %d records\n", len(records))
+    fmt.Printf("Average value: %.2f\n", avg)
+    fmt.Printf("Standard deviation: %.2f\n", stdDev)
 }
