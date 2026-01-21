@@ -7,65 +7,50 @@ import (
 )
 
 type Config struct {
-    ServerPort int
-    DatabaseURL string
-    CacheEnabled bool
+    DatabaseURL  string
     MaxConnections int
+    DebugMode    bool
+    AllowedHosts []string
 }
 
-func LoadConfig() (*Config, error) {
+func Load() (*Config, error) {
     cfg := &Config{
-        ServerPort:     8080,
-        DatabaseURL:    "localhost:5432",
-        CacheEnabled:   true,
-        MaxConnections: 100,
+        DatabaseURL:  getEnv("DB_URL", "postgres://localhost:5432/app"),
+        MaxConnections: getEnvAsInt("MAX_CONNECTIONS", 10),
+        DebugMode:    getEnvAsBool("DEBUG_MODE", false),
+        AllowedHosts: getEnvAsSlice("ALLOWED_HOSTS", []string{"localhost"}, ","),
     }
-
-    if portStr := os.Getenv("SERVER_PORT"); portStr != "" {
-        if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
-            cfg.ServerPort = port
-        }
-    }
-
-    if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-        cfg.DatabaseURL = dbURL
-    }
-
-    if cacheFlag := os.Getenv("CACHE_ENABLED"); cacheFlag != "" {
-        cfg.CacheEnabled = strings.ToLower(cacheFlag) == "true"
-    }
-
-    if maxConnStr := os.Getenv("MAX_CONNECTIONS"); maxConnStr != "" {
-        if maxConn, err := strconv.Atoi(maxConnStr); err == nil && maxConn > 0 {
-            cfg.MaxConnections = maxConn
-        }
-    }
-
-    if err := validateConfig(cfg); err != nil {
-        return nil, err
-    }
-
+    
     return cfg, nil
 }
 
-func validateConfig(cfg *Config) error {
-    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
-        return &ConfigError{Field: "ServerPort", Value: cfg.ServerPort}
+func getEnv(key, defaultValue string) string {
+    if value, exists := os.LookupEnv(key); exists {
+        return value
     }
-    if cfg.DatabaseURL == "" {
-        return &ConfigError{Field: "DatabaseURL", Value: "empty"}
-    }
-    if cfg.MaxConnections < 1 {
-        return &ConfigError{Field: "MaxConnections", Value: cfg.MaxConnections}
-    }
-    return nil
+    return defaultValue
 }
 
-type ConfigError struct {
-    Field string
-    Value interface{}
+func getEnvAsInt(key string, defaultValue int) int {
+    valueStr := getEnv(key, "")
+    if value, err := strconv.Atoi(valueStr); err == nil {
+        return value
+    }
+    return defaultValue
 }
 
-func (e *ConfigError) Error() string {
-    return "invalid configuration value for " + e.Field
+func getEnvAsBool(key string, defaultValue bool) bool {
+    valueStr := getEnv(key, "")
+    if value, err := strconv.ParseBool(valueStr); err == nil {
+        return value
+    }
+    return defaultValue
+}
+
+func getEnvAsSlice(key string, defaultValue []string, sep string) []string {
+    valueStr := getEnv(key, "")
+    if valueStr == "" {
+        return defaultValue
+    }
+    return strings.Split(valueStr, sep)
 }
