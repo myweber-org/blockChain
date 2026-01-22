@@ -42,58 +42,10 @@ func GetUserID(ctx context.Context) (string, bool) {
 }
 
 func validateToken(token string) (string, error) {
-	// This is a placeholder for actual token validation logic
-	// In production, use a proper JWT library like github.com/golang-jwt/jwt
-	if token == "" {
-		return "", http.ErrNoCookie
+	// Implementation would verify JWT signature and extract claims
+	// For this example, we'll simulate validation
+	if token == "" || len(token) < 10 {
+		return "", http.ErrAbortHandler
 	}
 	return "user-" + token[:8], nil
-}package auth
-
-import (
-    "errors"
-    "time"
-
-    "github.com/golang-jwt/jwt/v5"
-)
-
-type Claims struct {
-    UserID string `json:"user_id"`
-    Email  string `json:"email"`
-    jwt.RegisteredClaims
-}
-
-var jwtKey = []byte("your_secret_key_here")
-
-func GenerateToken(userID, email string) (string, error) {
-    expirationTime := time.Now().Add(24 * time.Hour)
-    claims := &Claims{
-        UserID: userID,
-        Email:  email,
-        RegisteredClaims: jwt.RegisteredClaims{
-            ExpiresAt: jwt.NewNumericDate(expirationTime),
-            IssuedAt:  jwt.NewNumericDate(time.Now()),
-            Issuer:    "myapp",
-        },
-    }
-
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    return token.SignedString(jwtKey)
-}
-
-func ValidateToken(tokenString string) (*Claims, error) {
-    claims := &Claims{}
-    token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-        return jwtKey, nil
-    })
-
-    if err != nil {
-        return nil, err
-    }
-
-    if !token.Valid {
-        return nil, errors.New("invalid token")
-    }
-
-    return claims, nil
 }
