@@ -102,3 +102,33 @@ func main() {
     fmt.Printf("Average value: %.2f\n", avg)
     fmt.Printf("Standard deviation: %.2f\n", stdDev)
 }
+package main
+
+import (
+    "fmt"
+)
+
+// FilterAndTransform processes a slice of integers by filtering out values
+// less than the threshold and then applying a transformation.
+func FilterAndTransform(numbers []int, threshold int, transformFunc func(int) int) []int {
+    var result []int
+    for _, num := range numbers {
+        if num >= threshold {
+            transformed := transformFunc(num)
+            result = append(result, transformed)
+        }
+    }
+    return result
+}
+
+// Double is a sample transformation function.
+func Double(x int) int {
+    return x * 2
+}
+
+func main() {
+    data := []int{1, 5, 10, 15, 20}
+    filtered := FilterAndTransform(data, 10, Double)
+    fmt.Println("Original:", data)
+    fmt.Println("Filtered and doubled (>=10):", filtered)
+}
