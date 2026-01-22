@@ -1,24 +1,18 @@
-package auth
+package middleware
 
 import (
-    "context"
     "net/http"
     "strings"
+    "github.com/dgrijalva/jwt-go"
 )
 
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
-type Authenticator struct {
-    secretKey []byte
+type Claims struct {
+    Username string `json:"username"`
+    Role     string `json:"role"`
+    jwt.StandardClaims
 }
 
-func NewAuthenticator(secretKey string) *Authenticator {
-    return &Authenticator{secretKey: []byte(secretKey)}
-}
-
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+func AuthMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         authHeader := r.Header.Get("Authorization")
         if authHeader == "" {
@@ -32,27 +26,20 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
             return
         }
 
-        userID, err := a.validateToken(parts[1])
-        if err != nil {
+        tokenString := parts[1]
+        claims := &Claims{}
+
+        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+            return []byte("secret_key"), nil
+        })
+
+        if err != nil || !token.Valid {
             http.Error(w, "Invalid token", http.StatusUnauthorized)
             return
         }
 
-        ctx := context.WithValue(r.Context(), userIDKey, userID)
-        next.ServeHTTP(w, r.WithContext(ctx))
+        r.Header.Set("X-Username", claims.Username)
+        r.Header.Set("X-Role", claims.Role)
+        next.ServeHTTP(w, r)
     })
-}
-
-func (a *Authenticator) validateToken(tokenString string) (string, error) {
-    // Token validation logic would go here
-    // For example, using github.com/golang-jwt/jwt
-    // This is a simplified placeholder
-    return "user-123", nil
-}
-
-func GetUserID(ctx context.Context) string {
-    if val, ok := ctx.Value(userIDKey).(string); ok {
-        return val
-    }
-    return ""
 }
