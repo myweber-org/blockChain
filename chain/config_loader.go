@@ -408,4 +408,100 @@ func validateConfig(config *AppConfig) error {
 	}
 	
 	return nil
+}package config
+
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DatabaseConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	Database string
+}
+
+type ServerConfig struct {
+	Port         int
+	DebugMode    bool
+	AllowedHosts []string
+}
+
+type Config struct {
+	Database DatabaseConfig
+	Server   ServerConfig
+}
+
+func LoadConfig() (*Config, error) {
+	cfg := &Config{}
+
+	dbHost := getEnv("DB_HOST", "localhost")
+	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.Database = DatabaseConfig{
+		Host:     dbHost,
+		Port:     dbPort,
+		Username: getEnv("DB_USER", "postgres"),
+		Password: getEnv("DB_PASS", ""),
+		Database: getEnv("DB_NAME", "appdb"),
+	}
+
+	serverPort, err := strconv.Atoi(getEnv("SERVER_PORT", "8080"))
+	if err != nil {
+		return nil, err
+	}
+
+	debugMode, err := strconv.ParseBool(getEnv("DEBUG_MODE", "false"))
+	if err != nil {
+		return nil, err
+	}
+
+	allowedHosts := strings.Split(getEnv("ALLOWED_HOSTS", "localhost,127.0.0.1"), ",")
+
+	cfg.Server = ServerConfig{
+		Port:         serverPort,
+		DebugMode:    debugMode,
+		AllowedHosts: allowedHosts,
+	}
+
+	return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+func ValidateConfig(cfg *Config) error {
+	if cfg.Database.Host == "" {
+		return NewConfigError("Database host cannot be empty")
+	}
+	if cfg.Database.Port < 1 || cfg.Database.Port > 65535 {
+		return NewConfigError("Database port must be between 1 and 65535")
+	}
+	if cfg.Server.Port < 1 || cfg.Server.Port > 65535 {
+		return NewConfigError("Server port must be between 1 and 65535")
+	}
+	return nil
+}
+
+type ConfigError struct {
+	Message string
+}
+
+func NewConfigError(msg string) *ConfigError {
+	return &ConfigError{Message: msg}
+}
+
+func (e *ConfigError) Error() string {
+	return "Config error: " + e.Message
 }
