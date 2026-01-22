@@ -4,188 +4,119 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"errors"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 )
 
-func encryptFile(inputPath, outputPath string, key []byte) error {
+func encryptFile(inputPath, outputPath, keyHex string) error {
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return fmt.Errorf("invalid key: %v", err)
+	}
+	if len(key) != 32 {
+		return fmt.Errorf("key must be 32 bytes for AES-256")
+	}
+
 	plaintext, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("read file error: %w", err)
+		return fmt.Errorf("read file failed: %v", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return fmt.Errorf("cipher creation error: %w", err)
+		return fmt.Errorf("cipher creation failed: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("GCM mode error: %w", err)
+		return fmt.Errorf("GCM creation failed: %v", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return fmt.Errorf("nonce generation error: %w", err)
+		return fmt.Errorf("nonce generation failed: %v", err)
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
 	if err := os.WriteFile(outputPath, ciphertext, 0644); err != nil {
-		return fmt.Errorf("write file error: %w", err)
+		return fmt.Errorf("write file failed: %v", err)
 	}
 
 	return nil
 }
 
-func decryptFile(inputPath, outputPath string, key []byte) error {
+func decryptFile(inputPath, outputPath, keyHex string) error {
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return fmt.Errorf("invalid key: %v", err)
+	}
+	if len(key) != 32 {
+		return fmt.Errorf("key must be 32 bytes for AES-256")
+	}
+
 	ciphertext, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("read file error: %w", err)
+		return fmt.Errorf("read file failed: %v", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return fmt.Errorf("cipher creation error: %w", err)
+		return fmt.Errorf("cipher creation failed: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("GCM mode error: %w", err)
+		return fmt.Errorf("GCM creation failed: %v", err)
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return errors.New("ciphertext too short")
+		return fmt.Errorf("ciphertext too short")
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return fmt.Errorf("decryption error: %w", err)
+		return fmt.Errorf("decryption failed: %v", err)
 	}
 
 	if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
-		return fmt.Errorf("write file error: %w", err)
+		return fmt.Errorf("write file failed: %v", err)
 	}
 
 	return nil
 }
 
 func main() {
-	key := []byte("32-byte-long-key-here-needs-exactly!!")
-	
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output>")
-		return
+	if len(os.Args) < 5 {
+		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output> <key>")
+		fmt.Println("Key must be 64 hex characters (32 bytes)")
+		os.Exit(1)
 	}
 
-	operation := os.Args[1]
-	inputFile := os.Args[2]
-	outputFile := os.Args[3]
+	mode := os.Args[1]
+	inputPath := os.Args[2]
+	outputPath := os.Args[3]
+	keyHex := os.Args[4]
 
-	switch operation {
+	var err error
+	switch mode {
 	case "encrypt":
-		if err := encryptFile(inputFile, outputFile, key); err != nil {
-			fmt.Printf("Encryption failed: %v\n", err)
-		} else {
-			fmt.Println("Encryption completed successfully")
-		}
+		err = encryptFile(inputPath, outputPath, keyHex)
 	case "decrypt":
-		if err := decryptFile(inputFile, outputFile, key); err != nil {
-			fmt.Printf("Decryption failed: %v\n", err)
-		} else {
-			fmt.Println("Decryption completed successfully")
-		}
+		err = decryptFile(inputPath, outputPath, keyHex)
 	default:
-		fmt.Println("Invalid operation. Use 'encrypt' or 'decrypt'")
-	}
-}package main
-
-import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-)
-
-func encryptData(plaintext []byte, key []byte) (string, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", err
-	}
-
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
-}
-
-func decryptData(ciphertext string, key []byte) ([]byte, error) {
-	data, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(data) < aes.BlockSize {
-		return nil, errors.New("ciphertext too short")
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-
-	iv := data[:aes.BlockSize]
-	data = data[aes.BlockSize:]
-
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(data, data)
-
-	return data, nil
-}
-
-func generateRandomKey() ([]byte, error) {
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, err
-	}
-	return key, nil
-}
-
-func main() {
-	key, err := generateRandomKey()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to generate key: %v\n", err)
+		fmt.Printf("Invalid mode: %s\n", mode)
 		os.Exit(1)
 	}
 
-	original := "Sensitive data that requires protection"
-	fmt.Printf("Original: %s\n", original)
-
-	encrypted, err := encryptData([]byte(original), key)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Encryption failed: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Encrypted: %s\n", encrypted)
 
-	decrypted, err := decryptData(encrypted, key)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Decryption failed: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Decrypted: %s\n", string(decrypted))
+	fmt.Printf("Operation completed successfully: %s -> %s\n", inputPath, outputPath)
 }
