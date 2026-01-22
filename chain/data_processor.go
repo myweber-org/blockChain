@@ -1,134 +1,81 @@
-
-package main
-
-import (
-    "encoding/csv"
-    "fmt"
-    "io"
-    "os"
-    "strconv"
-)
-
-type Record struct {
-    ID    int
-    Name  string
-    Value float64
-}
-
-func processCSV(filename string) ([]Record, error) {
-    file, err := os.Open(filename)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open file: %w", err)
-    }
-    defer file.Close()
-
-    reader := csv.NewReader(file)
-    var records []Record
-    lineNum := 0
-
-    for {
-        line, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return nil, fmt.Errorf("csv read error: %w", err)
-        }
-
-        lineNum++
-        if lineNum == 1 {
-            continue
-        }
-
-        if len(line) != 3 {
-            return nil, fmt.Errorf("invalid columns at line %d", lineNum)
-        }
-
-        id, err := strconv.Atoi(line[0])
-        if err != nil {
-            return nil, fmt.Errorf("invalid ID at line %d: %w", lineNum, err)
-        }
-
-        value, err := strconv.ParseFloat(line[2], 64)
-        if err != nil {
-            return nil, fmt.Errorf("invalid value at line %d: %w", lineNum, err)
-        }
-
-        records = append(records, Record{
-            ID:    id,
-            Name:  line[1],
-            Value: value,
-        })
-    }
-
-    return records, nil
-}
-
-func calculateStats(records []Record) (float64, float64) {
-    if len(records) == 0 {
-        return 0, 0
-    }
-
-    var sum float64
-    for _, r := range records {
-        sum += r.Value
-    }
-    average := sum / float64(len(records))
-
-    var variance float64
-    for _, r := range records {
-        diff := r.Value - average
-        variance += diff * diff
-    }
-    stdDev := variance / float64(len(records))
-
-    return average, stdDev
-}
-
-func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: data_processor <csv_file>")
-        os.Exit(1)
-    }
-
-    records, err := processCSV(os.Args[1])
-    if err != nil {
-        fmt.Printf("Error processing file: %v\n", err)
-        os.Exit(1)
-    }
-
-    avg, stdDev := calculateStats(records)
-    fmt.Printf("Processed %d records\n", len(records))
-    fmt.Printf("Average value: %.2f\n", avg)
-    fmt.Printf("Standard deviation: %.2f\n", stdDev)
-}
-package main
+package data_processor
 
 import (
-    "fmt"
+	"encoding/csv"
+	"errors"
+	"io"
+	"strconv"
+	"strings"
 )
 
-// FilterAndTransform processes a slice of integers by filtering out values
-// less than the threshold and then applying a transformation.
-func FilterAndTransform(numbers []int, threshold int, transformFunc func(int) int) []int {
-    var result []int
-    for _, num := range numbers {
-        if num >= threshold {
-            transformed := transformFunc(num)
-            result = append(result, transformed)
-        }
-    }
-    return result
+type DataRecord struct {
+	ID        int
+	Name      string
+	Value     float64
+	Validated bool
 }
 
-// Double is a sample transformation function.
-func Double(x int) int {
-    return x * 2
+func ParseCSVData(reader io.Reader) ([]DataRecord, error) {
+	csvReader := csv.NewReader(reader)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var data []DataRecord
+	for i, row := range records {
+		if len(row) < 3 {
+			return nil, errors.New("insufficient columns in row " + strconv.Itoa(i))
+		}
+
+		id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+		if err != nil {
+			return nil, errors.New("invalid ID in row " + strconv.Itoa(i))
+		}
+
+		name := strings.TrimSpace(row[1])
+		if name == "" {
+			return nil, errors.New("empty name in row " + strconv.Itoa(i))
+		}
+
+		value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+		if err != nil {
+			return nil, errors.New("invalid value in row " + strconv.Itoa(i))
+		}
+
+		validated := false
+		if len(row) > 3 {
+			validated = strings.ToLower(strings.TrimSpace(row[3])) == "true"
+		}
+
+		data = append(data, DataRecord{
+			ID:        id,
+			Name:      name,
+			Value:     value,
+			Validated: validated,
+		})
+	}
+
+	return data, nil
 }
 
-func main() {
-    data := []int{1, 5, 10, 15, 20}
-    filtered := FilterAndTransform(data, 10, Double)
-    fmt.Println("Original:", data)
-    fmt.Println("Filtered and doubled (>=10):", filtered)
+func ValidateRecords(records []DataRecord) []DataRecord {
+	var validated []DataRecord
+	for _, record := range records {
+		if record.ID > 0 && record.Value >= 0 {
+			record.Validated = true
+			validated = append(validated, record)
+		}
+	}
+	return validated
+}
+
+func CalculateTotal(records []DataRecord) float64 {
+	var total float64
+	for _, record := range records {
+		if record.Validated {
+			total += record.Value
+		}
+	}
+	return total
 }
