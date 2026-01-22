@@ -4,51 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-)
-
-type contextKey string
-
-const (
-	UserIDKey contextKey = "userID"
-)
-
-func JWTAuthMiddleware(secretKey string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Authorization header required", http.StatusUnauthorized)
-				return
-			}
-
-			parts := strings.Split(authHeader, " ")
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-				return
-			}
-
-			tokenString := parts[1]
-			userID, err := validateJWT(tokenString, secretKey)
-			if err != nil {
-				http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), UserIDKey, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-func validateJWT(tokenString, secretKey string) (string, error) {
-	return "sample-user-id", nil
-}
-package middleware
-
-import (
-	"context"
-	"net/http"
-	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -97,13 +52,16 @@ func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			if userID, exists := claims["user_id"].(string); exists {
-				ctx := context.WithValue(r.Context(), UserIDKey, userID)
-				next.ServeHTTP(w, r.WithContext(ctx))
+			userID, ok := claims["userID"].(string)
+			if !ok {
+				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
 				return
 			}
-		}
 
-		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			ctx := context.WithValue(r.Context(), UserIDKey, userID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		} else {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		}
 	})
 }
