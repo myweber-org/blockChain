@@ -4,119 +4,106 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 )
 
-func encryptFile(inputPath, outputPath, keyHex string) error {
-	key, err := hex.DecodeString(keyHex)
-	if err != nil {
-		return fmt.Errorf("invalid key: %v", err)
-	}
-	if len(key) != 32 {
-		return fmt.Errorf("key must be 32 bytes for AES-256")
-	}
-
+func encryptFile(inputPath, outputPath string, key []byte) error {
 	plaintext, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("read file failed: %v", err)
+		return fmt.Errorf("read file error: %w", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return fmt.Errorf("cipher creation failed: %v", err)
+		return fmt.Errorf("cipher creation error: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("GCM creation failed: %v", err)
+		return fmt.Errorf("GCM mode error: %w", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return fmt.Errorf("nonce generation failed: %v", err)
+		return fmt.Errorf("nonce generation error: %w", err)
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
 	if err := os.WriteFile(outputPath, ciphertext, 0644); err != nil {
-		return fmt.Errorf("write file failed: %v", err)
+		return fmt.Errorf("write file error: %w", err)
 	}
 
 	return nil
 }
 
-func decryptFile(inputPath, outputPath, keyHex string) error {
-	key, err := hex.DecodeString(keyHex)
-	if err != nil {
-		return fmt.Errorf("invalid key: %v", err)
-	}
-	if len(key) != 32 {
-		return fmt.Errorf("key must be 32 bytes for AES-256")
-	}
-
+func decryptFile(inputPath, outputPath string, key []byte) error {
 	ciphertext, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("read file failed: %v", err)
+		return fmt.Errorf("read file error: %w", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return fmt.Errorf("cipher creation failed: %v", err)
+		return fmt.Errorf("cipher creation error: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return fmt.Errorf("GCM creation failed: %v", err)
+		return fmt.Errorf("GCM mode error: %w", err)
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return fmt.Errorf("ciphertext too short")
+		return errors.New("ciphertext too short")
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return fmt.Errorf("decryption failed: %v", err)
+		return fmt.Errorf("decryption error: %w", err)
 	}
 
 	if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
-		return fmt.Errorf("write file failed: %v", err)
+		return fmt.Errorf("write file error: %w", err)
 	}
 
 	return nil
 }
 
 func main() {
-	if len(os.Args) < 5 {
-		fmt.Println("Usage: go run file_encryptor.go <encrypt|decrypt> <input> <output> <key>")
-		fmt.Println("Key must be 64 hex characters (32 bytes)")
-		os.Exit(1)
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		fmt.Printf("Key generation failed: %v\n", err)
+		return
 	}
 
-	mode := os.Args[1]
-	inputPath := os.Args[2]
-	outputPath := os.Args[3]
-	keyHex := os.Args[4]
+	inputFile := "test_data.txt"
+	encryptedFile := "encrypted.dat"
+	decryptedFile := "decrypted.txt"
 
-	var err error
-	switch mode {
-	case "encrypt":
-		err = encryptFile(inputPath, outputPath, keyHex)
-	case "decrypt":
-		err = decryptFile(inputPath, outputPath, keyHex)
-	default:
-		fmt.Printf("Invalid mode: %s\n", mode)
-		os.Exit(1)
+	sampleData := []byte("Confidential information requiring encryption.")
+	if err := os.WriteFile(inputFile, sampleData, 0644); err != nil {
+		fmt.Printf("Test file creation failed: %v\n", err)
+		return
 	}
 
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+	if err := encryptFile(inputFile, encryptedFile, key); err != nil {
+		fmt.Printf("Encryption failed: %v\n", err)
+		return
 	}
+	fmt.Println("File encrypted successfully")
 
-	fmt.Printf("Operation completed successfully: %s -> %s\n", inputPath, outputPath)
+	if err := decryptFile(encryptedFile, decryptedFile, key); err != nil {
+		fmt.Printf("Decryption failed: %v\n", err)
+		return
+	}
+	fmt.Println("File decrypted successfully")
+
+	os.Remove(inputFile)
+	os.Remove(encryptedFile)
+	os.Remove(decryptedFile)
 }
