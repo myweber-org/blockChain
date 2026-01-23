@@ -1,35 +1,63 @@
+
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-func RemoveDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
+type DataCleaner struct {
+	seen map[string]bool
+}
 
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		seen: make(map[string]bool),
 	}
-	return result
+}
+
+func (dc *DataCleaner) Normalize(input string) string {
+	return strings.ToLower(strings.TrimSpace(input))
+}
+
+func (dc *DataCleaner) IsDuplicate(value string) bool {
+	normalized := dc.Normalize(value)
+	if dc.seen[normalized] {
+		return true
+	}
+	dc.seen[normalized] = true
+	return false
+}
+
+func (dc *DataCleaner) AddItem(value string) bool {
+	normalized := dc.Normalize(value)
+	if dc.seen[normalized] {
+		return false
+	}
+	dc.seen[normalized] = true
+	return true
+}
+
+func (dc *DataCleaner) GetUniqueCount() int {
+	return len(dc.seen)
+}
+
+func (dc *DataCleaner) Reset() {
+	dc.seen = make(map[string]bool)
 }
 
 func main() {
-	data := []int{1, 2, 2, 3, 4, 4, 5}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}package datautils
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-	seen := make(map[T]bool)
-	result := []T{}
-	for _, item := range slice {
-		if !seen[item] {
-			seen[item] = true
-			result = append(result, item)
+	cleaner := NewDataCleaner()
+	
+	samples := []string{"  Apple  ", "apple", "BANANA", "banana ", "Cherry"}
+	
+	for _, item := range samples {
+		if cleaner.AddItem(item) {
+			fmt.Printf("Added: '%s'\n", item)
+		} else {
+			fmt.Printf("Duplicate skipped: '%s'\n", item)
 		}
 	}
-	return result
+	
+	fmt.Printf("Total unique items: %d\n", cleaner.GetUniqueCount())
 }
