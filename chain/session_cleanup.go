@@ -171,3 +171,66 @@ func main() {
 	var store SessionStore
 	scheduleCleanup(store, 24*time.Hour)
 }
+package main
+
+import (
+	"context"
+	"log"
+	"time"
+)
+
+type Session struct {
+	ID        string
+	UserID    string
+	ExpiresAt time.Time
+}
+
+type SessionStore interface {
+	DeleteExpiredSessions(ctx context.Context) error
+}
+
+type SessionCleanupJob struct {
+	store     SessionStore
+	interval  time.Duration
+}
+
+func NewSessionCleanupJob(store SessionStore, interval time.Duration) *SessionCleanupJob {
+	return &SessionCleanupJob{
+		store:    store,
+		interval: interval,
+	}
+}
+
+func (j *SessionCleanupJob) Run(ctx context.Context) {
+	ticker := time.NewTicker(j.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Session cleanup job stopped")
+			return
+		case <-ticker.C:
+			if err := j.store.DeleteExpiredSessions(ctx); err != nil {
+				log.Printf("Failed to delete expired sessions: %v", err)
+			} else {
+				log.Println("Expired sessions cleaned up successfully")
+			}
+		}
+	}
+}
+
+func main() {
+	ctx := context.Background()
+	store := &mockSessionStore{}
+	job := NewSessionCleanupJob(store, 24*time.Hour)
+
+	log.Println("Starting session cleanup job...")
+	job.Run(ctx)
+}
+
+type mockSessionStore struct{}
+
+func (m *mockSessionStore) DeleteExpiredSessions(ctx context.Context) error {
+	return nil
+}
