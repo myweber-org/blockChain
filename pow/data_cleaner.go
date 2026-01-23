@@ -25,4 +25,18 @@ func main() {
 	uniqueStrings := RemoveDuplicates(strings)
 	fmt.Println("Original:", strings)
 	fmt.Println("Unique:", uniqueStrings)
+}package datautils
+
+func RemoveDuplicates(input []int) []int {
+	seen := make(map[int]bool)
+	result := []int{}
+	
+	for _, value := range input {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	
+	return result
 }
