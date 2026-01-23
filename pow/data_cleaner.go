@@ -2,11 +2,11 @@ package main
 
 import "fmt"
 
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]bool)
-	result := []string{}
+func RemoveDuplicates[T comparable](slice []T) []T {
+	seen := make(map[T]bool)
+	result := []T{}
 
-	for _, item := range input {
+	for _, item := range slice {
 		if !seen[item] {
 			seen[item] = true
 			result = append(result, item)
@@ -16,8 +16,13 @@ func RemoveDuplicates(input []string) []string {
 }
 
 func main() {
-	data := []string{"apple", "banana", "apple", "cherry", "banana", "date"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
+	numbers := []int{1, 2, 2, 3, 4, 4, 5}
+	uniqueNumbers := RemoveDuplicates(numbers)
+	fmt.Println("Original:", numbers)
+	fmt.Println("Unique:", uniqueNumbers)
+
+	strings := []string{"apple", "banana", "apple", "orange"}
+	uniqueStrings := RemoveDuplicates(strings)
+	fmt.Println("Original:", strings)
+	fmt.Println("Unique:", uniqueStrings)
 }
