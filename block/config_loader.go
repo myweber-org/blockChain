@@ -61,4 +61,46 @@ func validateConfig(cfg *Config) error {
     }
 
     return nil
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    Port        int
+    DatabaseURL string
+    Debug       bool
+    AllowedHosts []string
+}
+
+func Load() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnv("APP_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
+    if err != nil {
+        return nil, err
+    }
+    cfg.Port = port
+    
+    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    debugStr := getEnv("DEBUG", "false")
+    cfg.Debug = strings.ToLower(debugStr) == "true"
+    
+    hostsStr := getEnv("ALLOWED_HOSTS", "localhost,127.0.0.1")
+    cfg.AllowedHosts = strings.Split(hostsStr, ",")
+    
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    value := os.Getenv(key)
+    if value == "" {
+        return defaultValue
+    }
+    return value
 }
