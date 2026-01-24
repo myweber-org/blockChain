@@ -8,9 +8,7 @@ import (
 
 type contextKey string
 
-const (
-	UserIDKey contextKey = "userID"
-)
+const userIDKey contextKey = "userID"
 
 func Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,124 +31,23 @@ func Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
 }
 
 func validateToken(tokenString string) (string, error) {
-	// Implementation would verify JWT signature and extract claims
-	// For demonstration, return a mock user ID
-	return "user-12345", nil
-}package middleware
-
-import (
-	"context"
-	"net/http"
-	"strings"
-)
-
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
-type Authenticator struct {
-	jwtSecret []byte
-}
-
-func NewAuthenticator(secret string) *Authenticator {
-	return &Authenticator{jwtSecret: []byte(secret)}
-}
-
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := parts[1]
-		userID, err := a.validateToken(tokenString)
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func (a *Authenticator) validateToken(tokenString string) (string, error) {
-	// Simplified token validation - in production use a proper JWT library
-	// This is a placeholder implementation
-	if tokenString == "" {
-		return "", http.ErrNoCookie
+	// In a real implementation, this would parse and verify a JWT
+	// For this example, we'll do a simple mock validation
+	if tokenString == "" || len(tokenString) < 10 {
+		return "", http.ErrAbortHandler
 	}
-	
-	// Mock validation - always returns "user123" for demonstration
-	// In real implementation, parse JWT and verify signature
-	return "user123", nil
-}
-
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userIDKey).(string)
-	return userID, ok
-}package middleware
-
-import (
-	"context"
-	"net/http"
-	"strings"
-)
-
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
-func Authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		token := parts[1]
-		userID, err := validateToken(token)
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userIDKey).(string)
-	return userID, ok
-}
-
-func validateToken(token string) (string, error) {
-	// Implementation would verify JWT signature and extract claims
-	// For this example, we'll simulate validation
-	if token == "" || len(token) < 10 {
-		return "", http.ErrNoCookie
-	}
-	return "user_" + token[:8], nil
+	// Mock: extract user ID from token (in reality, decode JWT claims)
+	// This is a simplified example - actual JWT validation is more complex
+	return "user_" + tokenString[:8], nil
 }
