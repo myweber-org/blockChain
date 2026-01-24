@@ -104,3 +104,35 @@ func main() {
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
 }
+package utils
+
+import (
+	"regexp"
+	"strings"
+)
+
+func SanitizeInput(input string) string {
+	// Remove leading and trailing whitespace
+	trimmed := strings.TrimSpace(input)
+	
+	// Remove any HTML tags
+	re := regexp.MustCompile(`<[^>]*>`)
+	cleaned := re.ReplaceAllString(trimmed, "")
+	
+	// Escape special characters for SQL (basic prevention)
+	cleaned = strings.ReplaceAll(cleaned, "'", "''")
+	cleaned = strings.ReplaceAll(cleaned, "\"", "\"\"")
+	
+	// Limit length to prevent buffer overflow attacks
+	maxLength := 255
+	if len(cleaned) > maxLength {
+		cleaned = cleaned[:maxLength]
+	}
+	
+	return cleaned
+}
+
+func ValidateEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
+}
