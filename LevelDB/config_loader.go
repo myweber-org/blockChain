@@ -97,4 +97,49 @@ func getEnvAsSlice(key string, defaultValue []string) []string {
 		return defaultValue
 	}
 	return strings.Split(valueStr, ",")
+}package config
+
+import (
+    "fmt"
+    "io/ioutil"
+    "gopkg.in/yaml.v2"
+)
+
+type Config struct {
+    Server struct {
+        Host string `yaml:"host"`
+        Port int    `yaml:"port"`
+    } `yaml:"server"`
+    Database struct {
+        Host     string `yaml:"host"`
+        Username string `yaml:"username"`
+        Password string `yaml:"password"`
+        Name     string `yaml:"name"`
+    } `yaml:"database"`
+}
+
+func LoadConfig(filePath string) (*Config, error) {
+    data, err := ioutil.ReadFile(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var config Config
+    err = yaml.Unmarshal(data, &config)
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    if config.Server.Host == "" {
+        config.Server.Host = "localhost"
+    }
+    if config.Server.Port == 0 {
+        config.Server.Port = 8080
+    }
+
+    if config.Database.Host == "" {
+        return nil, fmt.Errorf("database host is required")
+    }
+
+    return &config, nil
 }
