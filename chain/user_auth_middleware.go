@@ -87,4 +87,87 @@ func getRequiredRoleForPath(path string) string {
 		}
 	}
 	return "user"
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type User struct {
+	ID    int
+	Roles []string
+}
+
+func AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := extractToken(r)
+		if token == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		user, err := validateToken(token)
+		if err != nil {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		if !hasRequiredRole(user, r) {
+			http.Error(w, "Insufficient permissions", http.StatusForbidden)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func extractToken(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
+	}
+	parts := strings.Split(authHeader, "Bearer ")
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+func validateToken(token string) (*User, error) {
+	// Token validation logic here
+	// This is a simplified example
+	if token == "valid_token_example" {
+		return &User{ID: 1, Roles: []string{"admin", "user"}}, nil
+	}
+	return nil, fmt.Errorf("invalid token")
+}
+
+func hasRequiredRole(user *User, r *http.Request) bool {
+	// Role-based access control logic
+	// Check if user has required role for the requested path
+	requiredRole := getRequiredRole(r.URL.Path)
+	for _, role := range user.Roles {
+		if role == requiredRole {
+			return true
+		}
+	}
+	return false
+}
+
+func getRequiredRole(path string) string {
+	// Map paths to required roles
+	roleMap := map[string]string{
+		"/admin":    "admin",
+		"/settings": "admin",
+		"/api":      "user",
+	}
+	for prefix, role := range roleMap {
+		if strings.HasPrefix(path, prefix) {
+			return role
+		}
+	}
+	return "user"
 }
