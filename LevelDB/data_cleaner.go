@@ -135,4 +135,56 @@ func SanitizeInput(input string) string {
 func ValidateEmail(email string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(email)
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Email string
+	Valid bool
+}
+
+func deduplicateEmails(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var unique []DataRecord
+
+	for _, record := range records {
+		email := strings.ToLower(strings.TrimSpace(record.Email))
+		if !seen[email] && isValidEmail(email) {
+			seen[email] = true
+			record.Email = email
+			record.Valid = true
+			unique = append(unique, record)
+		}
+	}
+	return unique
+}
+
+func isValidEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func cleanData(records []DataRecord) []DataRecord {
+	cleaned := deduplicateEmails(records)
+	fmt.Printf("Cleaned %d records to %d unique entries\n", len(records), len(cleaned))
+	return cleaned
+}
+
+func main() {
+	sampleData := []DataRecord{
+		{1, "user@example.com", false},
+		{2, "USER@example.com", false},
+		{3, "test@domain.org", false},
+		{4, "invalid-email", false},
+		{5, "test@domain.org", false},
+	}
+
+	result := cleanData(sampleData)
+	for _, r := range result {
+		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
+	}
 }
