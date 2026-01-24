@@ -1,60 +1,67 @@
 package session
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
-	"time"
+    "crypto/rand"
+    "encoding/hex"
+    "errors"
+    "time"
 )
 
 type Session struct {
-	Token     string
-	UserID    string
-	ExpiresAt time.Time
+    ID        string
+    UserID    int
+    ExpiresAt time.Time
 }
 
 var sessions = make(map[string]Session)
 
-func GenerateSession(userID string, duration time.Duration) (Session, error) {
-	token, err := generateToken()
-	if err != nil {
-		return Session{}, err
-	}
+func GenerateToken() (string, error) {
+    bytes := make([]byte, 16)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+    return hex.EncodeToString(bytes), nil
+}
 
-	expiresAt := time.Now().Add(duration)
-	session := Session{
-		Token:     token,
-		UserID:    userID,
-		ExpiresAt: expiresAt,
-	}
+func CreateSession(userID int, duration time.Duration) (string, error) {
+    token, err := GenerateToken()
+    if err != nil {
+        return "", err
+    }
 
-	sessions[token] = session
-	return session, nil
+    session := Session{
+        ID:        token,
+        UserID:    userID,
+        ExpiresAt: time.Now().Add(duration),
+    }
+
+    sessions[token] = session
+    return token, nil
 }
 
 func ValidateSession(token string) (Session, error) {
-	session, exists := sessions[token]
-	if !exists {
-		return Session{}, errors.New("session not found")
-	}
+    session, exists := sessions[token]
+    if !exists {
+        return Session{}, errors.New("session not found")
+    }
 
-	if time.Now().After(session.ExpiresAt) {
-		delete(sessions, token)
-		return Session{}, errors.New("session expired")
-	}
+    if time.Now().After(session.ExpiresAt) {
+        delete(sessions, token)
+        return Session{}, errors.New("session expired")
+    }
 
-	return session, nil
+    return session, nil
 }
 
 func InvalidateSession(token string) {
-	delete(sessions, token)
+    delete(sessions, token)
 }
 
-func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+func CleanupExpiredSessions() {
+    now := time.Now()
+    for token, session := range sessions {
+        if now.After(session.ExpiresAt) {
+            delete(sessions, token)
+        }
+    }
 }
