@@ -213,4 +213,72 @@ func validateConfig(c *Config) error {
 		c.LogLevel = "info"
 	}
 	return nil
+}package config
+
+import (
+	"encoding/json"
+	"os"
+	"sync"
+)
+
+type Config struct {
+	ServerPort string `json:"server_port"`
+	DBHost     string `json:"db_host"`
+	DBPort     int    `json:"db_port"`
+	DebugMode  bool   `json:"debug_mode"`
+}
+
+var (
+	instance *Config
+	once     sync.Once
+)
+
+func Load() *Config {
+	once.Do(func() {
+		instance = &Config{
+			ServerPort: getEnv("SERVER_PORT", "8080"),
+			DBHost:     getEnv("DB_HOST", "localhost"),
+			DBPort:     5432,
+			DebugMode:  getEnv("DEBUG", "false") == "true",
+		}
+
+		if port := getEnv("DB_PORT", ""); port != "" {
+			if p, err := strconv.Atoi(port); err == nil {
+				instance.DBPort = p
+			}
+		}
+
+		if configFile := getEnv("CONFIG_FILE", ""); configFile != "" {
+			loadFromFile(configFile)
+		}
+	})
+	return instance
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func loadFromFile(filename string) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return
+	}
+
+	var fileConfig Config
+	if json.Unmarshal(data, &fileConfig) == nil {
+		if fileConfig.ServerPort != "" {
+			instance.ServerPort = fileConfig.ServerPort
+		}
+		if fileConfig.DBHost != "" {
+			instance.DBHost = fileConfig.DBHost
+		}
+		if fileConfig.DBPort > 0 {
+			instance.DBPort = fileConfig.DBPort
+		}
+		instance.DebugMode = instance.DebugMode || fileConfig.DebugMode
+	}
 }
