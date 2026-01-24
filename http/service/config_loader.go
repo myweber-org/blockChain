@@ -130,4 +130,54 @@ func setFromEnvInt(field *int, envVar string) {
 			*field = intVal
 		}
 	}
+}package config
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+)
+
+type Config struct {
+	ServerPort string `json:"server_port"`
+	DBHost     string `json:"db_host"`
+	DBPort     string `json:"db_port"`
+	DebugMode  bool   `json:"debug_mode"`
+}
+
+func LoadConfig(filePath string) (*Config, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config Config
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	config.ServerPort = getEnvOverride("SERVER_PORT", config.ServerPort)
+	config.DBHost = getEnvOverride("DB_HOST", config.DBHost)
+	config.DBPort = getEnvOverride("DB_PORT", config.DBPort)
+
+	return &config, nil
+}
+
+func getEnvOverride(envKey, defaultValue string) string {
+	if val := os.Getenv(envKey); val != "" {
+		return val
+	}
+	return defaultValue
+}
+
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.ServerPort) == "" {
+		return os.ErrInvalid
+	}
+	if strings.TrimSpace(c.DBHost) == "" {
+		return os.ErrInvalid
+	}
+	return nil
 }
