@@ -36,13 +36,13 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func validateToken(tokenString string) (string, error) {
-	return "sample-user-id", nil
-}
-
 func GetUserID(ctx context.Context) string {
 	if userID, ok := ctx.Value(userIDKey).(string); ok {
 		return userID
 	}
 	return ""
+}
+
+func validateToken(tokenString string) (string, error) {
+	return "sample-user-id", nil
 }
