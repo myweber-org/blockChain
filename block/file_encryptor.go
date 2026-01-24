@@ -154,3 +154,95 @@ func main() {
 		os.Exit(1)
 	}
 }
+package main
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"os"
+)
+
+func generateKey() ([]byte, error) {
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func encryptData(plaintext []byte, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func decryptData(encodedCiphertext string, key []byte) ([]byte, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(encodedCiphertext)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	return gcm.Open(nil, nonce, ciphertext, nil)
+}
+
+func main() {
+	key, err := generateKey()
+	if err != nil {
+		fmt.Printf("Error generating key: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Generated key (base64): %s\n\n", base64.StdEncoding.EncodeToString(key))
+
+	originalText := "Sensitive data requiring encryption"
+	fmt.Printf("Original text: %s\n", originalText)
+
+	encrypted, err := encryptData([]byte(originalText), key)
+	if err != nil {
+		fmt.Printf("Encryption error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Encrypted text: %s\n", encrypted)
+
+	decrypted, err := decryptData(encrypted, key)
+	if err != nil {
+		fmt.Printf("Decryption error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Decrypted text: %s\n", string(decrypted))
+}
