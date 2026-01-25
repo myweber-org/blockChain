@@ -386,3 +386,196 @@ func (rl *RotatingLogger) Close() error {
 	}
 	return nil
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	maxFileSize = 10 * 1024 * 1024 // 10MB
+	maxBackups  = 5
+	compressOld = true
+)
+
+type RotatingLogger struct {
+	mu         sync.Mutex
+	file       *os.File
+	size       int64
+	basePath   string
+	currentDay string
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+	rl := &RotatingLogger{
+		basePath: path,
+	}
+	if err := rl.rotateIfNeeded(); err != nil {
+		return nil, err
+	}
+	return rl, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if err := rl.rotateIfNeeded(); err != nil {
+		return 0, err
+	}
+
+	n, err = rl.file.Write(p)
+	rl.size += int64(n)
+	return n, err
+}
+
+func (rl *RotatingLogger) rotateIfNeeded() error {
+	now := time.Now()
+	currentDate := now.Format("2006-01-02")
+
+	if rl.file == nil || rl.size >= maxFileSize || rl.currentDay != currentDate {
+		if rl.file != nil {
+			rl.file.Close()
+			if err := rl.compressOldLogs(); err != nil {
+				log.Printf("Failed to compress old logs: %v", err)
+			}
+		}
+
+		newPath := rl.generateLogPath(now)
+		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+			return err
+		}
+
+		file, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return err
+		}
+
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return err
+		}
+
+		rl.file = file
+		rl.size = info.Size()
+		rl.currentDay = currentDate
+	}
+	return nil
+}
+
+func (rl *RotatingLogger) generateLogPath(t time.Time) string {
+	base := strings.TrimSuffix(rl.basePath, filepath.Ext(rl.basePath))
+	ext := filepath.Ext(rl.basePath)
+	if ext == "" {
+		ext = ".log"
+	}
+
+	for i := 0; i < 100; i++ {
+		suffix := ""
+		if i > 0 {
+			suffix = fmt.Sprintf("-%d", i)
+		}
+		path := fmt.Sprintf("%s-%s%s%s", base, t.Format("2006-01-02"), suffix, ext)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return path
+		}
+	}
+	return fmt.Sprintf("%s-%s-99%s", base, t.Format("2006-01-02"), ext)
+}
+
+func (rl *RotatingLogger) compressOldLogs() error {
+	dir := filepath.Dir(rl.basePath)
+	baseName := filepath.Base(rl.basePath)
+	baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	var logFiles []string
+	for _, file := range files {
+		name := file.Name()
+		if strings.HasPrefix(name, baseName) && strings.HasSuffix(name, ".log") {
+			logFiles = append(logFiles, filepath.Join(dir, name))
+		}
+	}
+
+	if len(logFiles) <= maxBackups {
+		return nil
+	}
+
+	for i := 0; i < len(logFiles)-maxBackups; i++ {
+		if compressOld {
+			if err := compressFile(logFiles[i]); err != nil {
+				log.Printf("Failed to compress %s: %v", logFiles[i], err)
+			}
+		} else {
+			if err := os.Remove(logFiles[i]); err != nil {
+				log.Printf("Failed to remove %s: %v", logFiles[i], err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func compressFile(path string) error {
+	src, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dstPath := path + ".gz"
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	// Simple compression simulation
+	// In real implementation, use gzip.NewWriter(dst)
+	_, err = io.Copy(dst, src)
+	if err != nil {
+		os.Remove(dstPath)
+		return err
+	}
+
+	return os.Remove(path)
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.file != nil {
+		return rl.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("/var/log/myapp/application.log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	customLog := log.New(logger, "APP: ", log.LstdFlags)
+
+	for i := 0; i < 1000; i++ {
+		customLog.Printf("Log entry number %d with some sample data", i)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	fmt.Println("Log rotation example completed")
+}
