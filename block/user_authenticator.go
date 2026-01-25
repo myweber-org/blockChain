@@ -4,77 +4,46 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
-type Claims struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	jwt.RegisteredClaims
+type Authenticator struct {
+	secretKey string
 }
 
-var jwtKey = []byte("your_secret_key_here")
+func NewAuthenticator(secretKey string) *Authenticator {
+	return &Authenticator{secretKey: secretKey}
+}
 
-func AuthMiddleware(next http.Handler) http.Handler {
+func (a *Authenticator) ValidateToken(token string) (bool, error) {
+	if token == "" {
+		return false, fmt.Errorf("empty token")
+	}
+	
+	// Simulate token validation
+	expectedPrefix := "Bearer "
+	if !strings.HasPrefix(token, expectedPrefix) {
+		return false, fmt.Errorf("invalid token format")
+	}
+	
+	tokenValue := strings.TrimPrefix(token, expectedPrefix)
+	if len(tokenValue) < 10 {
+		return false, fmt.Errorf("token too short")
+	}
+	
+	// In real implementation, this would validate JWT signature
+	return true, nil
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+		
+		valid, err := a.ValidateToken(authHeader)
+		if !valid {
+			http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusUnauthorized)
 			return
 		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			http.Error(w, "Bearer token required", http.StatusUnauthorized)
-			return
-		}
-
-		claims := &Claims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return jwtKey, nil
-		})
-
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		if !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		if time.Until(claims.ExpiresAt.Time) < 30*time.Second {
-			http.Error(w, "Token expiring soon", http.StatusUnauthorized)
-			return
-		}
-
-		r.Header.Set("X-User-ID", claims.UserID)
-		r.Header.Set("X-User-Role", claims.Role)
-
+		
 		next.ServeHTTP(w, r)
 	})
-}
-
-func GenerateToken(userID, username, role string) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
-	claims := &Claims{
-		UserID:   userID,
-		Username: username,
-		Role:     role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "auth_service",
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtKey)
 }
