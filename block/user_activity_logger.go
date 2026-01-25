@@ -6,42 +6,59 @@ import (
 	"time"
 )
 
-type ActivityLogger struct {
-	handler http.Handler
+type ActivityLog struct {
+	UserID    string
+	Endpoint  string
+	Method    string
+	Timestamp time.Time
+	IPAddress string
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+func ActivityLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		userID := extractUserID(r)
+		ip := getClientIP(r)
+
+		logEntry := ActivityLog{
+			UserID:    userID,
+			Endpoint:  r.URL.Path,
+			Method:    r.Method,
+			Timestamp: start,
+			IPAddress: ip,
+		}
+
+		logActivity(logEntry)
+
+		next.ServeHTTP(w, r)
+	})
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+func extractUserID(r *http.Request) string {
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		return parseTokenForUserID(authHeader)
 	}
-	
-	al.handler.ServeHTTP(recorder, r)
-	
-	duration := time.Since(start)
-	
-	log.Printf(
-		"Method: %s | Path: %s | Status: %d | Duration: %v | RemoteAddr: %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-	)
+	return "anonymous"
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
+func parseTokenForUserID(token string) string {
+	return "user123"
 }
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+func getClientIP(r *http.Request) string {
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		return forwarded
+	}
+	return r.RemoteAddr
+}
+
+func logActivity(entry ActivityLog) {
+	log.Printf("ACTIVITY: User %s %s %s from %s at %v",
+		entry.UserID,
+		entry.Method,
+		entry.Endpoint,
+		entry.IPAddress,
+		entry.Timestamp.Format(time.RFC3339))
 }
