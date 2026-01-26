@@ -310,4 +310,124 @@ func main() {
 	}
 
 	fmt.Printf("Cleaned data saved to: %s\n", outputFile)
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type Record struct {
+	ID      int
+	Name    string
+	Value   float64
+	Active  bool
+}
+
+func parseCSVFile(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []Record
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %v", lineNumber, err)
+		}
+
+		if len(row) != 4 {
+			return nil, fmt.Errorf("line %d: expected 4 columns, got %d", lineNumber, len(row))
+		}
+
+		id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid ID: %v", lineNumber, err)
+		}
+
+		name := strings.TrimSpace(row[1])
+		if name == "" {
+			return nil, fmt.Errorf("line %d: name cannot be empty", lineNumber)
+		}
+
+		value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid value: %v", lineNumber, err)
+		}
+
+		active, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid active flag: %v", lineNumber, err)
+		}
+
+		records = append(records, Record{
+			ID:     id,
+			Name:   name,
+			Value:  value,
+			Active: active,
+		})
+	}
+
+	return records, nil
+}
+
+func filterActiveRecords(records []Record) []Record {
+	var active []Record
+	for _, r := range records {
+		if r.Active {
+			active = append(active, r)
+		}
+	}
+	return active
+}
+
+func calculateTotalValue(records []Record) float64 {
+	var total float64
+	for _, r := range records {
+		total += r.Value
+	}
+	return total
+}
+
+func generateReport(records []Record) {
+	active := filterActiveRecords(records)
+	total := calculateTotalValue(active)
+
+	fmt.Printf("Total Records: %d\n", len(records))
+	fmt.Printf("Active Records: %d\n", len(active))
+	fmt.Printf("Total Value of Active Records: %.2f\n", total)
+	fmt.Println("\nActive Record Details:")
+	for _, r := range active {
+		fmt.Printf("  ID: %d, Name: %s, Value: %.2f\n", r.ID, r.Name, r.Value)
+	}
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: data_processor <csv_file>")
+		os.Exit(1)
+	}
+
+	records, err := parseCSVFile(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		os.Exit(1)
+	}
+
+	generateReport(records)
 }
