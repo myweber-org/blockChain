@@ -1,10 +1,9 @@
+
 package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,80 +11,28 @@ import (
 )
 
 type FileProcessor struct {
-	workers   int
-	batchSize int
-	mu        sync.Mutex
-	wg        sync.WaitGroup
+	mu          sync.Mutex
+	processed   int
+	errors      int
+	filePattern string
 }
 
-func NewFileProcessor(workers, batchSize int) *FileProcessor {
-	if workers < 1 {
-		workers = 1
-	}
-	if batchSize < 1 {
-		batchSize = 10
-	}
+func NewFileProcessor(pattern string) *FileProcessor {
 	return &FileProcessor{
-		workers:   workers,
-		batchSize: batchSize,
+		filePattern: pattern,
 	}
 }
 
-func (fp *FileProcessor) ProcessDirectory(dirPath string, processor func(string) error) error {
-	files, err := os.ReadDir(dirPath)
+func (fp *FileProcessor) ProcessFile(path string, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("read directory failed: %w", err)
-	}
-
-	fileChan := make(chan string, fp.batchSize)
-	errChan := make(chan error, fp.workers)
-
-	for i := 0; i < fp.workers; i++ {
-		fp.wg.Add(1)
-		go fp.worker(fileChan, errChan, processor)
-	}
-
-	go func() {
-		for _, file := range files {
-			if !file.IsDir() {
-				fullPath := filepath.Join(dirPath, file.Name())
-				fileChan <- fullPath
-			}
-		}
-		close(fileChan)
-	}()
-
-	go func() {
-		fp.wg.Wait()
-		close(errChan)
-	}()
-
-	var processErrors []error
-	for err := range errChan {
-		if err != nil {
-			processErrors = append(processErrors, err)
-		}
-	}
-
-	if len(processErrors) > 0 {
-		return fmt.Errorf("processing completed with %d errors", len(processErrors))
-	}
-	return nil
-}
-
-func (fp *FileProcessor) worker(files <-chan string, errChan chan<- error, processor func(string) error) {
-	defer fp.wg.Done()
-	for file := range files {
-		if err := processor(file); err != nil {
-			errChan <- fmt.Errorf("process %s: %w", file, err)
-		}
-	}
-}
-
-func CountLines(filePath string) (int, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("open file: %w", err)
+		fp.mu.Lock()
+		fp.errors++
+		fp.mu.Unlock()
+		fmt.Printf("Error opening file %s: %v\n", path, err)
+		return
 	}
 	defer file.Close()
 
@@ -96,73 +43,59 @@ func CountLines(filePath string) (int, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return 0, fmt.Errorf("scan file: %w", err)
+		fp.mu.Lock()
+		fp.errors++
+		fp.mu.Unlock()
+		fmt.Printf("Error scanning file %s: %v\n", path, err)
+		return
 	}
-	return lineCount, nil
+
+	fp.mu.Lock()
+	fp.processed++
+	fp.mu.Unlock()
+
+	fmt.Printf("Processed %s: %d lines\n", path, lineCount)
 }
 
-func ValidateFileExtension(filePath string, allowedExts []string) error {
-	ext := filepath.Ext(filePath)
-	for _, allowed := range allowedExts {
-		if ext == allowed {
-			return nil
-		}
-	}
-	return errors.New("unsupported file extension")
-}
-
-func CreateBackup(originalPath string) (string, error) {
-	backupPath := originalPath + ".bak_" + time.Now().Format("20060102_150405")
-	
-	src, err := os.Open(originalPath)
+func (fp *FileProcessor) FindAndProcess() error {
+	matches, err := filepath.Glob(fp.filePattern)
 	if err != nil {
-		return "", fmt.Errorf("open source: %w", err)
-	}
-	defer src.Close()
-
-	dst, err := os.Create(backupPath)
-	if err != nil {
-		return "", fmt.Errorf("create backup: %w", err)
-	}
-	defer dst.Close()
-
-	_, err = io.Copy(dst, src)
-	if err != nil {
-		return "", fmt.Errorf("copy data: %w", err)
+		return fmt.Errorf("pattern matching error: %v", err)
 	}
 
-	return backupPath, nil
+	if len(matches) == 0 {
+		return fmt.Errorf("no files found matching pattern: %s", fp.filePattern)
+	}
+
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	for _, match := range matches {
+		wg.Add(1)
+		go fp.ProcessFile(match, &wg)
+	}
+
+	wg.Wait()
+
+	duration := time.Since(startTime)
+	fmt.Printf("\nProcessing complete:\n")
+	fmt.Printf("Files processed: %d\n", fp.processed)
+	fmt.Printf("Errors encountered: %d\n", fp.errors)
+	fmt.Printf("Total time: %v\n", duration)
+
+	return nil
 }
 
 func main() {
-	processor := NewFileProcessor(4, 20)
-	
-	dir := "./testfiles"
-	err := processor.ProcessDirectory(dir, func(filePath string) error {
-		lines, err := CountLines(filePath)
-		if err != nil {
-			return err
-		}
-		
-		exts := []string{".txt", ".go", ".md"}
-		if err := ValidateFileExtension(filePath, exts); err != nil {
-			return err
-		}
-		
-		backupPath, err := CreateBackup(filePath)
-		if err != nil {
-			return err
-		}
-		
-		fmt.Printf("Processed: %s (lines: %d, backup: %s)\n", 
-			filepath.Base(filePath), lines, filepath.Base(backupPath))
-		return nil
-	})
-	
-	if err != nil {
-		fmt.Printf("Processing error: %v\n", err)
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_processor <file_pattern>")
+		fmt.Println("Example: file_processor *.txt")
 		os.Exit(1)
 	}
-	
-	fmt.Println("All files processed successfully")
+
+	processor := NewFileProcessor(os.Args[1])
+	if err := processor.FindAndProcess(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 }
