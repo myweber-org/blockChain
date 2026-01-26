@@ -124,3 +124,31 @@ func main() {
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
 }
+package main
+
+import (
+	"fmt"
+	"sort"
+)
+
+func CleanData(data []string) []string {
+	seen := make(map[string]struct{})
+	unique := []string{}
+
+	for _, item := range data {
+		if _, exists := seen[item]; !exists {
+			seen[item] = struct{}{}
+			unique = append(unique, item)
+		}
+	}
+
+	sort.Strings(unique)
+	return unique
+}
+
+func main() {
+	sample := []string{"zebra", "apple", "banana", "apple", "cherry", "banana"}
+	cleaned := CleanData(sample)
+	fmt.Println("Original:", sample)
+	fmt.Println("Cleaned:", cleaned)
+}
