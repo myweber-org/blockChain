@@ -173,4 +173,141 @@ func ProcessUserInput(email, username string, age int) (UserData, error) {
 	}
 	
 	return normalizedData, nil
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+type CSVProcessor struct {
+	FilePath string
+	Headers  []string
+	Data     [][]string
+}
+
+func NewCSVProcessor(filePath string) *CSVProcessor {
+	return &CSVProcessor{
+		FilePath: filePath,
+	}
+}
+
+func (cp *CSVProcessor) Load() error {
+	file, err := os.Open(cp.FilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return fmt.Errorf("failed to read CSV: %w", err)
+	}
+
+	if len(records) < 1 {
+		return fmt.Errorf("empty CSV file")
+	}
+
+	cp.Headers = records[0]
+	cp.Data = records[1:]
+	return nil
+}
+
+func (cp *CSVProcessor) Validate() []string {
+	var errors []string
+	for i, row := range cp.Data {
+		if len(row) != len(cp.Headers) {
+			errors = append(errors, fmt.Sprintf("row %d: column count mismatch", i+1))
+		}
+		for j, cell := range row {
+			if strings.TrimSpace(cell) == "" {
+				errors = append(errors, fmt.Sprintf("row %d, column %d: empty value", i+1, j+1))
+			}
+		}
+	}
+	return errors
+}
+
+func (cp *CSVProcessor) Clean() {
+	var cleanedData [][]string
+	for _, row := range cp.Data {
+		cleanedRow := make([]string, len(row))
+		for j, cell := range row {
+			cleanedRow[j] = strings.TrimSpace(cell)
+		}
+		cleanedData = append(cleanedData, cleanedRow)
+	}
+	cp.Data = cleanedData
+}
+
+func (cp *CSVProcessor) Save(outputPath string) error {
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	if err := writer.Write(cp.Headers); err != nil {
+		return fmt.Errorf("failed to write headers: %w", err)
+	}
+
+	for _, row := range cp.Data {
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write row: %w", err)
+		}
+	}
+	return nil
+}
+
+func (cp *CSVProcessor) PrintSummary() {
+	fmt.Printf("File: %s\n", cp.FilePath)
+	fmt.Printf("Headers: %d\n", len(cp.Headers))
+	fmt.Printf("Data rows: %d\n", len(cp.Data))
+	fmt.Printf("Total columns: %d\n", len(cp.Headers))
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: data_processor <input.csv> [output.csv]")
+		os.Exit(1)
+	}
+
+	inputFile := os.Args[1]
+	outputFile := "cleaned_" + inputFile
+	if len(os.Args) > 2 {
+		outputFile = os.Args[2]
+	}
+
+	processor := NewCSVProcessor(inputFile)
+	if err := processor.Load(); err != nil {
+		fmt.Printf("Error loading file: %v\n", err)
+		os.Exit(1)
+	}
+
+	processor.PrintSummary()
+
+	validationErrors := processor.Validate()
+	if len(validationErrors) > 0 {
+		fmt.Println("Validation errors found:")
+		for _, err := range validationErrors {
+			fmt.Printf("  - %s\n", err)
+		}
+	} else {
+		fmt.Println("No validation errors found")
+	}
+
+	processor.Clean()
+	if err := processor.Save(outputFile); err != nil {
+		fmt.Printf("Error saving file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Cleaned data saved to: %s\n", outputFile)
 }
