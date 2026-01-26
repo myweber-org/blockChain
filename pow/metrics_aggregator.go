@@ -114,3 +114,128 @@ func main() {
 		fmt.Printf("%s: %.2f\n", k, v)
 	}
 }
+package main
+
+import (
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+)
+
+type Metric struct {
+	Timestamp time.Time
+	Value     float64
+}
+
+type Aggregator struct {
+	mu           sync.RWMutex
+	windowSize   time.Duration
+	metrics      []Metric
+	percentiles  []float64
+}
+
+func NewAggregator(windowSize time.Duration, percentiles []float64) *Aggregator {
+	return &Aggregator{
+		windowSize:  windowSize,
+		percentiles: percentiles,
+		metrics:     make([]Metric, 0),
+	}
+}
+
+func (a *Aggregator) AddMetric(value float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	now := time.Now()
+	a.metrics = append(a.metrics, Metric{Timestamp: now, Value: value})
+	a.cleanupOldMetrics(now)
+}
+
+func (a *Aggregator) cleanupOldMetrics(currentTime time.Time) {
+	cutoff := currentTime.Add(-a.windowSize)
+	i := 0
+	for i < len(a.metrics) && a.metrics[i].Timestamp.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		a.metrics = a.metrics[i:]
+	}
+}
+
+func (a *Aggregator) GetStats() map[string]float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if len(a.metrics) == 0 {
+		return make(map[string]float64)
+	}
+
+	values := make([]float64, len(a.metrics))
+	for i, m := range a.metrics {
+		values[i] = m.Value
+	}
+
+	stats := make(map[string]float64)
+	stats["count"] = float64(len(values))
+	stats["min"], stats["max"], stats["avg"] = calculateBasicStats(values)
+
+	sort.Float64s(values)
+	for _, p := range a.percentiles {
+		key := fmt.Sprintf("p%.0f", p*100)
+		stats[key] = calculatePercentile(values, p)
+	}
+
+	return stats
+}
+
+func calculateBasicStats(values []float64) (min, max, avg float64) {
+	if len(values) == 0 {
+		return 0, 0, 0
+	}
+	min = values[0]
+	max = values[0]
+	sum := 0.0
+
+	for _, v := range values {
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+		sum += v
+	}
+	avg = sum / float64(len(values))
+	return min, max, avg
+}
+
+func calculatePercentile(sortedValues []float64, percentile float64) float64 {
+	if len(sortedValues) == 0 {
+		return 0
+	}
+	index := percentile * float64(len(sortedValues)-1)
+	lower := int(index)
+	upper := lower + 1
+
+	if upper >= len(sortedValues) {
+		return sortedValues[lower]
+	}
+
+	weight := index - float64(lower)
+	return sortedValues[lower]*(1-weight) + sortedValues[upper]*weight
+}
+
+func main() {
+	agg := NewAggregator(5*time.Minute, []float64{0.5, 0.95, 0.99})
+
+	for i := 0; i < 100; i++ {
+		agg.AddMetric(float64(i) * 1.5)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	stats := agg.GetStats()
+	for k, v := range stats {
+		fmt.Printf("%s: %.2f\n", k, v)
+	}
+}
