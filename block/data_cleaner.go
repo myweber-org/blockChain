@@ -1,23 +1,23 @@
-package main
+package utils
 
-import "fmt"
+import (
+	"regexp"
+	"strings"
+)
 
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]bool)
-	result := []string{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	return result
+func SanitizeInput(input string) string {
+	// Trim leading and trailing whitespace
+	trimmed := strings.TrimSpace(input)
+	
+	// Replace multiple spaces with a single space
+	re := regexp.MustCompile(`\s+`)
+	cleaned := re.ReplaceAllString(trimmed, " ")
+	
+	return cleaned
 }
 
-func main() {
-	data := []string{"apple", "banana", "apple", "orange", "banana", "grape"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
+func ValidateEmail(email string) bool {
+	// Simple email validation regex
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
 }
