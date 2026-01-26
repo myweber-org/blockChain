@@ -798,3 +798,133 @@ func main() {
         time.Sleep(10 * time.Millisecond)
     }
 }
+package main
+
+import (
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
+)
+
+const maxFileSize = 1024 * 1024 * 10 // 10MB
+const maxBackupFiles = 5
+
+type RotatingLogger struct {
+	mu       sync.Mutex
+	file     *os.File
+	filePath string
+	fileSize int64
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+	rl := &RotatingLogger{
+		filePath: path,
+	}
+
+	if err := rl.openFile(); err != nil {
+		return nil, err
+	}
+
+	return rl, nil
+}
+
+func (rl *RotatingLogger) openFile() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.file != nil {
+		rl.file.Close()
+	}
+
+	file, err := os.OpenFile(rl.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+
+	rl.file = file
+	rl.fileSize = info.Size()
+
+	return nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.fileSize+int64(len(p)) > maxFileSize {
+		if err := rl.rotate(); err != nil {
+			log.Printf("Failed to rotate log file: %v", err)
+		}
+	}
+
+	n, err := rl.file.Write(p)
+	if err == nil {
+		rl.fileSize += int64(n)
+	}
+
+	return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+	if err := rl.file.Close(); err != nil {
+		return err
+	}
+
+	for i := maxBackupFiles - 1; i >= 0; i-- {
+		oldPath := rl.backupFilePath(i)
+		newPath := rl.backupFilePath(i + 1)
+
+		if _, err := os.Stat(oldPath); err == nil {
+			if err := os.Rename(oldPath, newPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := os.Rename(rl.filePath, rl.backupFilePath(0)); err != nil {
+		return err
+	}
+
+	return rl.openFile()
+}
+
+func (rl *RotatingLogger) backupFilePath(index int) string {
+	if index == 0 {
+		return rl.filePath + ".1"
+	}
+	return rl.filePath + "." + strconv.Itoa(index+1)
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.file != nil {
+		return rl.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("app.log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	log.SetOutput(logger)
+
+	for i := 0; i < 1000; i++ {
+		log.Printf("Log entry %d at %s", i, time.Now().Format(time.RFC3339))
+		time.Sleep(10 * time.Millisecond)
+	}
+}
