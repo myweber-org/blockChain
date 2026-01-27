@@ -1,10 +1,10 @@
-package auth
+package main
 
 import (
-    "errors"
+    "fmt"
     "time"
 
-    "github.com/golang-jwt/jwt/v5"
+    "github.com/golang-jwt/jwt/v4"
 )
 
 type Claims struct {
@@ -13,7 +13,7 @@ type Claims struct {
     jwt.RegisteredClaims
 }
 
-var jwtKey = []byte("your_secret_key_here")
+var jwtKey = []byte("my_secret_key")
 
 func GenerateToken(username string, userID int) (string, error) {
     expirationTime := time.Now().Add(24 * time.Hour)
@@ -42,8 +42,26 @@ func ValidateToken(tokenString string) (*Claims, error) {
     }
 
     if !token.Valid {
-        return nil, errors.New("invalid token")
+        return nil, fmt.Errorf("invalid token")
     }
 
     return claims, nil
+}
+
+func main() {
+    token, err := GenerateToken("john_doe", 123)
+    if err != nil {
+        fmt.Println("Error generating token:", err)
+        return
+    }
+
+    fmt.Println("Generated token:", token)
+
+    claims, err := ValidateToken(token)
+    if err != nil {
+        fmt.Println("Error validating token:", err)
+        return
+    }
+
+    fmt.Printf("Valid token for user: %s (ID: %d)\n", claims.Username, claims.UserID)
 }
