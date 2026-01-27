@@ -544,4 +544,54 @@ func ValidateRecords(records []Record) error {
     }
 
     return nil
+}package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataProcessor struct {
+	allowedPattern *regexp.Regexp
+}
+
+func NewDataProcessor() *DataProcessor {
+	pattern := regexp.MustCompile(`^[a-zA-Z0-9_\-@. ]+$`)
+	return &DataProcessor{allowedPattern: pattern}
+}
+
+func (dp *DataProcessor) SanitizeInput(input string) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", false
+	}
+
+	if !dp.allowedPattern.MatchString(trimmed) {
+		return "", false
+	}
+
+	return trimmed, true
+}
+
+func (dp *DataProcessor) ValidateEmail(email string) bool {
+	emailPattern := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailPattern.MatchString(email)
+}
+
+func (dp *DataProcessor) ProcessUserData(name, email string) (map[string]string, bool) {
+	sanitizedName, ok := dp.SanitizeInput(name)
+	if !ok {
+		return nil, false
+	}
+
+	if !dp.ValidateEmail(email) {
+		return nil, false
+	}
+
+	result := map[string]string{
+		"name":  sanitizedName,
+		"email": strings.ToLower(email),
+	}
+
+	return result, true
 }
