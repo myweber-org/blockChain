@@ -18,9 +18,9 @@ var (
         []string{"method", "path", "status"},
     )
 
-    httpRequestTotal = prometheus.NewCounterVec(
+    httpRequestCount = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "http_requests_total",
+            Name: "http_request_total",
             Help: "Total number of HTTP requests",
         },
         []string{"method", "path", "status"},
@@ -29,19 +29,21 @@ var (
 
 func init() {
     prometheus.MustRegister(httpRequestDuration)
-    prometheus.MustRegister(httpRequestTotal)
+    prometheus.MustRegister(httpRequestCount)
 }
 
 func metricsMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         start := time.Now()
         rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-        defer func() {
-            duration := time.Since(start).Seconds()
-            httpRequestDuration.WithLabelValues(r.Method, r.URL.Path, http.StatusText(rw.statusCode)).Observe(duration)
-            httpRequestTotal.WithLabelValues(r.Method, r.URL.Path, http.StatusText(rw.statusCode)).Inc()
-        }()
+        
         next.ServeHTTP(rw, r)
+        
+        duration := time.Since(start).Seconds()
+        status := http.StatusText(rw.statusCode)
+        
+        httpRequestDuration.WithLabelValues(r.Method, r.URL.Path, status).Observe(duration)
+        httpRequestCount.WithLabelValues(r.Method, r.URL.Path, status).Inc()
     })
 }
 
@@ -58,11 +60,12 @@ func (rw *responseWriter) WriteHeader(code int) {
 func main() {
     mux := http.NewServeMux()
     mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        w.WriteHeader(http.StatusOK)
         w.Write([]byte("Hello, World!"))
     })
+    
     mux.Handle("/metrics", promhttp.Handler())
-
-    wrappedMux := metricsMiddleware(mux)
-    http.ListenAndServe(":8080", wrappedMux)
+    
+    handler := metricsMiddleware(mux)
+    
+    http.ListenAndServe(":8080", handler)
 }
