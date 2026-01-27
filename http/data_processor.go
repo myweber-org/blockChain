@@ -80,4 +80,67 @@ func CalculateTotal(records []DataRecord) float64 {
         total += record.Value
     }
     return total
+}package main
+
+import (
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+type UserData struct {
+	Username string
+	Email    string
+	Age      int
+}
+
+func NormalizeUsername(username string) string {
+	return strings.TrimSpace(username)
+}
+
+func ValidateEmail(email string) bool {
+	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+		return false
+	}
+	return len(email) > 5
+}
+
+func ValidateAge(age int) bool {
+	return age >= 0 && age <= 120
+}
+
+func ProcessUserInput(username, email string, age int) (*UserData, error) {
+	normalizedUsername := NormalizeUsername(username)
+	if normalizedUsername == "" {
+		return nil, fmt.Errorf("username cannot be empty")
+	}
+
+	for _, r := range normalizedUsername {
+		if !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_' && r != '-' {
+			return nil, fmt.Errorf("username contains invalid characters")
+		}
+	}
+
+	if !ValidateEmail(email) {
+		return nil, fmt.Errorf("invalid email format")
+	}
+
+	if !ValidateAge(age) {
+		return nil, fmt.Errorf("age must be between 0 and 120")
+	}
+
+	return &UserData{
+		Username: normalizedUsername,
+		Email:    strings.ToLower(email),
+		Age:      age,
+	}, nil
+}
+
+func main() {
+	user, err := ProcessUserInput("  john_doe123  ", "John@Example.COM", 30)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Printf("Processed user: %+v\n", user)
 }
