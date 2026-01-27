@@ -10,14 +10,16 @@ import (
 
 type contextKey string
 
-const UserIDKey contextKey = "userID"
+const (
+	userIDKey contextKey = "userID"
+)
 
 type Claims struct {
-	UserID string `json:"userID"`
+	UserID string `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
-func Authenticate(secretKey []byte) func(http.Handler) http.Handler {
+func Authenticate(secretKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -28,7 +30,7 @@ func Authenticate(secretKey []byte) func(http.Handler) http.Handler {
 
 			parts := strings.Split(authHeader, " ")
 			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
+				http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
 				return
 			}
 
@@ -36,7 +38,7 @@ func Authenticate(secretKey []byte) func(http.Handler) http.Handler {
 			claims := &Claims{}
 
 			token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-				return secretKey, nil
+				return []byte(secretKey), nil
 			})
 
 			if err != nil || !token.Valid {
@@ -44,8 +46,13 @@ func Authenticate(secretKey []byte) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+			ctx := context.WithValue(r.Context(), userIDKey, claims.UserID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
 }
