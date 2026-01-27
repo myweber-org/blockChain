@@ -202,3 +202,54 @@ func main() {
 	fmt.Println("Original:", strings)
 	fmt.Println("Unique:", uniqueStrings)
 }
+package main
+
+import (
+	"crypto/md5"
+	"fmt"
+	"sort"
+)
+
+type Record struct {
+	ID   int
+	Data string
+}
+
+func deduplicateRecords(records []Record) []Record {
+	seen := make(map[string]bool)
+	var unique []Record
+
+	for _, rec := range records {
+		hash := fmt.Sprintf("%x", md5.Sum([]byte(rec.Data)))
+		if !seen[hash] {
+			seen[hash] = true
+			unique = append(unique, rec)
+		}
+	}
+	return unique
+}
+
+func validateRecords(records []Record) []Record {
+	var valid []Record
+	for _, rec := range records {
+		if rec.ID > 0 && rec.Data != "" {
+			valid = append(valid, rec)
+		}
+	}
+	return valid
+}
+
+func sortRecordsByID(records []Record) []Record {
+	sorted := make([]Record, len(records))
+	copy(sorted, records)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].ID < sorted[j].ID
+	})
+	return sorted
+}
+
+func processDataPipeline(input []Record) []Record {
+	validated := validateRecords(input)
+	deduped := deduplicateRecords(validated)
+	return sortRecordsByID(deduped)
+}
