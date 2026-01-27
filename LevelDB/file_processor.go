@@ -1,62 +1,88 @@
+
 package main
 
 import (
-	"encoding/json"
+	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
+	"path/filepath"
+	"sync"
 )
 
-type Config struct {
-	Server   string `json:"server"`
-	Port     int    `json:"port"`
-	LogLevel string `json:"log_level"`
+type FileProcessor struct {
+	mu       sync.Mutex
+	results  []string
+	wg       sync.WaitGroup
 }
 
-func loadConfig(filename string) (*Config, error) {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+func NewFileProcessor() *FileProcessor {
+	return &FileProcessor{
+		results: make([]string, 0),
 	}
-
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	return &config, nil
 }
 
-func saveConfig(filename string, config *Config) error {
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := ioutil.WriteFile(filename, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
+func (fp *FileProcessor) ProcessFile(path string) error {
+	fp.wg.Add(1)
+	
+	go func() {
+		defer fp.wg.Done()
+		
+		file, err := os.Open(path)
+		if err != nil {
+			fmt.Printf("Error opening file %s: %v\n", path, err)
+			return
+		}
+		defer file.Close()
+		
+		scanner := bufio.NewScanner(file)
+		lineCount := 0
+		
+		for scanner.Scan() {
+			lineCount++
+		}
+		
+		if err := scanner.Err(); err != nil {
+			fmt.Printf("Error scanning file %s: %v\n", path, err)
+			return
+		}
+		
+		result := fmt.Sprintf("File: %s, Lines: %d", filepath.Base(path), lineCount)
+		
+		fp.mu.Lock()
+		fp.results = append(fp.results, result)
+		fp.mu.Unlock()
+	}()
+	
 	return nil
 }
 
+func (fp *FileProcessor) Wait() {
+	fp.wg.Wait()
+}
+
+func (fp *FileProcessor) GetResults() []string {
+	return fp.results
+}
+
 func main() {
-	config := &Config{
-		Server:   "localhost",
-		Port:     8080,
-		LogLevel: "info",
-	}
-
-	if err := saveConfig("config.json", config); err != nil {
-		fmt.Printf("Error saving config: %v\n", err)
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_processor <file1> <file2> ...")
 		os.Exit(1)
 	}
-
-	loadedConfig, err := loadConfig("config.json")
-	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
-		os.Exit(1)
+	
+	processor := NewFileProcessor()
+	
+	for _, filePath := range os.Args[1:] {
+		if err := processor.ProcessFile(filePath); err != nil {
+			fmt.Printf("Failed to process %s: %v\n", filePath, err)
+		}
 	}
-
-	fmt.Printf("Loaded config: %+v\n", loadedConfig)
+	
+	processor.Wait()
+	
+	results := processor.GetResults()
+	fmt.Println("Processing complete:")
+	for _, result := range results {
+		fmt.Println(result)
+	}
 }
