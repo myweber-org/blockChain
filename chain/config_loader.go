@@ -1,136 +1,48 @@
 package config
 
 import (
-    "io"
-    "os"
-
-    "gopkg.in/yaml.v3"
-)
-
-type Config struct {
-    Server struct {
-        Host string `yaml:"host"`
-        Port int    `yaml:"port"`
-    } `yaml:"server"`
-    Database struct {
-        Driver   string `yaml:"driver"`
-        Host     string `yaml:"host"`
-        Username string `yaml:"username"`
-        Password string `yaml:"password"`
-    } `yaml:"database"`
-}
-
-func LoadConfig(path string) (*Config, error) {
-    file, err := os.Open(path)
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
-
-    data, err := io.ReadAll(file)
-    if err != nil {
-        return nil, err
-    }
-
-    var cfg Config
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, err
-    }
-
-    return &cfg, nil
-}package config
-
-import (
-	"errors"
+	"encoding/json"
 	"os"
-	"strconv"
-	"strings"
+	"path/filepath"
 )
 
 type Config struct {
-	ServerPort int
-	DBHost     string
-	DBPort     int
-	DebugMode  bool
-	APIKeys    []string
+	ServerPort string `json:"server_port"`
+	DBHost     string `json:"db_host"`
+	DBPort     int    `json:"db_port"`
+	DebugMode  bool   `json:"debug_mode"`
 }
 
-func LoadConfig() (*Config, error) {
-	cfg := &Config{}
-
-	port, err := getIntEnv("SERVER_PORT", 8080)
+func LoadConfig(configPath string) (*Config, error) {
+	absPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return nil, err
 	}
-	cfg.ServerPort = port
 
-	cfg.DBHost = getStringEnv("DB_HOST", "localhost")
-
-	dbPort, err := getIntEnv("DB_PORT", 5432)
+	file, err := os.Open(absPath)
 	if err != nil {
 		return nil, err
 	}
-	cfg.DBPort = dbPort
+	defer file.Close()
 
-	debug, err := getBoolEnv("DEBUG_MODE")
-	if err != nil {
-		return nil, err
-	}
-	cfg.DebugMode = debug
-
-	apiKeys := getStringEnv("API_KEYS", "")
-	if apiKeys != "" {
-		cfg.APIKeys = strings.Split(apiKeys, ",")
-	}
-
-	if err := validateConfig(cfg); err != nil {
+	var config Config
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
 		return nil, err
 	}
 
-	return cfg, nil
+	config.applyEnvOverrides()
+	return &config, nil
 }
 
-func getStringEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func (c *Config) applyEnvOverrides() {
+	if port := os.Getenv("SERVER_PORT"); port != "" {
+		c.ServerPort = port
 	}
-	return defaultValue
-}
-
-func getIntEnv(key string, defaultValue int) (int, error) {
-	if value := os.Getenv(key); value != "" {
-		intValue, err := strconv.Atoi(value)
-		if err != nil {
-			return 0, errors.New("invalid integer value for " + key)
-		}
-		return intValue, nil
+	if host := os.Getenv("DB_HOST"); host != "" {
+		c.DBHost = host
 	}
-	return defaultValue, nil
-}
-
-func getBoolEnv(key string) (bool, error) {
-	if value := os.Getenv(key); value != "" {
-		boolValue, err := strconv.ParseBool(value)
-		if err != nil {
-			return false, errors.New("invalid boolean value for " + key)
-		}
-		return boolValue, nil
+	if debug := os.Getenv("DEBUG_MODE"); debug == "true" {
+		c.DebugMode = true
 	}
-	return false, nil
-}
-
-func validateConfig(cfg *Config) error {
-	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
-		return errors.New("server port must be between 1 and 65535")
-	}
-
-	if cfg.DBPort < 1 || cfg.DBPort > 65535 {
-		return errors.New("database port must be between 1 and 65535")
-	}
-
-	if cfg.DBHost == "" {
-		return errors.New("database host cannot be empty")
-	}
-
-	return nil
 }
