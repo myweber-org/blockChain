@@ -1,110 +1,62 @@
+
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
-	"time"
 )
 
-const retentionDays = 7
-
-func main() {
-	tempDir := os.TempDir()
-	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
-
-	err := filepath.WalkDir(tempDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-
-		if info.ModTime().Before(cutoffTime) {
-			fmt.Printf("Removing old file: %s\n", path)
-			os.Remove(path)
-		}
-
-		return nil
-	})
-
+func removeDuplicates(inputFile, outputFile string) error {
+	file, err := os.Open(inputFile)
 	if err != nil {
-		fmt.Printf("Error cleaning temp directory: %v\n", err)
+		return err
 	}
-}package main
+	defer file.Close()
 
-import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"time"
-)
+	seen := make(map[string]bool)
+	var uniqueLines []string
 
-const (
-	tempDir      = "/tmp/myapp"
-	maxAgeHours  = 168 // 7 days
-)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !seen[line] {
+			seen[line] = true
+			uniqueLines = append(uniqueLines, line)
+		}
+	}
 
-func main() {
-	files, err := ioutil.ReadDir(tempDir)
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	out, err := os.Create(outputFile)
 	if err != nil {
-		fmt.Printf("Error reading directory: %v\n", err)
-		return
+		return err
 	}
+	defer out.Close()
 
-	now := time.Now()
-	removedCount := 0
-
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-
-		fileAge := now.Sub(file.ModTime())
-		if fileAge.Hours() > maxAgeHours {
-			filePath := filepath.Join(tempDir, file.Name())
-			err := os.Remove(filePath)
-			if err != nil {
-				fmt.Printf("Failed to remove %s: %v\n", file.Name(), err)
-			} else {
-				removedCount++
-				fmt.Printf("Removed old file: %s\n", file.Name())
-			}
-		}
+	writer := bufio.NewWriter(out)
+	for _, line := range uniqueLines {
+		fmt.Fprintln(writer, line)
 	}
-
-	fmt.Printf("Cleanup completed. Removed %d files.\n", removedCount)
-}package main
-
-import (
-    "os"
-    "path/filepath"
-    "time"
-)
+	return writer.Flush()
+}
 
 func main() {
-    tempDir := os.TempDir()
-    cutoff := time.Now().AddDate(0, 0, -7)
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: go run file_cleaner.go <input_file> <output_file>")
+		os.Exit(1)
+	}
 
-    filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            return nil
-        }
-        if info.IsDir() {
-            return nil
-        }
-        if info.ModTime().Before(cutoff) {
-            os.Remove(path)
-        }
-        return nil
-    })
+	inputFile := os.Args[1]
+	outputFile := os.Args[2]
+
+	err := removeDuplicates(inputFile, outputFile)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Successfully removed duplicates. Output written to %s\n", outputFile)
 }
