@@ -389,4 +389,32 @@ func main() {
             fmt.Printf("Record %d invalid: %v\n", record.ID, err)
         }
     }
+}package data
+
+import (
+	"regexp"
+	"strings"
+)
+
+var (
+	alphaNumericRegex = regexp.MustCompile(`^[a-zA-Z0-9\s\-_]+$`)
+	whitespaceRegex   = regexp.MustCompile(`\s+`)
+)
+
+func SanitizeInput(input string, maxLength int) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", false
+	}
+
+	if len(trimmed) > maxLength {
+		trimmed = trimmed[:maxLength]
+	}
+
+	if !alphaNumericRegex.MatchString(trimmed) {
+		return "", false
+	}
+
+	sanitized := whitespaceRegex.ReplaceAllString(trimmed, " ")
+	return sanitized, true
 }
