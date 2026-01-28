@@ -1,29 +1,56 @@
 package main
 
 import (
-	"context"
-	"log"
-	"time"
+    "context"
+    "log"
+    "time"
 
-	"yourproject/internal/database"
+    "github.com/redis/go-redis/v9"
 )
 
+var ctx = context.Background()
+var rdb *redis.Client
+
+func initRedis() {
+    rdb = redis.NewClient(&redis.Options{
+        Addr:     "localhost:6379",
+        Password: "",
+        DB:       0,
+    })
+}
+
+func cleanupExpiredSessions() {
+    now := time.Now().Unix()
+    cursor := uint64(0)
+    pattern := "session:*"
+
+    for {
+        var keys []string
+        var err error
+        keys, cursor, err = rdb.Scan(ctx, cursor, pattern, 100).Result()
+        if err != nil {
+            log.Printf("Error scanning keys: %v", err)
+            return
+        }
+
+        for _, key := range keys {
+            exp, err := rdb.Get(ctx, key+"_expiry").Int64()
+            if err != nil {
+                continue
+            }
+            if exp < now {
+                rdb.Del(ctx, key, key+"_expiry")
+                log.Printf("Removed expired session: %s", key)
+            }
+        }
+
+        if cursor == 0 {
+            break
+        }
+    }
+}
+
 func main() {
-	db, err := database.NewConnection()
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	defer db.Close()
-
-	ctx := context.Background()
-	query := `DELETE FROM user_sessions WHERE expires_at < $1`
-
-	result, err := db.ExecContext(ctx, query, time.Now())
-	if err != nil {
-		log.Printf("Failed to clean up sessions: %v", err)
-		return
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	log.Printf("Cleaned up %d expired sessions", rowsAffected)
+    initRedis()
+    cleanupExpiredSessions()
 }
