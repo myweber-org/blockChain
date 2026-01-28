@@ -287,3 +287,87 @@ func main() {
 			r.ID, r.Name, r.Timestamp.Format("2006-01-02"), r.Value)
 	}
 }
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type DataRecord struct {
+	ID        string
+	Value     float64
+	Timestamp time.Time
+	Tags      []string
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("record ID cannot be empty")
+	}
+	if record.Value < 0 {
+		return errors.New("record value must be non-negative")
+	}
+	if record.Timestamp.IsZero() {
+		return errors.New("record timestamp must be set")
+	}
+	return nil
+}
+
+func TransformRecord(record DataRecord, multiplier float64) (DataRecord, error) {
+	if err := ValidateRecord(record); err != nil {
+		return DataRecord{}, err
+	}
+
+	transformed := DataRecord{
+		ID:        strings.ToUpper(record.ID),
+		Value:     record.Value * multiplier,
+		Timestamp: record.Timestamp,
+		Tags:      append([]string{}, record.Tags...),
+	}
+
+	transformed.Tags = append(transformed.Tags, fmt.Sprintf("processed_%d", time.Now().Unix()))
+	return transformed, nil
+}
+
+func ProcessBatch(records []DataRecord, multiplier float64) ([]DataRecord, error) {
+	var processed []DataRecord
+	var errors []string
+
+	for i, record := range records {
+		transformed, err := TransformRecord(record, multiplier)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("record %d: %v", i, err))
+			continue
+		}
+		processed = append(processed, transformed)
+	}
+
+	if len(errors) > 0 {
+		return processed, fmt.Errorf("processing completed with errors: %s", strings.Join(errors, "; "))
+	}
+	return processed, nil
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, error) {
+	if len(records) == 0 {
+		return 0, 0, errors.New("no records provided for statistics calculation")
+	}
+
+	var sum float64
+	for _, record := range records {
+		sum += record.Value
+	}
+	mean := sum / float64(len(records))
+
+	var varianceSum float64
+	for _, record := range records {
+		diff := record.Value - mean
+		varianceSum += diff * diff
+	}
+	variance := varianceSum / float64(len(records))
+
+	return mean, variance, nil
+}
