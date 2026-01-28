@@ -1,43 +1,95 @@
-
 package main
 
 import (
-	"regexp"
-	"strings"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
 )
 
-type DataProcessor struct {
-	emailRegex *regexp.Regexp
+type Record struct {
+	ID    int
+	Name  string
+	Value float64
 }
 
-func NewDataProcessor() *DataProcessor {
-	regex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	return &DataProcessor{emailRegex: regex}
-}
-
-func (dp *DataProcessor) CleanString(input string) string {
-	trimmed := strings.TrimSpace(input)
-	return strings.ToLower(trimmed)
-}
-
-func (dp *DataProcessor) ValidateEmail(email string) bool {
-	return dp.emailRegex.MatchString(email)
-}
-
-func (dp *DataProcessor) RemoveSpecialChars(input string) string {
-	reg := regexp.MustCompile(`[^a-zA-Z0-9\s]`)
-	return reg.ReplaceAllString(input, "")
-}
-
-func (dp *DataProcessor) ProcessUserData(name, email string) (string, string, bool) {
-	cleanName := dp.CleanString(name)
-	cleanEmail := dp.CleanString(email)
-	validEmail := dp.ValidateEmail(cleanEmail)
-	
-	if !validEmail {
-		return cleanName, cleanEmail, false
+func processCSV(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	
-	safeName := dp.RemoveSpecialChars(cleanName)
-	return safeName, cleanEmail, true
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []Record
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if len(row) != 3 {
+			return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", lineNumber, len(row))
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
+		}
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  row[1],
+			Value: value,
+		})
+	}
+
+	return records, nil
+}
+
+func validateRecords(records []Record) error {
+	seenIDs := make(map[int]bool)
+	for _, r := range records {
+		if r.ID <= 0 {
+			return fmt.Errorf("invalid record ID: %d", r.ID)
+		}
+		if seenIDs[r.ID] {
+			return fmt.Errorf("duplicate ID found: %d", r.ID)
+		}
+		seenIDs[r.ID] = true
+	}
+	return nil
+}
+
+func calculateStats(records []Record) (float64, float64) {
+	if len(records) == 0 {
+		return 0, 0
+	}
+
+	var sum float64
+	var max float64 = records[0].Value
+
+	for _, r := range records {
+		sum += r.Value
+		if r.Value > max {
+			max = r.Value
+		}
+	}
+
+	average := sum / float64(len(records))
+	return average, max
 }
