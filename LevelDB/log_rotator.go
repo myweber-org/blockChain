@@ -878,4 +878,97 @@ func main() {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+type RotatingWriter struct {
+	mu          sync.Mutex
+	currentFile *os.File
+	filePath    string
+	maxSize     int64
+	currentSize int64
+	fileIndex   int
+}
+
+func NewRotatingWriter(basePath string, maxSizeMB int) (*RotatingWriter, error) {
+	maxSize := int64(maxSizeMB) * 1024 * 1024
+	writer := &RotatingWriter{
+		filePath: basePath,
+		maxSize:  maxSize,
+		fileIndex: 0,
+	}
+	if err := writer.openFile(); err != nil {
+		return nil, err
+	}
+	return writer, nil
+}
+
+func (rw *RotatingWriter) openFile() error {
+	filename := rw.filePath
+	if rw.fileIndex > 0 {
+		filename = fmt.Sprintf("%s.%d", rw.filePath, rw.fileIndex)
+	}
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+	rw.currentFile = file
+	rw.currentSize = stat.Size()
+	return nil
+}
+
+func (rw *RotatingWriter) rotate() error {
+	rw.currentFile.Close()
+	rw.fileIndex++
+	return rw.openFile()
+}
+
+func (rw *RotatingWriter) Write(p []byte) (n int, err error) {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	if rw.currentSize+int64(len(p)) > rw.maxSize {
+		if err := rw.rotate(); err != nil {
+			return 0, err
+		}
+	}
+	n, err = rw.currentFile.Write(p)
+	if err == nil {
+		rw.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (rw *RotatingWriter) Close() error {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	return rw.currentFile.Close()
+}
+
+func main() {
+	writer, err := NewRotatingWriter("app.log", 10)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create writer: %v\n", err)
+		os.Exit(1)
+	}
+	defer writer.Close()
+	for i := 0; i < 1000; i++ {
+		line := fmt.Sprintf("Log entry %d: Some sample log data here.\n", i)
+		if _, err := writer.Write([]byte(line)); err != nil {
+			fmt.Fprintf(os.Stderr, "Write error: %v\n", err)
+			break
+		}
+	}
+	fmt.Println("Log rotation test completed.")
 }
