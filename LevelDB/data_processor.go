@@ -239,3 +239,51 @@ func main() {
 	fmt.Printf("Average value: %.2f\n", avg)
 	fmt.Printf("Maximum value: %.2f\n", max)
 }
+package main
+
+import (
+	"fmt"
+	"sort"
+	"time"
+)
+
+type Record struct {
+	ID        int
+	Name      string
+	Timestamp time.Time
+	Value     float64
+}
+
+func filterAndSortByDate(records []Record, startDate, endDate time.Time) []Record {
+	var filtered []Record
+	for _, r := range records {
+		if !r.Timestamp.Before(startDate) && !r.Timestamp.After(endDate) {
+			filtered = append(filtered, r)
+		}
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Timestamp.Before(filtered[j].Timestamp)
+	})
+
+	return filtered
+}
+
+func main() {
+	records := []Record{
+		{1, "Alpha", time.Date(2023, 5, 10, 0, 0, 0, 0, time.UTC), 12.5},
+		{2, "Beta", time.Date(2023, 5, 15, 0, 0, 0, 0, time.UTC), 8.3},
+		{3, "Gamma", time.Date(2023, 5, 5, 0, 0, 0, 0, time.UTC), 15.7},
+		{4, "Delta", time.Date(2023, 5, 20, 0, 0, 0, 0, time.UTC), 9.1},
+	}
+
+	start := time.Date(2023, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2023, 5, 18, 0, 0, 0, 0, time.UTC)
+
+	result := filterAndSortByDate(records, start, end)
+
+	for _, r := range result {
+		fmt.Printf("ID: %d, Name: %s, Date: %s, Value: %.1f\n",
+			r.ID, r.Name, r.Timestamp.Format("2006-01-02"), r.Value)
+	}
+}
