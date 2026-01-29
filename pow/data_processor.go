@@ -160,3 +160,38 @@ func (dp *DataProcessor) ValidateEmail(input string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(strings.TrimSpace(input))
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+// CleanString removes extra whitespace and normalizes input
+func CleanString(input string) string {
+	// Trim leading/trailing whitespace
+	trimmed := strings.TrimSpace(input)
+	
+	// Replace multiple spaces with single space
+	re := regexp.MustCompile(`\s+`)
+	normalized := re.ReplaceAllString(trimmed, " ")
+	
+	return normalized
+}
+
+// NormalizeEmail converts email to lowercase and trims spaces
+func NormalizeEmail(email string) string {
+	cleaned := CleanString(email)
+	return strings.ToLower(cleaned)
+}
+
+// ValidateUsername checks if username meets requirements
+func ValidateUsername(username string) bool {
+	if len(username) < 3 || len(username) > 20 {
+		return false
+	}
+	
+	// Only allow alphanumeric and underscore
+	validPattern := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+	return validPattern.MatchString(username)
+}
