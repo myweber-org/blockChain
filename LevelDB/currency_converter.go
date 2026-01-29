@@ -3,113 +3,103 @@ package main
 
 import (
 	"fmt"
+	"math"
 )
 
-func ConvertUSDToEUR(amount float64) float64 {
-	const exchangeRate = 0.85
-	return amount * exchangeRate
-}
+type Currency string
 
-func main() {
-	usdAmount := 100.0
-	eurAmount := ConvertUSDToEUR(usdAmount)
-	fmt.Printf("%.2f USD = %.2f EUR\n", usdAmount, eurAmount)
-}package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"strconv"
+const (
+	USD Currency = "USD"
+	EUR Currency = "EUR"
+	GBP Currency = "GBP"
+	JPY Currency = "JPY"
 )
 
 type ExchangeRates struct {
-	Rates map[string]float64 `json:"rates"`
-	Base  string             `json:"base"`
-	Date  string             `json:"date"`
+	rates map[Currency]map[Currency]float64
 }
 
-func fetchExchangeRates(apiKey string) (*ExchangeRates, error) {
-	url := fmt.Sprintf("https://api.exchangerate-api.com/v4/latest/USD")
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
+func NewExchangeRates() *ExchangeRates {
+	rates := make(map[Currency]map[Currency]float64)
+	
+	rates[USD] = map[Currency]float64{
+		EUR: 0.92,
+		GBP: 0.79,
+		JPY: 148.50,
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	
+	rates[EUR] = map[Currency]float64{
+		USD: 1.09,
+		GBP: 0.86,
+		JPY: 161.20,
 	}
-
-	var rates ExchangeRates
-	err = json.Unmarshal(body, &rates)
-	if err != nil {
-		return nil, err
+	
+	rates[GBP] = map[Currency]float64{
+		USD: 1.27,
+		EUR: 1.16,
+		JPY: 187.50,
 	}
-
-	return &rates, nil
+	
+	rates[JPY] = map[Currency]float64{
+		USD: 0.0067,
+		EUR: 0.0062,
+		GBP: 0.0053,
+	}
+	
+	return &ExchangeRates{rates: rates}
 }
 
-func convertCurrency(amount float64, fromCurrency, toCurrency string, rates *ExchangeRates) (float64, error) {
-	if fromCurrency == rates.Base {
-		rate, exists := rates.Rates[toCurrency]
-		if !exists {
-			return 0, fmt.Errorf("currency %s not found", toCurrency)
-		}
-		return amount * rate, nil
+func (er *ExchangeRates) Convert(amount float64, from, to Currency) (float64, error) {
+	if from == to {
+		return amount, nil
 	}
-
-	if toCurrency == rates.Base {
-		rate, exists := rates.Rates[fromCurrency]
-		if !exists {
-			return 0, fmt.Errorf("currency %s not found", fromCurrency)
-		}
-		return amount / rate, nil
-	}
-
-	fromRate, exists := rates.Rates[fromCurrency]
+	
+	rate, exists := er.rates[from][to]
 	if !exists {
-		return 0, fmt.Errorf("currency %s not found", fromCurrency)
+		return 0, fmt.Errorf("exchange rate not available from %s to %s", from, to)
 	}
+	
+	converted := amount * rate
+	return math.Round(converted*100) / 100, nil
+}
 
-	toRate, exists := rates.Rates[toCurrency]
-	if !exists {
-		return 0, fmt.Errorf("currency %s not found", toCurrency)
+func (er *ExchangeRates) AddRate(from, to Currency, rate float64) {
+	if er.rates[from] == nil {
+		er.rates[from] = make(map[Currency]float64)
 	}
-
-	return amount * (toRate / fromRate), nil
+	er.rates[from][to] = rate
+	
+	reciprocalRate := 1.0 / rate
+	if er.rates[to] == nil {
+		er.rates[to] = make(map[Currency]float64)
+	}
+	er.rates[to][from] = reciprocalRate
 }
 
 func main() {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: go run currency_converter.go <amount> <from_currency> <to_currency>")
-		fmt.Println("Example: go run currency_converter.go 100 USD EUR")
-		os.Exit(1)
-	}
-
-	amount, err := strconv.ParseFloat(os.Args[1], 64)
+	converter := NewExchangeRates()
+	
+	amount := 100.0
+	
+	result, err := converter.Convert(amount, USD, EUR)
 	if err != nil {
-		fmt.Printf("Invalid amount: %v\n", err)
-		os.Exit(1)
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
-
-	fromCurrency := os.Args[2]
-	toCurrency := os.Args[3]
-
-	rates, err := fetchExchangeRates("")
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, USD, result, EUR)
+	
+	result, err = converter.Convert(amount, GBP, JPY)
 	if err != nil {
-		fmt.Printf("Failed to fetch exchange rates: %v\n", err)
-		os.Exit(1)
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
-
-	result, err := convertCurrency(amount, fromCurrency, toCurrency, rates)
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, GBP, result, JPY)
+	
+	converter.AddRate(USD, Currency("CAD"), 1.35)
+	result, err = converter.Convert(amount, USD, Currency("CAD"))
 	if err != nil {
-		fmt.Printf("Conversion error: %v\n", err)
-		os.Exit(1)
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
-
-	fmt.Printf("%.2f %s = %.2f %s\n", amount, fromCurrency, result, toCurrency)
+	fmt.Printf("%.2f %s = %.2f CAD\n", amount, USD, result)
 }
