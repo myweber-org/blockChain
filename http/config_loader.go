@@ -61,4 +61,54 @@ func validateConfig(config *ServerConfig) error {
     }
 
     return nil
+}package config
+
+import (
+    "fmt"
+    "io/ioutil"
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+}
+
+type ServerConfig struct {
+    Port int    `yaml:"port"`
+    Mode string `yaml:"mode"`
+}
+
+type AppConfig struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+}
+
+func LoadConfig(filePath string) (*AppConfig, error) {
+    data, err := ioutil.ReadFile(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %v", err)
+    }
+
+    var config AppConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %v", err)
+    }
+
+    return &config, nil
+}
+
+func ValidateConfig(config *AppConfig) error {
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host is required")
+    }
+    if config.Database.Port <= 0 {
+        return fmt.Errorf("database port must be positive")
+    }
+    if config.Server.Port <= 0 {
+        return fmt.Errorf("server port must be positive")
+    }
+    return nil
 }
