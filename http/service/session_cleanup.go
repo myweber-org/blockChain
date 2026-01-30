@@ -7,36 +7,46 @@ import (
 	"time"
 
 	"yourproject/internal/database"
-	"yourproject/internal/models"
 )
 
-func cleanupExpiredSessions() error {
-	db := database.GetDB()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	threshold := time.Now().Add(-24 * time.Hour)
-	result := db.WithContext(ctx).
-		Where("last_activity < ?", threshold).
-		Delete(&models.Session{})
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	if result.RowsAffected > 0 {
-		log.Printf("Cleaned up %d expired sessions", result.RowsAffected)
-	}
-	return nil
-}
+const cleanupInterval = 24 * time.Hour
 
 func main() {
-	ticker := time.NewTicker(24 * time.Hour)
+	db, err := database.NewConnection()
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := cleanupExpiredSessions(); err != nil {
-			log.Printf("Session cleanup failed: %v", err)
+	ctx := context.Background()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := cleanupExpiredSessions(ctx, db); err != nil {
+				log.Printf("Session cleanup failed: %v", err)
+			} else {
+				log.Println("Session cleanup completed successfully")
+			}
 		}
 	}
+}
+
+func cleanupExpiredSessions(ctx context.Context, db *database.DB) error {
+	query := `DELETE FROM user_sessions WHERE expires_at < NOW()`
+	result, err := db.ExecContext(ctx, query)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Cleaned up %d expired sessions", rowsAffected)
+	return nil
 }
