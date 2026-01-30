@@ -225,4 +225,55 @@ func (c *Config) Validate() error {
         return fmt.Errorf("database name cannot be empty")
     }
     return nil
+}package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+)
+
+type Config struct {
+	ServerPort string `json:"server_port"`
+	Database   struct {
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"database"`
+	LogLevel string `json:"log_level"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	path := os.Getenv("APP_CONFIG_PATH")
+	if path == "" {
+		path = configPath
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Open(absPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config Config
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	if port := os.Getenv("SERVER_PORT"); port != "" {
+		config.ServerPort = port
+	}
+
+	if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
+		config.LogLevel = logLevel
+	}
+
+	return &config, nil
 }
