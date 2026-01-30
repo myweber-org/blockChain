@@ -1,37 +1,4 @@
-
 package main
-
-import (
-	"fmt"
-)
-
-func convertUSDToEUR(amount float64) float64 {
-	const exchangeRate = 0.85
-	return amount * exchangeRate
-}
-
-func main() {
-	usdAmount := 100.0
-	eurAmount := convertUSDToEUR(usdAmount)
-	fmt.Printf("%.2f USD = %.2f EUR\n", usdAmount, eurAmount)
-}
-package main
-
-import (
-	"fmt"
-)
-
-const usdToEurRate = 0.85
-
-func ConvertUSDToEUR(amount float64) float64 {
-	return amount * usdToEurRate
-}
-
-func main() {
-	usdAmount := 100.0
-	eurAmount := ConvertUSDToEUR(usdAmount)
-	fmt.Printf("%.2f USD = %.2f EUR\n", usdAmount, eurAmount)
-}package main
 
 import (
 	"encoding/json"
@@ -99,18 +66,31 @@ func (c *CurrencyConverter) Convert(amount float64, fromCurrency, toCurrency str
 	}
 
 	usdAmount := amount / fromRate
-	return usdAmount * toRate, nil
+	convertedAmount := usdAmount * toRate
+	return convertedAmount, nil
+}
+
+func (c *CurrencyConverter) GetSupportedCurrencies() []string {
+	currencies := make([]string, 0, len(c.cache))
+	for currency := range c.cache {
+		currencies = append(currencies, currency)
+	}
+	return currencies
 }
 
 func main() {
 	converter := NewCurrencyConverter()
 
 	amount := 100.0
-	result, err := converter.Convert(amount, "EUR", "JPY")
+	from := "USD"
+	to := "EUR"
+
+	result, err := converter.Convert(amount, from, to)
 	if err != nil {
 		fmt.Printf("Conversion error: %v\n", err)
 		return
 	}
 
-	fmt.Printf("%.2f EUR = %.2f JPY\n", amount, result)
+	fmt.Printf("%.2f %s = %.2f %s\n", amount, from, result, to)
+	fmt.Printf("Supported currencies: %v\n", converter.GetSupportedCurrencies()[:5])
 }
