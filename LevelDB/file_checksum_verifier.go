@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -24,67 +23,11 @@ func calculateFileChecksum(filePath string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func verifyFileIntegrity(filePath, expectedChecksum string) (bool, error) {
+func verifyFileIntegrity(filePath string, expectedChecksum string) (bool, error) {
 	actualChecksum, err := calculateFileChecksum(filePath)
 	if err != nil {
 		return false, err
 	}
-
-	return actualChecksum == expectedChecksum, nil
-}
-
-func main() {
-	if len(os.Args) != 3 {
-		fmt.Println("Usage: file_checksum_verifier <file_path> <expected_checksum>")
-		os.Exit(1)
-	}
-
-	filePath := os.Args[1]
-	expectedChecksum := os.Args[2]
-
-	isValid, err := verifyFileIntegrity(filePath, expectedChecksum)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if isValid {
-		fmt.Println("File integrity verified: checksum matches")
-	} else {
-		fmt.Println("WARNING: File checksum mismatch - possible corruption or tampering")
-		os.Exit(1)
-	}
-}package main
-
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"io"
-	"os"
-)
-
-func calculateFileChecksum(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open file: %v", err)
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", fmt.Errorf("failed to calculate checksum: %v", err)
-	}
-
-	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-func verifyFileIntegrity(filePath, expectedChecksum string) (bool, error) {
-	actualChecksum, err := calculateFileChecksum(filePath)
-	if err != nil {
-		return false, err
-	}
-
 	return actualChecksum == expectedChecksum, nil
 }
 
@@ -106,7 +49,7 @@ func main() {
 	if isValid {
 		fmt.Println("File integrity verified: checksum matches")
 	} else {
-		fmt.Println("WARNING: File integrity check failed - checksum mismatch")
+		fmt.Println("WARNING: File checksum mismatch - possible file corruption")
 		os.Exit(1)
 	}
 }
