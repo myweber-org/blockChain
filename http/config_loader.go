@@ -1,100 +1,90 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"reflect"
-	"strings"
+    "fmt"
+    "os"
+    "path/filepath"
+
+    "gopkg.in/yaml.v3"
 )
 
-type Config struct {
-	ServerPort int    `json:"server_port" env:"SERVER_PORT"`
-	DBHost     string `json:"db_host" env:"DB_HOST"`
-	DBPort     int    `json:"db_port" env:"DB_PORT"`
-	DebugMode  bool   `json:"debug_mode" env:"DEBUG_MODE"`
+type DatabaseConfig struct {
+    Host     string `yaml:"host" env:"DB_HOST"`
+    Port     int    `yaml:"port" env:"DB_PORT"`
+    Username string `yaml:"username" env:"DB_USER"`
+    Password string `yaml:"password" env:"DB_PASS"`
+    Name     string `yaml:"name" env:"DB_NAME"`
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	config := &Config{
-		ServerPort: 8080,
-		DBHost:     "localhost",
-		DBPort:     5432,
-		DebugMode:  false,
-	}
-
-	if configPath != "" {
-		file, err := os.Open(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open config file: %w", err)
-		}
-		defer file.Close()
-
-		decoder := json.NewDecoder(file)
-		if err := decoder.Decode(config); err != nil {
-			return nil, fmt.Errorf("failed to decode config JSON: %w", err)
-		}
-	}
-
-	if err := loadEnvVars(config); err != nil {
-		return nil, err
-	}
-
-	if err := validateConfig(config); err != nil {
-		return nil, err
-	}
-
-	return config, nil
+type ServerConfig struct {
+    Port         int    `yaml:"port" env:"SERVER_PORT"`
+    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
+    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
+    DebugMode    bool   `yaml:"debug_mode" env:"DEBUG_MODE"`
 }
 
-func loadEnvVars(config interface{}) error {
-	val := reflect.ValueOf(config).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		structField := typ.Field(i)
-
-		envTag := structField.Tag.Get("env")
-		if envTag == "" {
-			continue
-		}
-
-		envValue := os.Getenv(envTag)
-		if envValue == "" {
-			continue
-		}
-
-		switch field.Kind() {
-		case reflect.String:
-			field.SetString(envValue)
-		case reflect.Int:
-			var intVal int
-			if _, err := fmt.Sscanf(envValue, "%d", &intVal); err != nil {
-				return fmt.Errorf("invalid integer value for %s: %s", envTag, envValue)
-			}
-			field.SetInt(int64(intVal))
-		case reflect.Bool:
-			boolVal := strings.ToLower(envValue) == "true" || envValue == "1"
-			field.SetBool(boolVal)
-		}
-	}
-
-	return nil
+type AppConfig struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
 }
 
-func validateConfig(config *Config) error {
-	if config.ServerPort < 1 || config.ServerPort > 65535 {
-		return fmt.Errorf("invalid server port: %d", config.ServerPort)
-	}
+func LoadConfig(configPath string) (*AppConfig, error) {
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
 
-	if config.DBPort < 1 || config.DBPort > 65535 {
-		return fmt.Errorf("invalid database port: %d", config.DBPort)
-	}
+    var config AppConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
 
-	if config.DBHost == "" {
-		return fmt.Errorf("database host cannot be empty")
-	}
+    overrideFromEnv(&config)
 
-	return nil
+    return &config, nil
+}
+
+func overrideFromEnv(config *AppConfig) {
+    overrideString(&config.Database.Host, "DB_HOST")
+    overrideInt(&config.Database.Port, "DB_PORT")
+    overrideString(&config.Database.Username, "DB_USER")
+    overrideString(&config.Database.Password, "DB_PASS")
+    overrideString(&config.Database.Name, "DB_NAME")
+    
+    overrideInt(&config.Server.Port, "SERVER_PORT")
+    overrideInt(&config.Server.ReadTimeout, "READ_TIMEOUT")
+    overrideInt(&config.Server.WriteTimeout, "WRITE_TIMEOUT")
+    overrideBool(&config.Server.DebugMode, "DEBUG_MODE")
+    
+    overrideString(&config.LogLevel, "LOG_LEVEL")
+}
+
+func overrideString(field *string, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val
+    }
+}
+
+func overrideInt(field *int, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        var intVal int
+        if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
+            *field = intVal
+        }
+    }
+}
+
+func overrideBool(field *bool, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val == "true" || val == "1" || val == "yes"
+    }
+}
+
+func DefaultConfigPath() string {
+    homeDir, err := os.UserHomeDir()
+    if err != nil {
+        return "./config.yaml"
+    }
+    return filepath.Join(homeDir, ".app", "config.yaml")
 }
