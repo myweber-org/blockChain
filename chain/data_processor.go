@@ -7,122 +7,143 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 )
 
-type Record struct {
-	ID    int
-	Name  string
-	Value float64
+type DataRecord struct {
+	ID      int
+	Name    string
+	Value   float64
+	IsValid bool
 }
 
-func processCSV(filename string) ([]Record, error) {
+func ProcessCSVFile(filename string) ([]DataRecord, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	var records []Record
+	records := []DataRecord{}
+	lineNumber := 0
 
 	for {
+		lineNumber++
 		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
 		}
 
-		if len(row) != 3 {
+		if len(row) < 4 {
 			continue
 		}
 
-		id, err := strconv.Atoi(row[0])
+		record, err := parseRow(row)
 		if err != nil {
+			fmt.Printf("Warning: skipping invalid row at line %d: %v\n", lineNumber, err)
 			continue
 		}
 
-		value, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			continue
-		}
-
-		record := Record{
-			ID:    id,
-			Name:  row[1],
-			Value: value,
-		}
 		records = append(records, record)
 	}
 
 	return records, nil
 }
 
-func calculateTotal(records []Record) float64 {
-	var total float64
-	for _, r := range records {
-		total += r.Value
+func parseRow(row []string) (DataRecord, error) {
+	var record DataRecord
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return record, fmt.Errorf("invalid ID format: %w", err)
 	}
-	return total
+	record.ID = id
+
+	record.Name = strings.TrimSpace(row[1])
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return record, fmt.Errorf("invalid value format: %w", err)
+	}
+	record.Value = value
+
+	isValid, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+	if err != nil {
+		return record, fmt.Errorf("invalid boolean format: %w", err)
+	}
+	record.IsValid = isValid
+
+	return record, nil
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, int) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
+
+	var sum float64
+	var validCount int
+	var maxValue float64
+
+	for _, record := range records {
+		if record.IsValid {
+			sum += record.Value
+			validCount++
+			if record.Value > maxValue {
+				maxValue = record.Value
+			}
+		}
+	}
+
+	average := 0.0
+	if validCount > 0 {
+		average = sum / float64(validCount)
+	}
+
+	return average, maxValue, validCount
+}
+
+func FilterValidRecords(records []DataRecord) []DataRecord {
+	var filtered []DataRecord
+	for _, record := range records {
+		if record.IsValid {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: data_processor <filename.csv>")
-		return
+		fmt.Println("Usage: go run data_processor.go <csv_file>")
+		os.Exit(1)
 	}
 
-	records, err := processCSV(os.Args[1])
+	filename := os.Args[1]
+	records, err := ProcessCSVFile(filename)
 	if err != nil {
 		fmt.Printf("Error processing file: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
-	fmt.Printf("Processed %d records\n", len(records))
-	fmt.Printf("Total value: %.2f\n", calculateTotal(records))
-}package main
+	fmt.Printf("Total records processed: %d\n", len(records))
 
-import (
-	"encoding/json"
-	"fmt"
-	"log"
-)
+	validRecords := FilterValidRecords(records)
+	fmt.Printf("Valid records: %d\n", len(validRecords))
 
-// ValidateJSON checks if the provided byte slice contains valid JSON.
-func ValidateJSON(data []byte) (bool, error) {
-	var js interface{}
-	err := json.Unmarshal(data, &js)
-	if err != nil {
-		return false, fmt.Errorf("invalid JSON: %w", err)
-	}
-	return true, nil
-}
+	average, maxValue, validCount := CalculateStatistics(records)
+	fmt.Printf("Average value: %.2f\n", average)
+	fmt.Printf("Maximum value: %.2f\n", maxValue)
+	fmt.Printf("Valid record count: %d\n", validCount)
 
-// ParseJSONToMap parses JSON data into a map[string]interface{}.
-func ParseJSONToMap(data []byte) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	err := json.Unmarshal(data, &result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-	return result, nil
-}
-
-func main() {
-	sampleJSON := `{"name": "test", "value": 42, "active": true}`
-
-	valid, err := ValidateJSON([]byte(sampleJSON))
-	if err != nil {
-		log.Printf("Validation error: %v", err)
-	} else {
-		fmt.Println("JSON is valid:", valid)
-	}
-
-	parsed, err := ParseJSONToMap([]byte(sampleJSON))
-	if err != nil {
-		log.Printf("Parse error: %v", err)
-	} else {
-		fmt.Printf("Parsed data: %+v\n", parsed)
+	for i, record := range validRecords {
+		if i < 5 {
+			fmt.Printf("Record %d: ID=%d, Name=%s, Value=%.2f\n",
+				i+1, record.ID, record.Name, record.Value)
+		}
 	}
 }
