@@ -194,4 +194,53 @@ func ValidateUsername(username string) bool {
 	// Only allow alphanumeric and underscore
 	validPattern := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 	return validPattern.MatchString(username)
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+)
+
+// DataPayload represents a generic JSON payload structure.
+type DataPayload struct {
+	ID      string          `json:"id"`
+	Version int             `json:"version"`
+	Content json.RawMessage `json:"content"`
+	Active  bool            `json:"active"`
+}
+
+// ValidateJSON checks if the provided byte slice is valid JSON.
+func ValidateJSON(data []byte) bool {
+	return json.Valid(data)
+}
+
+// ParsePayload attempts to parse JSON data into a DataPayload struct.
+func ParsePayload(data []byte) (*DataPayload, error) {
+	if !ValidateJSON(data) {
+		return nil, fmt.Errorf("invalid JSON format")
+	}
+
+	var payload DataPayload
+	err := json.Unmarshal(data, &payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	if payload.ID == "" {
+		return nil, fmt.Errorf("payload ID cannot be empty")
+	}
+
+	return &payload, nil
+}
+
+func main() {
+	jsonStr := `{"id": "user123", "version": 2, "content": {"name": "John"}, "active": true}`
+
+	payload, err := ParsePayload([]byte(jsonStr))
+	if err != nil {
+		log.Fatalf("Error parsing payload: %v", err)
+	}
+
+	fmt.Printf("Parsed payload: ID=%s, Version=%d, Active=%v\n", payload.ID, payload.Version, payload.Active)
 }
