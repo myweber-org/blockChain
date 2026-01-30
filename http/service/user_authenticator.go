@@ -10,8 +10,33 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
-func Authenticate(next http.Handler) http.Handler {
+type TokenValidator interface {
+	ValidateToken(tokenString string) (string, error)
+}
+
+type AuthMiddleware struct {
+	tokenValidator TokenValidator
+	excludedPaths  map[string]bool
+}
+
+func NewAuthMiddleware(validator TokenValidator, excludedPaths []string) *AuthMiddleware {
+	excludedMap := make(map[string]bool)
+	for _, path := range excludedPaths {
+		excludedMap[path] = true
+	}
+	return &AuthMiddleware{
+		tokenValidator: validator,
+		excludedPaths:  excludedMap,
+	}
+}
+
+func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if m.excludedPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "Authorization header required", http.StatusUnauthorized)
@@ -24,8 +49,7 @@ func Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		token := parts[1]
-		userID, err := validateToken(token)
+		userID, err := m.tokenValidator.ValidateToken(parts[1])
 		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
@@ -39,12 +63,4 @@ func Authenticate(next http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
-}
-
-func validateToken(token string) (string, error) {
-	// Simplified token validation - in production use proper JWT library
-	if token == "" || len(token) < 10 {
-		return "", http.ErrAbortHandler
-	}
-	return "user_" + token[:8], nil
 }
