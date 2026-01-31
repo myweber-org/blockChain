@@ -370,4 +370,25 @@ func CalculateStatistics(records []DataRecord) (float64, float64, error) {
 	variance := varianceSum / float64(len(records))
 
 	return mean, variance, nil
+}package main
+
+import (
+	"fmt"
+)
+
+// DataProcessor filters and transforms a slice of integers.
+func DataProcessor(input []int) []int {
+	var result []int
+	for _, v := range input {
+		if v > 0 {
+			result = append(result, v*2)
+		}
+	}
+	return result
+}
+
+func main() {
+	data := []int{-5, 2, 0, 8, -1, 10}
+	processed := DataProcessor(data)
+	fmt.Println("Processed data:", processed)
 }
