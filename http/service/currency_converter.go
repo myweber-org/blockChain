@@ -1,78 +1,68 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"time"
+	"sync"
 )
 
-type ExchangeRateResponse struct {
-	Rates map[string]float64 `json:"rates"`
-	Base  string             `json:"base"`
-	Date  string             `json:"date"`
+type ExchangeRate struct {
+	FromCurrency string
+	ToCurrency   string
+	Rate         float64
 }
 
 type CurrencyConverter struct {
-	apiEndpoint string
-	client      *http.Client
-	cache       map[string]float64
-	lastUpdated time.Time
+	rates map[string]map[string]float64
+	mu    sync.RWMutex
 }
 
 func NewCurrencyConverter() *CurrencyConverter {
 	return &CurrencyConverter{
-		apiEndpoint: "https://api.exchangerate-api.com/v4/latest/USD",
-		client:      &http.Client{Timeout: 10 * time.Second},
-		cache:       make(map[string]float64),
+		rates: make(map[string]map[string]float64),
 	}
 }
 
-func (c *CurrencyConverter) fetchRates() error {
-	resp, err := c.client.Get(c.apiEndpoint)
-	if err != nil {
-		return fmt.Errorf("failed to fetch exchange rates: %w", err)
-	}
-	defer resp.Body.Close()
+func (c *CurrencyConverter) AddRate(from, to string, rate float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+	if c.rates[from] == nil {
+		c.rates[from] = make(map[string]float64)
 	}
+	c.rates[from][to] = rate
 
-	var data ExchangeRateResponse
-	if err := json.Unmarshal(body, &data); err != nil {
-		return fmt.Errorf("failed to parse JSON: %w", err)
+	if c.rates[to] == nil {
+		c.rates[to] = make(map[string]float64)
 	}
-
-	c.cache = data.Rates
-	c.lastUpdated = time.Now()
-	return nil
+	c.rates[to][from] = 1.0 / rate
 }
 
-func (c *CurrencyConverter) Convert(amount float64, fromCurrency, toCurrency string) (float64, error) {
-	if time.Since(c.lastUpdated) > 30*time.Minute {
-		if err := c.fetchRates(); err != nil {
-			return 0, err
-		}
+func (c *CurrencyConverter) Convert(amount float64, from, to string) (float64, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if from == to {
+		return amount, nil
 	}
 
-	fromRate, fromExists := c.cache[fromCurrency]
-	toRate, toExists := c.cache[toCurrency]
-
-	if !fromExists || !toExists {
-		return 0, fmt.Errorf("unsupported currency: %s or %s", fromCurrency, toCurrency)
+	if _, exists := c.rates[from]; !exists {
+		return 0, fmt.Errorf("no exchange rate found for currency: %s", from)
 	}
 
-	usdAmount := amount / fromRate
-	convertedAmount := usdAmount * toRate
-	return convertedAmount, nil
+	rate, exists := c.rates[from][to]
+	if !exists {
+		return 0, fmt.Errorf("no exchange rate found from %s to %s", from, to)
+	}
+
+	return amount * rate, nil
 }
 
 func (c *CurrencyConverter) GetSupportedCurrencies() []string {
-	currencies := make([]string, 0, len(c.cache))
-	for currency := range c.cache {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	currencies := make([]string, 0, len(c.rates))
+	for currency := range c.rates {
 		currencies = append(currencies, currency)
 	}
 	return currencies
@@ -81,16 +71,18 @@ func (c *CurrencyConverter) GetSupportedCurrencies() []string {
 func main() {
 	converter := NewCurrencyConverter()
 
-	amount := 100.0
-	from := "USD"
-	to := "EUR"
+	converter.AddRate("USD", "EUR", 0.85)
+	converter.AddRate("USD", "GBP", 0.73)
+	converter.AddRate("EUR", "JPY", 130.0)
 
-	result, err := converter.Convert(amount, from, to)
+	amount := 100.0
+	result, err := converter.Convert(amount, "USD", "EUR")
 	if err != nil {
 		fmt.Printf("Conversion error: %v\n", err)
 		return
 	}
+	fmt.Printf("%.2f USD = %.2f EUR\n", amount, result)
 
-	fmt.Printf("%.2f %s = %.2f %s\n", amount, from, result, to)
-	fmt.Printf("Supported currencies: %v\n", converter.GetSupportedCurrencies()[:5])
+	currencies := converter.GetSupportedCurrencies()
+	fmt.Println("Supported currencies:", currencies)
 }
