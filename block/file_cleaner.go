@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -7,22 +6,22 @@ import (
 	"os"
 )
 
-func removeDuplicates(inputFile, outputFile string) error {
-	file, err := os.Open(inputFile)
+func removeDuplicates(inputPath, outputPath string) error {
+	file, err := os.Open(inputPath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	seen := make(map[string]bool)
-	var uniqueLines []string
+	var lines []string
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !seen[line] {
 			seen[line] = true
-			uniqueLines = append(uniqueLines, line)
+			lines = append(lines, line)
 		}
 	}
 
@@ -30,14 +29,14 @@ func removeDuplicates(inputFile, outputFile string) error {
 		return err
 	}
 
-	out, err := os.Create(outputFile)
+	outFile, err := os.Create(outputPath)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer outFile.Close()
 
-	writer := bufio.NewWriter(out)
-	for _, line := range uniqueLines {
+	writer := bufio.NewWriter(outFile)
+	for _, line := range lines {
 		fmt.Fprintln(writer, line)
 	}
 	return writer.Flush()
@@ -58,5 +57,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully removed duplicates. Output written to %s\n", outputFile)
+	fmt.Printf("Duplicate removal complete. Output written to %s\n", outputFile)
 }
