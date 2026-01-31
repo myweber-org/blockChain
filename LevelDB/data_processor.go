@@ -392,3 +392,48 @@ func main() {
 	processed := DataProcessor(data)
 	fmt.Println("Processed data:", processed)
 }
+package main
+
+import (
+	"errors"
+	"strings"
+)
+
+// ValidateEmail checks if the provided string is a valid email address.
+func ValidateEmail(email string) bool {
+	if !strings.Contains(email, "@") {
+		return false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	if len(parts[0]) == 0 || len(parts[1]) == 0 {
+		return false
+	}
+	if !strings.Contains(parts[1], ".") {
+		return false
+	}
+	return true
+}
+
+// SanitizeInput removes leading and trailing whitespace from a string.
+func SanitizeInput(input string) string {
+	return strings.TrimSpace(input)
+}
+
+// ParsePositiveInteger converts a string to a positive integer.
+func ParsePositiveInteger(s string) (int, error) {
+	sanitized := SanitizeInput(s)
+	var result int
+	for _, ch := range sanitized {
+		if ch < '0' || ch > '9' {
+			return 0, errors.New("invalid character in number")
+		}
+		result = result*10 + int(ch-'0')
+	}
+	if result <= 0 {
+		return 0, errors.New("number must be positive")
+	}
+	return result, nil
+}
