@@ -58,3 +58,69 @@ func DefaultConfigPath() string {
     }
     return filepath.Join(homeDir, ".app", "config.yaml")
 }
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	ServerPort int    `env:"SERVER_PORT" default:"8080"`
+	DBHost     string `env:"DB_HOST" default:"localhost"`
+	DBPort     int    `env:"DB_PORT" default:"5432"`
+	DebugMode  bool   `env:"DEBUG_MODE" default:"false"`
+	LogLevel   string `env:"LOG_LEVEL" default:"info"`
+}
+
+func Load() (*Config, error) {
+	cfg := &Config{}
+	t := reflect.TypeOf(cfg).Elem()
+	v := reflect.ValueOf(cfg).Elem()
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		envTag := field.Tag.Get("env")
+		defaultVal := field.Tag.Get("default")
+
+		envValue := os.Getenv(envTag)
+		if envValue == "" {
+			envValue = defaultVal
+		}
+
+		if envValue == "" {
+			return nil, fmt.Errorf("environment variable %s is required", envTag)
+		}
+
+		fieldValue := v.Field(i)
+		switch field.Type.Kind() {
+		case reflect.String:
+			fieldValue.SetString(envValue)
+		case reflect.Int:
+			intVal, err := strconv.Atoi(envValue)
+			if err != nil {
+				return nil, fmt.Errorf("invalid integer value for %s: %v", envTag, err)
+			}
+			fieldValue.SetInt(int64(intVal))
+		case reflect.Bool:
+			boolVal, err := strconv.ParseBool(strings.ToLower(envValue))
+			if err != nil {
+				return nil, fmt.Errorf("invalid boolean value for %s: %v", envTag, err)
+			}
+			fieldValue.SetBool(boolVal)
+		default:
+			return nil, fmt.Errorf("unsupported field type: %s", field.Type.Kind())
+		}
+	}
+
+	return cfg, nil
+}
+
+func (c *Config) String() string {
+	data, _ := json.MarshalIndent(c, "", "  ")
+	return string(data)
+}
