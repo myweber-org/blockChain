@@ -1,89 +1,125 @@
+
 package main
 
 import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 )
 
-func encryptData(plaintext []byte, key []byte) (string, error) {
+func encryptFile(inputPath, outputPath string, key []byte) error {
+	plaintext, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("read file error: %w", err)
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("cipher creation error: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("GCM creation error: %w", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return fmt.Errorf("nonce generation error: %w", err)
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+
+	if err := os.WriteFile(outputPath, ciphertext, 0644); err != nil {
+		return fmt.Errorf("write file error: %w", err)
+	}
+
+	return nil
 }
 
-func decryptData(encrypted string, key []byte) ([]byte, error) {
-	data, err := base64.StdEncoding.DecodeString(encrypted)
+func decryptFile(inputPath, outputPath string, key []byte) error {
+	ciphertext, err := os.ReadFile(inputPath)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("read file error: %w", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("cipher creation error: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("GCM creation error: %w", err)
 	}
 
 	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+	if len(ciphertext) < nonceSize {
+		return errors.New("ciphertext too short")
 	}
 
-	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	return gcm.Open(nil, nonce, ciphertext, nil)
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return fmt.Errorf("decryption error: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
+		return fmt.Errorf("write file error: %w", err)
+	}
+
+	return nil
 }
 
-func generateKey() ([]byte, error) {
+func generateRandomKey() ([]byte, error) {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("key generation error: %w", err)
 	}
 	return key, nil
 }
 
 func main() {
-	key, err := generateKey()
+	key, err := generateRandomKey()
 	if err != nil {
 		fmt.Printf("Key generation failed: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
-	original := "Sensitive data requiring protection"
-	fmt.Printf("Original: %s\n", original)
+	fmt.Printf("Generated key: %x\n", key)
 
-	encrypted, err := encryptData([]byte(original), key)
-	if err != nil {
+	testData := []byte("This is a secret message for encryption testing.")
+	if err := os.WriteFile("test_input.txt", testData, 0644); err != nil {
+		fmt.Printf("Test file creation failed: %v\n", err)
+		return
+	}
+	defer os.Remove("test_input.txt")
+	defer os.Remove("test_encrypted.bin")
+	defer os.Remove("test_decrypted.txt")
+
+	if err := encryptFile("test_input.txt", "test_encrypted.bin", key); err != nil {
 		fmt.Printf("Encryption failed: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Encrypted: %s\n", encrypted)
 
-	decrypted, err := decryptData(encrypted, key)
-	if err != nil {
+	if err := decryptFile("test_encrypted.bin", "test_decrypted.txt", key); err != nil {
 		fmt.Printf("Decryption failed: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Decrypted: %s\n", string(decrypted))
+
+	decryptedData, err := os.ReadFile("test_decrypted.txt")
+	if err != nil {
+		fmt.Printf("Read decrypted file failed: %v\n", err)
+		return
+	}
+
+	if string(decryptedData) == string(testData) {
+		fmt.Println("Encryption and decryption successful")
+	} else {
+		fmt.Println("Encryption/decryption verification failed")
+	}
 }
