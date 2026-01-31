@@ -130,3 +130,67 @@ func main() {
 		fmt.Printf("Retrieved from cache: %+v\n", cachedPrefs)
 	}
 }
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+type UserPreferences struct {
+	Theme      string `json:"theme"`
+	Language   string `json:"language"`
+	Timezone   string `json:"timezone"`
+	AutoSave   bool   `json:"auto_save"`
+	MaxResults int    `json:"max_results"`
+}
+
+func LoadPreferences(filename string) (*UserPreferences, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read preferences file: %w", err)
+	}
+
+	var prefs UserPreferences
+	if err := json.Unmarshal(data, &prefs); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	if err := validatePreferences(&prefs); err != nil {
+		return nil, fmt.Errorf("invalid preferences: %w", err)
+	}
+
+	return &prefs, nil
+}
+
+func validatePreferences(prefs *UserPreferences) error {
+	if prefs.Theme == "" {
+		return fmt.Errorf("theme cannot be empty")
+	}
+	if prefs.Language == "" {
+		return fmt.Errorf("language cannot be empty")
+	}
+	if prefs.Timezone == "" {
+		return fmt.Errorf("timezone cannot be empty")
+	}
+	if prefs.MaxResults < 1 || prefs.MaxResults > 1000 {
+		return fmt.Errorf("max_results must be between 1 and 1000")
+	}
+	return nil
+}
+
+func main() {
+	prefs, err := LoadPreferences("preferences.json")
+	if err != nil {
+		fmt.Printf("Error loading preferences: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Loaded preferences:\n")
+	fmt.Printf("Theme: %s\n", prefs.Theme)
+	fmt.Printf("Language: %s\n", prefs.Language)
+	fmt.Printf("Timezone: %s\n", prefs.Timezone)
+	fmt.Printf("AutoSave: %v\n", prefs.AutoSave)
+	fmt.Printf("MaxResults: %d\n", prefs.MaxResults)
+}
