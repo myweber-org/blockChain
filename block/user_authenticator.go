@@ -23,8 +23,6 @@ func GenerateToken(username, role string) (string, error) {
         Role:     role,
         RegisteredClaims: jwt.RegisteredClaims{
             ExpiresAt: jwt.NewNumericDate(expirationTime),
-            IssuedAt:  jwt.NewNumericDate(time.Now()),
-            Issuer:    "auth_service",
         },
     }
 
@@ -32,17 +30,21 @@ func GenerateToken(username, role string) (string, error) {
     return token.SignedString(jwtKey)
 }
 
-func Authenticate(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func Authenticate(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
         authHeader := r.Header.Get("Authorization")
         if authHeader == "" {
-            http.Error(w, "Authorization header required", http.StatusUnauthorized)
+            http.Error(w, "Authorization header missing", http.StatusUnauthorized)
             return
         }
 
         tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-        claims := &Claims{}
+        if tokenString == authHeader {
+            http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+            return
+        }
 
+        claims := &Claims{}
         token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
             return jwtKey, nil
         })
@@ -60,18 +62,5 @@ func Authenticate(next http.Handler) http.Handler {
         r.Header.Set("X-Username", claims.Username)
         r.Header.Set("X-Role", claims.Role)
         next.ServeHTTP(w, r)
-    })
-}
-
-func ValidateRole(requiredRole string) func(http.Handler) http.Handler {
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            userRole := r.Header.Get("X-Role")
-            if userRole != requiredRole {
-                http.Error(w, "Insufficient permissions", http.StatusForbidden)
-                return
-            }
-            next.ServeHTTP(w, r)
-        })
     }
 }
