@@ -79,4 +79,75 @@ type loggingResponseWriter struct {
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"time"
+)
+
+type ActivityLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Details   string    `json:"details,omitempty"`
+}
+
+func NewActivityLog(userID, action, details string) *ActivityLog {
+	return &ActivityLog{
+		Timestamp: time.Now().UTC(),
+		UserID:    userID,
+		Action:    action,
+		Details:   details,
+	}
+}
+
+func (al *ActivityLog) ToJSON() ([]byte, error) {
+	return json.MarshalIndent(al, "", "  ")
+}
+
+func LogActivity(userID, action, details string) error {
+	logEntry := NewActivityLog(userID, action, details)
+	
+	jsonData, err := logEntry.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal log entry: %w", err)
+	}
+	
+	file, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+	
+	if _, err := file.Write(append(jsonData, '\n')); err != nil {
+		return fmt.Errorf("failed to write log entry: %w", err)
+	}
+	
+	log.Printf("Logged activity: %s by user %s", action, userID)
+	return nil
+}
+
+func main() {
+	activities := []struct {
+		userID string
+		action string
+		details string
+	}{
+		{"user_001", "login", "Successful authentication"},
+		{"user_001", "view_page", "Accessed dashboard"},
+		{"user_002", "upload_file", "File size: 2.5MB"},
+		{"user_001", "logout", "Session duration: 15m"},
+	}
+	
+	for _, activity := range activities {
+		if err := LogActivity(activity.userID, activity.action, activity.details); err != nil {
+			log.Printf("Error logging activity: %v", err)
+		}
+	}
+	
+	fmt.Println("Activity logging completed. Check activity.log for details.")
 }
