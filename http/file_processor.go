@@ -62,3 +62,115 @@ func main() {
 
 	fmt.Printf("Loaded config: %+v\n", loadedConfig)
 }
+package main
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+)
+
+type DataRecord struct {
+	ID        int
+	Content   string
+	Valid     bool
+	Timestamp time.Time
+}
+
+type Processor struct {
+	records []DataRecord
+	mu      sync.RWMutex
+}
+
+func NewProcessor() *Processor {
+	return &Processor{
+		records: make([]DataRecord, 0),
+	}
+}
+
+func (p *Processor) AddRecord(content string) error {
+	if content == "" {
+		return errors.New("content cannot be empty")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	record := DataRecord{
+		ID:        len(p.records) + 1,
+		Content:   content,
+		Valid:     true,
+		Timestamp: time.Now(),
+	}
+
+	p.records = append(p.records, record)
+	return nil
+}
+
+func (p *Processor) ValidateRecords() {
+	var wg sync.WaitGroup
+	p.mu.RLock()
+	records := make([]DataRecord, len(p.records))
+	copy(records, p.records)
+	p.mu.RUnlock()
+
+	for i := range records {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			p.validateRecord(&records[idx])
+		}(i)
+	}
+	wg.Wait()
+
+	p.mu.Lock()
+	p.records = records
+	p.mu.Unlock()
+}
+
+func (p *Processor) validateRecord(record *DataRecord) {
+	if len(record.Content) < 3 {
+		record.Valid = false
+		return
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	record.Valid = true
+}
+
+func (p *Processor) GetStats() (int, int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	validCount := 0
+	for _, record := range p.records {
+		if record.Valid {
+			validCount++
+		}
+	}
+	return len(p.records), validCount
+}
+
+func main() {
+	processor := NewProcessor()
+
+	sampleData := []string{
+		"alpha",
+		"beta",
+		"",
+		"gamma",
+		"de",
+		"epsilon",
+	}
+
+	for _, data := range sampleData {
+		if err := processor.AddRecord(data); err != nil {
+			fmt.Printf("Error adding record: %v\n", err)
+		}
+	}
+
+	processor.ValidateRecords()
+	total, valid := processor.GetStats()
+	fmt.Printf("Processing complete. Total: %d, Valid: %d\n", total, valid)
+}
