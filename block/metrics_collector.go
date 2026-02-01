@@ -66,4 +66,56 @@ func main() {
 
     handler := metricsMiddleware(mux)
     http.ListenAndServe(":8080", handler)
+}package main
+
+import (
+    "fmt"
+    "runtime"
+    "time"
+)
+
+type SystemMetrics struct {
+    Timestamp   time.Time
+    CPUPercent  float64
+    MemoryAlloc uint64
+    Goroutines  int
+}
+
+func collectMetrics() SystemMetrics {
+    var m runtime.MemStats
+    runtime.ReadMemStats(&m)
+    
+    return SystemMetrics{
+        Timestamp:   time.Now(),
+        MemoryAlloc: m.Alloc,
+        Goroutines:  runtime.NumGoroutine(),
+    }
+}
+
+func startMetricsCollector(interval time.Duration, stopChan <-chan struct{}) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-ticker.C:
+            metrics := collectMetrics()
+            fmt.Printf("[%s] Memory: %v bytes, Goroutines: %d\n",
+                metrics.Timestamp.Format(time.RFC3339),
+                metrics.MemoryAlloc,
+                metrics.Goroutines)
+        case <-stopChan:
+            fmt.Println("Metrics collector stopped")
+            return
+        }
+    }
+}
+
+func main() {
+    stopChan := make(chan struct{})
+    go startMetricsCollector(2*time.Second, stopChan)
+    
+    time.Sleep(10 * time.Second)
+    close(stopChan)
+    time.Sleep(1 * time.Second)
 }
