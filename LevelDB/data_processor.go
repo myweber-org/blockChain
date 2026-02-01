@@ -437,3 +437,106 @@ func ParsePositiveInteger(s string) (int, error) {
 	}
 	return result, nil
 }
+package main
+
+import (
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+type Record struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+func processCSVFile(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	var records []Record
+	lineNumber := 0
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		lineNumber++
+		if lineNumber == 1 {
+			continue
+		}
+
+		if len(row) < 3 {
+			continue
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			continue
+		}
+
+		record := Record{
+			ID:    id,
+			Name:  row[1],
+			Value: row[2],
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func convertToJSON(records []Record) (string, error) {
+	jsonData, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(jsonData), nil
+}
+
+func saveJSONToFile(data string, filename string) error {
+	return os.WriteFile(filename, []byte(data), 0644)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: data_processor <input_csv_file>")
+		os.Exit(1)
+	}
+
+	inputFile := os.Args[1]
+	records, err := processCSVFile(inputFile)
+	if err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		os.Exit(1)
+	}
+
+	jsonOutput, err := convertToJSON(records)
+	if err != nil {
+		fmt.Printf("Error converting to JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	outputFile := "output.json"
+	err = saveJSONToFile(jsonOutput, outputFile)
+	if err != nil {
+		fmt.Printf("Error saving JSON file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Successfully processed %d records\n", len(records))
+	fmt.Printf("JSON output saved to %s\n", outputFile)
+}
