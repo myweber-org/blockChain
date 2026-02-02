@@ -283,4 +283,96 @@ func (dp *DataProcessor) ExtractAlphanumeric(input string) string {
 func (dp *DataProcessor) ValidateEmail(input string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(input)
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Active    bool   `json:"active"`
+	Tags      []string `json:"tags"`
+}
+
+func ValidateEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
+}
+
+func NormalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func FilterInactiveUsers(users []UserProfile) []UserProfile {
+	var activeUsers []UserProfile
+	for _, user := range users {
+		if user.Active {
+			activeUsers = append(activeUsers, user)
+		}
+	}
+	return activeUsers
+}
+
+func TransformUserData(users []UserProfile) ([]map[string]interface{}, error) {
+	var transformed []map[string]interface{}
+	
+	for _, user := range users {
+		if !ValidateEmail(user.Email) {
+			return nil, fmt.Errorf("invalid email for user %d: %s", user.ID, user.Email)
+		}
+		
+		data := map[string]interface{}{
+			"user_id":   user.ID,
+			"username":  NormalizeUsername(user.Username),
+			"email":     user.Email,
+			"age_group": getAgeGroup(user.Age),
+			"status":    "active",
+			"tag_count": len(user.Tags),
+		}
+		
+		transformed = append(transformed, data)
+	}
+	
+	return transformed, nil
+}
+
+func getAgeGroup(age int) string {
+	switch {
+	case age < 18:
+		return "minor"
+	case age >= 18 && age <= 35:
+		return "young_adult"
+	case age > 35 && age <= 60:
+		return "adult"
+	default:
+		return "senior"
+	}
+}
+
+func main() {
+	users := []UserProfile{
+		{ID: 1, Username: "  JohnDoe  ", Email: "john@example.com", Age: 25, Active: true, Tags: []string{"golang", "backend"}},
+		{ID: 2, Username: "JaneSmith", Email: "jane@example.org", Age: 42, Active: false, Tags: []string{"frontend"}},
+		{ID: 3, Username: "Bob", Email: "bob@test.co", Age: 17, Active: true, Tags: []string{}},
+	}
+	
+	activeUsers := FilterInactiveUsers(users)
+	fmt.Printf("Active users: %d\n", len(activeUsers))
+	
+	transformed, err := TransformUserData(activeUsers)
+	if err != nil {
+		fmt.Printf("Error transforming data: %v\n", err)
+		return
+	}
+	
+	jsonData, _ := json.MarshalIndent(transformed, "", "  ")
+	fmt.Println("Transformed data:")
+	fmt.Println(string(jsonData))
 }
