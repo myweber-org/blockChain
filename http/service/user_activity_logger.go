@@ -85,3 +85,42 @@ func (rr *responseRecorder) WriteHeader(code int) {
 	rr.statusCode = code
 	rr.ResponseWriter.WriteHeader(code)
 }
+package main
+
+import (
+    "log"
+    "net/http"
+    "time"
+)
+
+type ActivityLogger struct {
+    handler http.Handler
+}
+
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    start := time.Now()
+    
+    al.handler.ServeHTTP(w, r)
+    
+    duration := time.Since(start)
+    log.Printf("%s %s %s %v", r.RemoteAddr, r.Method, r.URL.Path, duration)
+}
+
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+    return &ActivityLogger{handler: handler}
+}
+
+func apiHandler(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("API response"))
+}
+
+func main() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/api", apiHandler)
+    
+    wrappedHandler := NewActivityLogger(mux)
+    
+    log.Println("Server starting on :8080")
+    http.ListenAndServe(":8080", wrappedHandler)
+}
