@@ -1,45 +1,30 @@
+
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
+func cleanData(input []string) []string {
+	seen := make(map[string]bool)
+	var result []string
 
 	for _, item := range input {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if !seen[trimmed] {
+			seen[trimmed] = true
+			result = append(result, trimmed)
 		}
 	}
 	return result
 }
 
 func main() {
-	data := []string{"apple", "banana", "apple", "orange", "banana", "grape"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}package main
-
-import "fmt"
-
-func RemoveDuplicates(input []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
-
-	for _, value := range input {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func main() {
-	slice := []int{1, 2, 2, 3, 4, 4, 5}
-	unique := RemoveDuplicates(slice)
-	fmt.Println("Original:", slice)
-	fmt.Println("Unique:", unique)
+	data := []string{"  apple ", "banana", "  apple", "banana ", "  ", "cherry"}
+	cleaned := cleanData(data)
+	fmt.Println("Cleaned data:", cleaned)
 }
