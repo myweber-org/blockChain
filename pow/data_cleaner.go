@@ -1,140 +1,16 @@
-
-package main
-
-import "fmt"
-
-func RemoveDuplicates(input []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
-
-	for _, item := range input {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func main() {
-	data := []string{"apple", "banana", "apple", "orange", "banana", "grape"}
-	cleaned := RemoveDuplicates(data)
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", cleaned)
-}package main
+package utils
 
 import (
-    "encoding/csv"
-    "fmt"
-    "io"
-    "os"
-    "strings"
+	"regexp"
+	"strings"
 )
 
-type DataRecord struct {
-    ID    string
-    Name  string
-    Email string
-    Valid bool
-}
-
-func cleanString(s string) string {
-    return strings.TrimSpace(strings.ToLower(s))
-}
-
-func validateEmail(email string) bool {
-    return strings.Contains(email, "@") && strings.Contains(email, ".")
-}
-
-func processCSVFile(inputPath string) ([]DataRecord, error) {
-    file, err := os.Open(inputPath)
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
-
-    reader := csv.NewReader(file)
-    var records []DataRecord
-
-    for {
-        row, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return nil, err
-        }
-
-        if len(row) < 3 {
-            continue
-        }
-
-        record := DataRecord{
-            ID:    cleanString(row[0]),
-            Name:  cleanString(row[1]),
-            Email: cleanString(row[2]),
-        }
-        record.Valid = validateEmail(record.Email)
-
-        records = append(records, record)
-    }
-
-    return records, nil
-}
-
-func writeCleanData(records []DataRecord, outputPath string) error {
-    file, err := os.Create(outputPath)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
-
-    writer := csv.NewWriter(file)
-    defer writer.Flush()
-
-    header := []string{"id", "name", "email", "valid"}
-    if err := writer.Write(header); err != nil {
-        return err
-    }
-
-    for _, record := range records {
-        row := []string{
-            record.ID,
-            record.Name,
-            record.Email,
-            fmt.Sprintf("%t", record.Valid),
-        }
-        if err := writer.Write(row); err != nil {
-            return err
-        }
-    }
-
-    return nil
-}
-
-func main() {
-    inputFile := "raw_data.csv"
-    outputFile := "cleaned_data.csv"
-
-    records, err := processCSVFile(inputFile)
-    if err != nil {
-        fmt.Printf("Error processing file: %v\n", err)
-        return
-    }
-
-    validCount := 0
-    for _, record := range records {
-        if record.Valid {
-            validCount++
-        }
-    }
-
-    fmt.Printf("Processed %d records, %d valid\n", len(records), validCount)
-
-    if err := writeCleanData(records, outputFile); err != nil {
-        fmt.Printf("Error writing output: %v\n", err)
-        return
-    }
-
-    fmt.Println("Data cleaning completed successfully")
+// SanitizeString removes leading/trailing whitespace and collapses multiple spaces
+func SanitizeString(input string) string {
+	// Trim spaces from start and end
+	trimmed := strings.TrimSpace(input)
+	
+	// Replace multiple spaces with single space
+	re := regexp.MustCompile(`\s+`)
+	return re.ReplaceAllString(trimmed, " ")
 }
