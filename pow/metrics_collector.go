@@ -59,4 +59,86 @@ func main() {
             displayMetrics(metrics)
         }
     }
+}package main
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type MetricsCollector struct {
+	requestCount    int
+	errorCount      int
+	totalLatency    time.Duration
+	latencySamples  []time.Duration
+}
+
+func NewMetricsCollector() *MetricsCollector {
+	return &MetricsCollector{
+		latencySamples: make([]time.Duration, 0),
+	}
+}
+
+func (m *MetricsCollector) RecordRequest(latency time.Duration, isError bool) {
+	m.requestCount++
+	m.totalLatency += latency
+	m.latencySamples = append(m.latencySamples, latency)
+	
+	if isError {
+		m.errorCount++
+	}
+}
+
+func (m *MetricsCollector) GetAverageLatency() time.Duration {
+	if m.requestCount == 0 {
+		return 0
+	}
+	return m.totalLatency / time.Duration(m.requestCount)
+}
+
+func (m *MetricsCollector) GetErrorRate() float64 {
+	if m.requestCount == 0 {
+		return 0.0
+	}
+	return float64(m.errorCount) / float64(m.requestCount)
+}
+
+func (m *MetricsCollector) GetPercentileLatency(percentile float64) time.Duration {
+	if len(m.latencySamples) == 0 {
+		return 0
+	}
+	
+	index := int(float64(len(m.latencySamples)-1) * percentile / 100.0)
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(m.latencySamples) {
+		index = len(m.latencySamples) - 1
+	}
+	
+	return m.latencySamples[index]
+}
+
+func main() {
+	collector := NewMetricsCollector()
+	
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"status": "ok"}`))
+		
+		latency := time.Since(start)
+		collector.RecordRequest(latency, err != nil)
+		
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+	})
+	
+	log.Println("Starting metrics server on :8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal(err)
+	}
 }
