@@ -95,4 +95,76 @@ func main() {
 	}
 
 	fmt.Printf("Successfully cleaned data. Output saved to %s\n", outputFile)
+}package main
+
+import (
+	"crypto/md5"
+	"fmt"
+	"strings"
+)
+
+type Record struct {
+	ID   int
+	Name string
+	Data string
+}
+
+func deduplicateRecords(records []Record) []Record {
+	seen := make(map[[16]byte]bool)
+	var unique []Record
+
+	for _, rec := range records {
+		hash := md5.Sum([]byte(fmt.Sprintf("%d%s%s", rec.ID, rec.Name, rec.Data)))
+		if !seen[hash] {
+			seen[hash] = true
+			unique = append(unique, rec)
+		}
+	}
+	return unique
+}
+
+func validateRecord(rec Record) error {
+	if rec.ID <= 0 {
+		return fmt.Errorf("invalid ID: %d", rec.ID)
+	}
+	if strings.TrimSpace(rec.Name) == "" {
+		return fmt.Errorf("name cannot be empty")
+	}
+	if len(rec.Data) > 1000 {
+		return fmt.Errorf("data exceeds maximum length")
+	}
+	return nil
+}
+
+func cleanData(records []Record) ([]Record, []string) {
+	var cleaned []Record
+	var errors []string
+
+	unique := deduplicateRecords(records)
+
+	for _, rec := range unique {
+		if err := validateRecord(rec); err != nil {
+			errors = append(errors, fmt.Sprintf("Record %d: %v", rec.ID, err))
+			continue
+		}
+		cleaned = append(cleaned, rec)
+	}
+	return cleaned, errors
+}
+
+func main() {
+	sample := []Record{
+		{1, "Alpha", "Sample data"},
+		{2, "Beta", "Another sample"},
+		{1, "Alpha", "Sample data"},
+		{3, "", "Invalid record"},
+		{4, "Gamma", strings.Repeat("x", 2000)},
+	}
+
+	cleaned, errs := cleanData(sample)
+	fmt.Printf("Cleaned records: %d\n", len(cleaned))
+	fmt.Printf("Errors found: %d\n", len(errs))
+	for _, e := range errs {
+		fmt.Println(e)
+	}
 }
