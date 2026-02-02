@@ -159,4 +159,73 @@ func (c Config) Get(key string) (string, error) {
 		return "", fmt.Errorf("key %s not found in configuration", key)
 	}
 	return value, nil
+}package config
+
+import (
+    "fmt"
+    "io/ioutil"
+    "os"
+
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
+}
+
+type ServerConfig struct {
+    Port         int            `yaml:"port"`
+    ReadTimeout  int            `yaml:"read_timeout"`
+    WriteTimeout int            `yaml:"write_timeout"`
+    Database     DatabaseConfig `yaml:"database"`
+}
+
+func LoadConfig(filePath string) (*ServerConfig, error) {
+    data, err := ioutil.ReadFile(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var config ServerConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    if config.Port == 0 {
+        config.Port = 8080
+    }
+
+    return &config, nil
+}
+
+func ValidateConfig(config *ServerConfig) error {
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host is required")
+    }
+    if config.Database.Port <= 0 {
+        return fmt.Errorf("database port must be positive")
+    }
+    return nil
+}
+
+func GetEnvConfig() *ServerConfig {
+    dbPort := 5432
+    if port := os.Getenv("DB_PORT"); port != "" {
+        fmt.Sscanf(port, "%d", &dbPort)
+    }
+
+    return &ServerConfig{
+        Port: 8080,
+        Database: DatabaseConfig{
+            Host:     os.Getenv("DB_HOST"),
+            Port:     dbPort,
+            Username: os.Getenv("DB_USER"),
+            Password: os.Getenv("DB_PASS"),
+            Name:     os.Getenv("DB_NAME"),
+        },
+    }
 }
