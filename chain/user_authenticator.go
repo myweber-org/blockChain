@@ -134,4 +134,108 @@ func JWTMiddleware(secretKey string) func(http.Handler) http.Handler {
             next.ServeHTTP(w, r)
         })
     }
+}package main
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type User struct {
+	ID       string
+	Username string
+	Email    string
+}
+
+type Claims struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	jwt.RegisteredClaims
+}
+
+type Authenticator struct {
+	secretKey []byte
+	issuer    string
+}
+
+func NewAuthenticator(secret string, issuer string) (*Authenticator, error) {
+	if secret == "" {
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			return nil, fmt.Errorf("failed to generate random secret: %w", err)
+		}
+		secret = base64.URLEncoding.EncodeToString(randomBytes)
+	}
+
+	return &Authenticator{
+		secretKey: []byte(secret),
+		issuer:    issuer,
+	}, nil
+}
+
+func (a *Authenticator) GenerateToken(user *User, duration time.Duration) (string, error) {
+	expirationTime := time.Now().Add(duration)
+
+	claims := &Claims{
+		UserID:   user.ID,
+		Username: user.Username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    a.issuer,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(a.secretKey)
+}
+
+func (a *Authenticator) ValidateToken(tokenString string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return a.secretKey, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, errors.New("invalid token")
+}
+
+func (a *Authenticator) RefreshToken(tokenString string, duration time.Duration) (string, error) {
+	claims, err := a.ValidateToken(tokenString)
+	if err != nil {
+		return "", fmt.Errorf("cannot refresh invalid token: %w", err)
+	}
+
+	if time.Until(claims.ExpiresAt.Time) > 30*time.Second {
+		return "", errors.New("token is not expired yet")
+	}
+
+	newClaims := &Claims{
+		UserID:   claims.UserID,
+		Username: claims.Username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    a.issuer,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
+	return token.SignedString(a.secretKey)
 }
