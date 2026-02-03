@@ -771,3 +771,159 @@ func ValidateRecords(records []DataRecord) []error {
 
     return errors
 }
+package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type Record struct {
+	ID      int
+	Name    string
+	Email   string
+	Active  bool
+	Balance float64
+}
+
+type DataProcessor struct {
+	records []Record
+}
+
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		records: make([]Record, 0),
+	}
+}
+
+func (dp *DataProcessor) LoadFromCSV(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	lineNumber := 0
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if lineNumber == 1 {
+			continue
+		}
+
+		record, err := parseRecord(row)
+		if err != nil {
+			return fmt.Errorf("parse error at line %d: %w", lineNumber, err)
+		}
+
+		dp.records = append(dp.records, record)
+	}
+
+	return nil
+}
+
+func parseRecord(row []string) (Record, error) {
+	if len(row) != 5 {
+		return Record{}, errors.New("invalid number of columns")
+	}
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid ID: %w", err)
+	}
+
+	name := strings.TrimSpace(row[1])
+	if name == "" {
+		return Record{}, errors.New("name cannot be empty")
+	}
+
+	email := strings.TrimSpace(row[2])
+	if !strings.Contains(email, "@") {
+		return Record{}, errors.New("invalid email format")
+	}
+
+	active, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid active status: %w", err)
+	}
+
+	balance, err := strconv.ParseFloat(strings.TrimSpace(row[4]), 64)
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid balance: %w", err)
+	}
+
+	return Record{
+		ID:      id,
+		Name:    name,
+		Email:   email,
+		Active:  active,
+		Balance: balance,
+	}, nil
+}
+
+func (dp *DataProcessor) FilterActive() []Record {
+	var active []Record
+	for _, record := range dp.records {
+		if record.Active {
+			active = append(active, record)
+		}
+	}
+	return active
+}
+
+func (dp *DataProcessor) CalculateTotalBalance() float64 {
+	var total float64
+	for _, record := range dp.records {
+		total += record.Balance
+	}
+	return total
+}
+
+func (dp *DataProcessor) FindByEmail(email string) *Record {
+	for _, record := range dp.records {
+		if strings.EqualFold(record.Email, email) {
+			return &record
+		}
+	}
+	return nil
+}
+
+func (dp *DataProcessor) Count() int {
+	return len(dp.records)
+}
+
+func main() {
+	processor := NewDataProcessor()
+	
+	err := processor.LoadFromCSV("data.csv")
+	if err != nil {
+		fmt.Printf("Error loading data: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Loaded %d records\n", processor.Count())
+	fmt.Printf("Total balance: $%.2f\n", processor.CalculateTotalBalance())
+	
+	activeRecords := processor.FilterActive()
+	fmt.Printf("Active users: %d\n", len(activeRecords))
+	
+	searchEmail := "test@example.com"
+	if record := processor.FindByEmail(searchEmail); record != nil {
+		fmt.Printf("Found record for %s: %s (ID: %d)\n", searchEmail, record.Name, record.ID)
+	}
+}
