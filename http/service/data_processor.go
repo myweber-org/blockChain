@@ -243,4 +243,81 @@ func calculateStats(records []Record) (float64, float64) {
 
 	average := sum / float64(len(records))
 	return average, max
+}package main
+
+import (
+	"errors"
+	"strings"
+	"time"
+)
+
+type DataRecord struct {
+	ID        string
+	Timestamp time.Time
+	Value     float64
+	Tags      []string
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("record ID cannot be empty")
+	}
+	if record.Value < 0 {
+		return errors.New("record value must be non-negative")
+	}
+	if record.Timestamp.IsZero() {
+		return errors.New("record timestamp must be set")
+	}
+	return nil
+}
+
+func TransformTags(tags []string) []string {
+	var processed []string
+	seen := make(map[string]bool)
+	
+	for _, tag := range tags {
+		cleaned := strings.TrimSpace(strings.ToLower(tag))
+		if cleaned != "" && !seen[cleaned] {
+			seen[cleaned] = true
+			processed = append(processed, cleaned)
+		}
+	}
+	return processed
+}
+
+func CalculateAverage(records []DataRecord) (float64, error) {
+	if len(records) == 0 {
+		return 0, errors.New("cannot calculate average of empty slice")
+	}
+	
+	var sum float64
+	validCount := 0
+	
+	for _, record := range records {
+		if err := ValidateRecord(record); err == nil {
+			sum += record.Value
+			validCount++
+		}
+	}
+	
+	if validCount == 0 {
+		return 0, errors.New("no valid records found")
+	}
+	
+	return sum / float64(validCount), nil
+}
+
+func FilterByTag(records []DataRecord, tagFilter string) []DataRecord {
+	var filtered []DataRecord
+	targetTag := strings.ToLower(strings.TrimSpace(tagFilter))
+	
+	for _, record := range records {
+		for _, tag := range record.Tags {
+			if strings.ToLower(tag) == targetTag {
+				filtered = append(filtered, record)
+				break
+			}
+		}
+	}
+	return filtered
 }
