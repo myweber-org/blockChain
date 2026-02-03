@@ -222,4 +222,77 @@ func SaveConfig(config *AppConfig, filePath string) error {
 	}
 
 	return ioutil.WriteFile(filePath, data, 0644)
+}package config
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host" env:"DB_HOST"`
+    Port     int    `yaml:"port" env:"DB_PORT"`
+    Username string `yaml:"username" env:"DB_USER"`
+    Password string `yaml:"password" env:"DB_PASS"`
+    Name     string `yaml:"name" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+    Port         int    `yaml:"port" env:"SERVER_PORT"`
+    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
+    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
+    Debug        bool   `yaml:"debug" env:"DEBUG"`
+}
+
+type AppConfig struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
+}
+
+func LoadConfig(configPath string) (*AppConfig, error) {
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var config AppConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    overrideFromEnv(&config)
+
+    return &config, nil
+}
+
+func overrideFromEnv(config *AppConfig) {
+    // This function would iterate through struct fields
+    // and override values from environment variables
+    // For brevity, implementing simple overrides
+    if envPort := os.Getenv("SERVER_PORT"); envPort != "" {
+        var port int
+        if _, err := fmt.Sscanf(envPort, "%d", &port); err == nil {
+            config.Server.Port = port
+        }
+    }
+
+    if envDebug := os.Getenv("DEBUG"); envDebug != "" {
+        config.Server.Debug = envDebug == "true" || envDebug == "1"
+    }
+
+    if envLogLevel := os.Getenv("LOG_LEVEL"); envLogLevel != "" {
+        config.LogLevel = envLogLevel
+    }
+}
+
+func DefaultConfigPath() string {
+    homeDir, err := os.UserHomeDir()
+    if err != nil {
+        return "./config.yaml"
+    }
+    return filepath.Join(homeDir, ".app", "config.yaml")
 }
