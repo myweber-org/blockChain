@@ -4,42 +4,38 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 )
 
-func deriveKey(passphrase string) []byte {
-	hash := sha256.Sum256([]byte(passphrase))
-	return hash[:]
-}
-
-func encryptData(plaintext []byte, passphrase string) ([]byte, error) {
-	key := deriveKey(passphrase)
+func encrypt(plaintext []byte, key []byte) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	return ciphertext, nil
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-func decryptData(ciphertext []byte, passphrase string) ([]byte, error) {
-	key := deriveKey(passphrase)
+func decrypt(encodedCiphertext string, key []byte) ([]byte, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(encodedCiphertext)
+	if err != nil {
+		return nil, err
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -50,36 +46,31 @@ func decryptData(ciphertext []byte, passphrase string) ([]byte, error) {
 		return nil, err
 	}
 
-	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
+	if len(ciphertext) < gcm.NonceSize() {
 		return nil, errors.New("ciphertext too short")
 	}
 
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return plaintext, nil
+	nonce, ciphertext := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
 func main() {
-	secretMessage := "Sensitive data requiring protection"
-	password := "securePass123!"
-
-	encrypted, err := encryptData([]byte(secretMessage), password)
-	if err != nil {
-		fmt.Printf("Encryption failed: %v\n", err)
-		os.Exit(1)
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		panic(err)
 	}
 
-	fmt.Printf("Encrypted (hex): %s\n", hex.EncodeToString(encrypted))
-
-	decrypted, err := decryptData(encrypted, password)
+	message := "Sensitive data requiring encryption"
+	encrypted, err := encrypt([]byte(message), key)
 	if err != nil {
-		fmt.Printf("Decryption failed: %v\n", err)
-		os.Exit(1)
+		panic(err)
+	}
+
+	fmt.Printf("Encrypted: %s\n", encrypted)
+
+	decrypted, err := decrypt(encrypted, key)
+	if err != nil {
+		panic(err)
 	}
 
 	fmt.Printf("Decrypted: %s\n", string(decrypted))
