@@ -321,3 +321,43 @@ func FilterByTag(records []DataRecord, tagFilter string) []DataRecord {
 	}
 	return filtered
 }
+package main
+
+import (
+	"errors"
+	"strings"
+	"unicode"
+)
+
+func ValidateUsername(username string) error {
+	if len(username) < 3 || len(username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
+	}
+
+	for _, r := range username {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+			return errors.New("username can only contain letters, digits, underscores, and hyphens")
+		}
+	}
+	return nil
+}
+
+func NormalizeEmail(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return email
+	}
+	localPart := strings.ToLower(strings.TrimSpace(parts[0]))
+	domain := strings.ToLower(strings.TrimSpace(parts[1]))
+	return localPart + "@" + domain
+}
+
+func SanitizeInput(input string) string {
+	replacer := strings.NewReplacer(
+		"<", "&lt;",
+		">", "&gt;",
+		"\"", "&quot;",
+		"'", "&#39;",
+	)
+	return replacer.Replace(input)
+}
