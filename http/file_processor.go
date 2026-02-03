@@ -173,4 +173,42 @@ func main() {
 	processor.ValidateRecords()
 	total, valid := processor.GetStats()
 	fmt.Printf("Processing complete. Total: %d, Valid: %d\n", total, valid)
+}package main
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"io"
+	"os"
+)
+
+func calculateFileHash(filename string) (string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%x", hash.Sum(nil)), nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_processor <filename>")
+		return
+	}
+
+	filename := os.Args[1]
+	hash, err := calculateFileHash(filename)
+	if err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		return
+	}
+
+	fmt.Printf("SHA256 hash of %s: %s\n", filename, hash)
 }
