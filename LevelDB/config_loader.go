@@ -143,4 +143,70 @@ func LoadConfig(path string) (*Config, error) {
     }
 
     return &config, nil
+}package config
+
+import (
+	"io/ioutil"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Config struct {
+	Server struct {
+		Host string `yaml:"host"`
+		Port int    `yaml:"port"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		Name     string `yaml:"name"`
+	} `yaml:"database"`
+	LogLevel string `yaml:"log_level"`
+}
+
+func LoadConfig(path string) (*Config, error) {
+	config := &Config{}
+
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	err = yaml.Unmarshal(data, config)
+	if err != nil {
+		return nil, err
+	}
+
+	overrideWithEnv(config)
+
+	return config, nil
+}
+
+func overrideWithEnv(c *Config) {
+	if val := os.Getenv("SERVER_HOST"); val != "" {
+		c.Server.Host = val
+	}
+	if val := os.Getenv("SERVER_PORT"); val != "" {
+		if port, err := strconv.Atoi(val); err == nil {
+			c.Server.Port = port
+		}
+	}
+	if val := os.Getenv("DB_HOST"); val != "" {
+		c.Database.Host = val
+	}
+	if val := os.Getenv("DB_USERNAME"); val != "" {
+		c.Database.Username = val
+	}
+	if val := os.Getenv("DB_PASSWORD"); val != "" {
+		c.Database.Password = val
+	}
+	if val := os.Getenv("DB_NAME"); val != "" {
+		c.Database.Name = val
+	}
+	if val := os.Getenv("LOG_LEVEL"); val != "" {
+		c.LogLevel = strings.ToUpper(val)
+	}
 }
