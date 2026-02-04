@@ -49,4 +49,86 @@ func getEnvWithDefault(key, defaultValue string) string {
         return defaultValue
     }
     return value
+}package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+type AppConfig struct {
+	ServerPort string `json:"server_port"`
+	DebugMode  bool   `json:"debug_mode"`
+	CacheTTL   int    `json:"cache_ttl"`
+}
+
+var (
+	config     *AppConfig
+	configOnce sync.Once
+)
+
+func LoadConfig() (*AppConfig, error) {
+	var err error
+	configOnce.Do(func() {
+		configPath := getConfigPath()
+		config, err = loadFromFile(configPath)
+		if err != nil {
+			config = loadFromEnv()
+		}
+	})
+	return config, err
+}
+
+func getConfigPath() string {
+	if path := os.Getenv("CONFIG_PATH"); path != "" {
+		return path
+	}
+	return filepath.Join(".", "config.json")
+}
+
+func loadFromFile(path string) (*AppConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg AppConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func loadFromEnv() *AppConfig {
+	return &AppConfig{
+		ServerPort: getEnvOrDefault("SERVER_PORT", "8080"),
+		DebugMode:  getEnvBoolOrDefault("DEBUG_MODE", false),
+		CacheTTL:   getEnvIntOrDefault("CACHE_TTL", 300),
+	}
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvBoolOrDefault(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		return value == "true" || value == "1"
+	}
+	return defaultValue
+}
+
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		var result int
+		if _, err := fmt.Sscanf(value, "%d", &result); err == nil {
+			return result
+		}
+	}
+	return defaultValue
 }
