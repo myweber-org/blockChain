@@ -1,134 +1,80 @@
-
 package config
 
 import (
     "fmt"
     "os"
-    "strconv"
     "strings"
+
+    "gopkg.in/yaml.v2"
 )
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host" env:"DB_HOST"`
+    Port     int    `yaml:"port" env:"DB_PORT"`
+    Username string `yaml:"username" env:"DB_USER"`
+    Password string `yaml:"password" env:"DB_PASS"`
+    Name     string `yaml:"name" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+    Port         int    `yaml:"port" env:"SERVER_PORT"`
+    Debug        bool   `yaml:"debug" env:"SERVER_DEBUG"`
+    LogLevel     string `yaml:"log_level" env:"LOG_LEVEL"`
+    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
+    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
+}
 
 type Config struct {
-    ServerPort int
-    DatabaseURL string
-    CacheEnabled bool
-    LogLevel string
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
 }
 
-func LoadConfig() (*Config, error) {
-    cfg := &Config{}
-    
-    portStr := getEnvWithDefault("SERVER_PORT", "8080")
-    port, err := strconv.Atoi(portStr)
+func LoadConfig(configPath string) (*Config, error) {
+    data, err := os.ReadFile(configPath)
     if err != nil {
-        return nil, fmt.Errorf("invalid SERVER_PORT value: %v", err)
+        return nil, fmt.Errorf("failed to read config file: %w", err)
     }
-    cfg.ServerPort = port
-    
-    cfg.DatabaseURL = getEnvWithDefault("DATABASE_URL", "postgres://localhost:5432/app")
-    
-    cacheEnabledStr := getEnvWithDefault("CACHE_ENABLED", "true")
-    cacheEnabled, err := strconv.ParseBool(cacheEnabledStr)
-    if err != nil {
-        return nil, fmt.Errorf("invalid CACHE_ENABLED value: %v", err)
+
+    var config Config
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
     }
-    cfg.CacheEnabled = cacheEnabled
-    
-    cfg.LogLevel = strings.ToUpper(getEnvWithDefault("LOG_LEVEL", "INFO"))
-    validLogLevels := map[string]bool{"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true}
-    if !validLogLevels[cfg.LogLevel] {
-        return nil, fmt.Errorf("invalid LOG_LEVEL value: %s", cfg.LogLevel)
+
+    overrideFromEnv(&config)
+    return &config, nil
+}
+
+func overrideFromEnv(config *Config) {
+    overrideStruct(config.Database)
+    overrideStruct(config.Server)
+}
+
+func overrideStruct(s interface{}) {
+    v := reflect.ValueOf(s).Elem()
+    t := v.Type()
+
+    for i := 0; i < v.NumField(); i++ {
+        field := v.Field(i)
+        tag := t.Field(i).Tag.Get("env")
+        if tag == "" {
+            continue
+        }
+
+        envValue := os.Getenv(tag)
+        if envValue == "" {
+            continue
+        }
+
+        switch field.Kind() {
+        case reflect.String:
+            field.SetString(envValue)
+        case reflect.Int:
+            if intVal, err := strconv.Atoi(envValue); err == nil {
+                field.SetInt(int64(intVal))
+            }
+        case reflect.Bool:
+            boolVal := strings.ToLower(envValue) == "true" || envValue == "1"
+            field.SetBool(boolVal)
+        }
     }
-    
-    return cfg, nil
-}
-
-func getEnvWithDefault(key, defaultValue string) string {
-    value := os.Getenv(key)
-    if value == "" {
-        return defaultValue
-    }
-    return value
-}package config
-
-import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"sync"
-)
-
-type AppConfig struct {
-	ServerPort string `json:"server_port"`
-	DebugMode  bool   `json:"debug_mode"`
-	CacheTTL   int    `json:"cache_ttl"`
-}
-
-var (
-	config     *AppConfig
-	configOnce sync.Once
-)
-
-func LoadConfig() (*AppConfig, error) {
-	var err error
-	configOnce.Do(func() {
-		configPath := getConfigPath()
-		config, err = loadFromFile(configPath)
-		if err != nil {
-			config = loadFromEnv()
-		}
-	})
-	return config, err
-}
-
-func getConfigPath() string {
-	if path := os.Getenv("CONFIG_PATH"); path != "" {
-		return path
-	}
-	return filepath.Join(".", "config.json")
-}
-
-func loadFromFile(path string) (*AppConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg AppConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-
-func loadFromEnv() *AppConfig {
-	return &AppConfig{
-		ServerPort: getEnvOrDefault("SERVER_PORT", "8080"),
-		DebugMode:  getEnvBoolOrDefault("DEBUG_MODE", false),
-		CacheTTL:   getEnvIntOrDefault("CACHE_TTL", 300),
-	}
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvBoolOrDefault(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		return value == "true" || value == "1"
-	}
-	return defaultValue
-}
-
-func getEnvIntOrDefault(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		var result int
-		if _, err := fmt.Sscanf(value, "%d", &result); err == nil {
-			return result
-		}
-	}
-	return defaultValue
 }
