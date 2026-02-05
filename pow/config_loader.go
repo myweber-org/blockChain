@@ -206,4 +206,75 @@ func validateConfig(config *AppConfig) error {
 	}
 
 	return nil
+}package config
+
+import (
+    "io/ioutil"
+    "log"
+
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
+}
+
+type ServerConfig struct {
+    Port int    `yaml:"port"`
+    Mode string `yaml:"mode"`
+}
+
+type AppConfig struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+}
+
+func LoadConfig(path string) (*AppConfig, error) {
+    data, err := ioutil.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+
+    var config AppConfig
+    err = yaml.Unmarshal(data, &config)
+    if err != nil {
+        return nil, err
+    }
+
+    return &config, nil
+}
+
+func ValidateConfig(config *AppConfig) error {
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host is required")
+    }
+    if config.Database.Port == 0 {
+        return fmt.Errorf("database port is required")
+    }
+    if config.Server.Port == 0 {
+        config.Server.Port = 8080
+    }
+    if config.Server.Mode == "" {
+        config.Server.Mode = "development"
+    }
+    return nil
+}
+
+func LoadAndValidate(path string) (*AppConfig, error) {
+    config, err := LoadConfig(path)
+    if err != nil {
+        log.Printf("Failed to load config: %v", err)
+        return nil, err
+    }
+
+    if err := ValidateConfig(config); err != nil {
+        log.Printf("Invalid configuration: %v", err)
+        return nil, err
+    }
+
+    return config, nil
 }
