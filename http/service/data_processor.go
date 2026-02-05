@@ -106,4 +106,72 @@ func main() {
 			fmt.Printf("Warning: Invalid email for record %d (ID: %s)\n", i+1, record.ID)
 		}
 	}
+}package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Value string
+	Valid bool
+}
+
+func ProcessRecords(records []DataRecord) ([]string, error) {
+	if len(records) == 0 {
+		return nil, errors.New("no records to process")
+	}
+
+	var processed []string
+	for _, record := range records {
+		if !record.Valid {
+			continue
+		}
+
+		trimmed := strings.TrimSpace(record.Value)
+		if trimmed == "" {
+			continue
+		}
+
+		processed = append(processed, fmt.Sprintf("ID:%d|Value:%s", record.ID, trimmed))
+	}
+
+	if len(processed) == 0 {
+		return nil, errors.New("no valid records found")
+	}
+
+	return processed, nil
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID <= 0 {
+		return errors.New("invalid ID")
+	}
+	if strings.TrimSpace(record.Value) == "" {
+		return errors.New("empty value")
+	}
+	return nil
+}
+
+func main() {
+	records := []DataRecord{
+		{ID: 1, Value: "alpha", Valid: true},
+		{ID: 2, Value: "  ", Valid: true},
+		{ID: 3, Value: "beta", Valid: false},
+		{ID: 4, Value: "gamma", Valid: true},
+	}
+
+	result, err := ProcessRecords(records)
+	if err != nil {
+		fmt.Printf("Processing error: %v\n", err)
+		return
+	}
+
+	fmt.Println("Processed records:")
+	for _, item := range result {
+		fmt.Println(item)
+	}
 }
