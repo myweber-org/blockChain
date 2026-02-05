@@ -112,4 +112,57 @@ func main() {
     }
     
     fmt.Printf("Loaded preferences: %+v\n", prefs)
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "io/ioutil"
+    "os"
+)
+
+type UserPreferences struct {
+    Theme      string `json:"theme"`
+    Language   string `json:"language"`
+    Notify     bool   `json:"notifications_enabled"`
+    ItemsPerPage int  `json:"items_per_page"`
+}
+
+func LoadPreferences(filename string) (*UserPreferences, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    data, err := ioutil.ReadAll(file)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read file: %w", err)
+    }
+
+    var prefs UserPreferences
+    if err := json.Unmarshal(data, &prefs); err != nil {
+        return nil, fmt.Errorf("invalid JSON format: %w", err)
+    }
+
+    if prefs.Theme == "" {
+        return nil, fmt.Errorf("required field 'theme' is missing")
+    }
+    if prefs.Language == "" {
+        return nil, fmt.Errorf("required field 'language' is missing")
+    }
+    if prefs.ItemsPerPage <= 0 {
+        return nil, fmt.Errorf("items_per_page must be positive")
+    }
+
+    return &prefs, nil
+}
+
+func main() {
+    prefs, err := LoadPreferences("config.json")
+    if err != nil {
+        fmt.Printf("Error loading preferences: %v\n", err)
+        return
+    }
+    fmt.Printf("Loaded preferences: %+v\n", prefs)
 }
