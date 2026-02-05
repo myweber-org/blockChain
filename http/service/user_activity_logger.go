@@ -67,4 +67,70 @@ func main() {
     }
 
     fmt.Println("Activity logging completed")
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "time"
+)
+
+type ActivityEvent struct {
+    UserID    string    `json:"user_id"`
+    EventType string    `json:"event_type"`
+    Timestamp time.Time `json:"timestamp"`
+    Details   string    `json:"details"`
+}
+
+type ActivityLogger struct {
+    logFile string
+}
+
+func NewActivityLogger(logFile string) *ActivityLogger {
+    return &ActivityLogger{logFile: logFile}
+}
+
+func (l *ActivityLogger) LogActivity(userID, eventType, details string) error {
+    event := ActivityEvent{
+        UserID:    userID,
+        EventType: eventType,
+        Timestamp: time.Now().UTC(),
+        Details:   details,
+    }
+
+    file, err := os.OpenFile(l.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to open log file: %w", err)
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    if err := encoder.Encode(event); err != nil {
+        return fmt.Errorf("failed to encode event: %w", err)
+    }
+
+    return nil
+}
+
+func main() {
+    logger := NewActivityLogger("user_activity.log")
+
+    activities := []struct {
+        userID    string
+        eventType string
+        details   string
+    }{
+        {"user_123", "login", "User logged in from web browser"},
+        {"user_456", "purchase", "Purchased item: premium_subscription"},
+        {"user_123", "logout", "User session ended"},
+    }
+
+    for _, activity := range activities {
+        if err := logger.LogActivity(activity.userID, activity.eventType, activity.details); err != nil {
+            fmt.Printf("Failed to log activity: %v\n", err)
+        } else {
+            fmt.Printf("Logged %s event for user %s\n", activity.eventType, activity.userID)
+        }
+    }
 }
