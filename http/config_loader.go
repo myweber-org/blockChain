@@ -77,4 +77,40 @@ func overrideStruct(s interface{}) {
             field.SetBool(boolVal)
         }
     }
+}package config
+
+import (
+    "io/ioutil"
+    "log"
+
+    "gopkg.in/yaml.v2"
+)
+
+type AppConfig struct {
+    Server struct {
+        Host string `yaml:"host"`
+        Port int    `yaml:"port"`
+    } `yaml:"server"`
+    Database struct {
+        Host     string `yaml:"host"`
+        Name     string `yaml:"name"`
+        Username string `yaml:"username"`
+        Password string `yaml:"password"`
+    } `yaml:"database"`
+}
+
+func LoadConfig(path string) (*AppConfig, error) {
+    data, err := ioutil.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+
+    var config AppConfig
+    err = yaml.Unmarshal(data, &config)
+    if err != nil {
+        log.Printf("Failed to parse YAML: %v", err)
+        return nil, err
+    }
+
+    return &config, nil
 }
