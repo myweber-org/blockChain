@@ -171,4 +171,148 @@ func randomString(n int) string {
         b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
     }
     return string(b)
+}package session
+
+import (
+    "crypto/rand"
+    "encoding/base64"
+    "errors"
+    "time"
+
+    "github.com/go-redis/redis/v8"
+    "golang.org/x/net/context"
+)
+
+var (
+    ErrSessionNotFound = errors.New("session not found")
+    ErrInvalidToken    = errors.New("invalid session token")
+)
+
+type Session struct {
+    UserID    string                 `json:"user_id"`
+    Data      map[string]interface{} `json:"data"`
+    CreatedAt time.Time              `json:"created_at"`
+    ExpiresAt time.Time              `json:"expires_at"`
+}
+
+type Manager struct {
+    client    *redis.Client
+    prefix    string
+    expiry    time.Duration
+}
+
+func NewManager(client *redis.Client, prefix string, expiry time.Duration) *Manager {
+    return &Manager{
+        client: client,
+        prefix: prefix,
+        expiry: expiry,
+    }
+}
+
+func generateToken() (string, error) {
+    bytes := make([]byte, 32)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+    return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func (m *Manager) Create(userID string, data map[string]interface{}) (string, error) {
+    token, err := generateToken()
+    if err != nil {
+        return "", err
+    }
+
+    session := Session{
+        UserID:    userID,
+        Data:      data,
+        CreatedAt: time.Now(),
+        ExpiresAt: time.Now().Add(m.expiry),
+    }
+
+    key := m.prefix + token
+    ctx := context.Background()
+    
+    if err := m.client.Set(ctx, key, session, m.expiry).Err(); err != nil {
+        return "", err
+    }
+
+    return token, nil
+}
+
+func (m *Manager) Get(token string) (*Session, error) {
+    key := m.prefix + token
+    ctx := context.Background()
+
+    var session Session
+    if err := m.client.Get(ctx, key).Scan(&session); err != nil {
+        if err == redis.Nil {
+            return nil, ErrSessionNotFound
+        }
+        return nil, err
+    }
+
+    if time.Now().After(session.ExpiresAt) {
+        m.Delete(token)
+        return nil, ErrSessionNotFound
+    }
+
+    return &session, nil
+}
+
+func (m *Manager) Update(token string, data map[string]interface{}) error {
+    session, err := m.Get(token)
+    if err != nil {
+        return err
+    }
+
+    session.Data = data
+    key := m.prefix + token
+    ctx := context.Background()
+
+    remaining := time.Until(session.ExpiresAt)
+    if remaining <= 0 {
+        return ErrSessionNotFound
+    }
+
+    return m.client.Set(ctx, key, session, remaining).Err()
+}
+
+func (m *Manager) Delete(token string) error {
+    key := m.prefix + token
+    ctx := context.Background()
+    return m.client.Del(ctx, key).Err()
+}
+
+func (m *Manager) Extend(token string, duration time.Duration) error {
+    session, err := m.Get(token)
+    if err != nil {
+        return err
+    }
+
+    session.ExpiresAt = session.ExpiresAt.Add(duration)
+    key := m.prefix + token
+    ctx := context.Background()
+
+    return m.client.Set(ctx, key, session, m.expiry+duration).Err()
+}
+
+func (m *Manager) Cleanup() error {
+    ctx := context.Background()
+    keys, err := m.client.Keys(ctx, m.prefix+"*").Result()
+    if err != nil {
+        return err
+    }
+
+    for _, key := range keys {
+        var session Session
+        if err := m.client.Get(ctx, key).Scan(&session); err != nil {
+            continue
+        }
+        if time.Now().After(session.ExpiresAt) {
+            m.client.Del(ctx, key)
+        }
+    }
+
+    return nil
 }
