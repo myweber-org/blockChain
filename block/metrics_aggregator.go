@@ -108,4 +108,53 @@ func calculatePercentile(sortedValues []float64, percentile float64) float64 {
 		return sortedValues[lower]
 	}
 	return sortedValues[lower]*(1-weight) + sortedValues[upper]*weight
+}package main
+
+import (
+	"log"
+	"sync"
+	"time"
+)
+
+type Metrics struct {
+	mu            sync.RWMutex
+	requestCount  int64
+	errorCount    int64
+	totalLatency  time.Duration
+}
+
+func NewMetrics() *Metrics {
+	return &Metrics{}
+}
+
+func (m *Metrics) RecordRequest(latency time.Duration, isError bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.requestCount++
+	m.totalLatency += latency
+	if isError {
+		m.errorCount++
+	}
+}
+
+func (m *Metrics) GetStats() (int64, int64, time.Duration) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.requestCount == 0 {
+		return 0, 0, 0
+	}
+	return m.requestCount, m.errorCount, m.totalLatency / time.Duration(m.requestCount)
+}
+
+func main() {
+	metrics := NewMetrics()
+
+	metrics.RecordRequest(150*time.Millisecond, false)
+	metrics.RecordRequest(200*time.Millisecond, true)
+	metrics.RecordRequest(100*time.Millisecond, false)
+
+	total, errors, avgLatency := metrics.GetStats()
+	log.Printf("Total requests: %d, Errors: %d, Average latency: %v", total, errors, avgLatency)
 }
