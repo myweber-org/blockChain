@@ -373,4 +373,143 @@ func (c Config) Get(key string) (string, error) {
 		return "", fmt.Errorf("key '%s' not found in configuration", key)
 	}
 	return value, nil
+}package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+)
+
+type Config struct {
+	Server struct {
+		Host string `json:"host" env:"SERVER_HOST"`
+		Port int    `json:"port" env:"SERVER_PORT"`
+	} `json:"server"`
+	Database struct {
+		Driver   string `json:"driver" env:"DB_DRIVER"`
+		Host     string `json:"host" env:"DB_HOST"`
+		Port     int    `json:"port" env:"DB_PORT"`
+		Name     string `json:"name" env:"DB_NAME"`
+		Username string `json:"username" env:"DB_USER"`
+		Password string `json:"password" env:"DB_PASS"`
+	} `json:"database"`
+	LogLevel string `json:"log_level" env:"LOG_LEVEL"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	var cfg Config
+
+	if configPath == "" {
+		configPath = "config.json"
+	}
+
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	file, err := os.Open(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to decode config: %w", err)
+	}
+
+	if err := overrideFromEnv(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to load env vars: %w", err)
+	}
+
+	if err := validateConfig(&cfg); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+func overrideFromEnv(cfg *Config) error {
+	v := reflect.ValueOf(cfg).Elem()
+	return processStruct(v)
+}
+
+func processStruct(v reflect.Value) error {
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		if field.Kind() == reflect.Struct {
+			if err := processStruct(field); err != nil {
+				return err
+			}
+			continue
+		}
+
+		envTag := fieldType.Tag.Get("env")
+		if envTag == "" {
+			continue
+		}
+
+		envValue := os.Getenv(envTag)
+		if envValue == "" {
+			continue
+		}
+
+		if err := setFieldValue(field, envValue); err != nil {
+			return fmt.Errorf("failed to set field %s: %w", fieldType.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func setFieldValue(field reflect.Value, value string) error {
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int:
+		var intVal int64
+		_, err := fmt.Sscanf(value, "%d", &intVal)
+		if err != nil {
+			return fmt.Errorf("invalid integer value: %s", value)
+		}
+		field.SetInt(intVal)
+	default:
+		return fmt.Errorf("unsupported field type: %s", field.Kind())
+	}
+	return nil
+}
+
+func validateConfig(cfg *Config) error {
+	var errors []string
+
+	if cfg.Server.Host == "" {
+		errors = append(errors, "server host cannot be empty")
+	}
+	if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
+		errors = append(errors, "server port must be between 1 and 65535")
+	}
+	if cfg.Database.Driver == "" {
+		errors = append(errors, "database driver cannot be empty")
+	}
+	if cfg.Database.Host == "" {
+		errors = append(errors, "database host cannot be empty")
+	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = "info"
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("validation errors: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
 }
