@@ -371,4 +371,90 @@ func main() {
 	}
 
 	fmt.Println("Log rotation test completed")
+}package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	maxLogSize   = 1024 * 1024 // 1MB
+	logDirectory = "./logs"
+	baseLogName  = "app.log"
+)
+
+func rotateLogIfNeeded() error {
+	logPath := filepath.Join(logDirectory, baseLogName)
+	info, err := os.Stat(logPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to stat log file: %w", err)
+	}
+
+	if info.Size() < maxLogSize {
+		return nil
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	archiveName := fmt.Sprintf("app_%s.log", timestamp)
+	archivePath := filepath.Join(logDirectory, archiveName)
+
+	err = os.Rename(logPath, archivePath)
+	if err != nil {
+		return fmt.Errorf("failed to rename log file: %w", err)
+	}
+
+	fmt.Printf("Log rotated: %s -> %s\n", baseLogName, archiveName)
+	return nil
+}
+
+func ensureLogDirectory() error {
+	return os.MkdirAll(logDirectory, 0755)
+}
+
+func writeLogEntry(message string) error {
+	err := ensureLogDirectory()
+	if err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	err = rotateLogIfNeeded()
+	if err != nil {
+		return fmt.Errorf("failed to rotate log: %w", err)
+	}
+
+	logPath := filepath.Join(logDirectory, baseLogName)
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logLine := fmt.Sprintf("[%s] %s\n", timestamp, message)
+
+	_, err = file.WriteString(logLine)
+	if err != nil {
+		return fmt.Errorf("failed to write log entry: %w", err)
+	}
+
+	return nil
+}
+
+func main() {
+	for i := 1; i <= 100; i++ {
+		message := fmt.Sprintf("Test log entry number %d", i)
+		err := writeLogEntry(message)
+		if err != nil {
+			fmt.Printf("Error writing log: %v\n", err)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	fmt.Println("Log rotation test completed")
 }
