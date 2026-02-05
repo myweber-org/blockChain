@@ -42,17 +42,10 @@ func GetUserID(ctx context.Context) (string, bool) {
 }
 
 func validateToken(tokenString string) (string, error) {
-	// In a real implementation, this would parse and validate JWT tokens
-	// For this example, we'll use a simple mock validation
-	if tokenString == "" {
-		return "", http.ErrNoCookie
+	// Placeholder for actual JWT validation logic
+	// In real implementation, parse JWT, verify signature, check expiry
+	if tokenString == "valid_token_example" {
+		return "user123", nil
 	}
-
-	// Mock validation - in reality you would use a JWT library
-	if strings.HasPrefix(tokenString, "valid_") {
-		userID := strings.TrimPrefix(tokenString, "valid_")
-		return userID, nil
-	}
-
-	return "", http.ErrNoCookie
+	return "", http.ErrAbortHandler
 }
