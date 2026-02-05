@@ -1,76 +1,81 @@
-
 package main
 
 import (
-    "fmt"
-    "strings"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 )
 
-type DataRecord struct {
-    ID    int
-    Email string
-    Phone string
-}
+func cleanCSV(inputPath, outputPath string) error {
+	inFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inFile.Close()
 
-func deduplicateRecords(records []DataRecord) []DataRecord {
-    seen := make(map[int]bool)
-    result := []DataRecord{}
-    
-    for _, record := range records {
-        if !seen[record.ID] {
-            seen[record.ID] = true
-            result = append(result, record)
-        }
-    }
-    return result
-}
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
 
-func validateEmail(email string) bool {
-    return strings.Contains(email, "@") && strings.Contains(email, ".")
-}
+	reader := csv.NewReader(inFile)
+	writer := csv.NewWriter(outFile)
+	defer writer.Flush()
 
-func cleanPhoneNumber(phone string) string {
-    cleaned := strings.Builder{}
-    for _, ch := range phone {
-        if ch >= '0' && ch <= '9' {
-            cleaned.WriteRune(ch)
-        }
-    }
-    return cleaned.String()
-}
+	seen := make(map[string]bool)
+	headers, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read headers: %w", err)
+	}
 
-func processRecords(records []DataRecord) []DataRecord {
-    deduped := deduplicateRecords(records)
-    
-    for i := range deduped {
-        deduped[i].Phone = cleanPhoneNumber(deduped[i].Phone)
-    }
-    
-    validRecords := []DataRecord{}
-    for _, record := range deduped {
-        if validateEmail(record.Email) && len(record.Phone) >= 10 {
-            validRecords = append(validRecords, record)
-        }
-    }
-    
-    return validRecords
+	for i := range headers {
+		headers[i] = strings.TrimSpace(headers[i])
+	}
+
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("failed to write headers: %w", err)
+	}
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read record: %w", err)
+		}
+
+		for i := range record {
+			record[i] = strings.TrimSpace(record[i])
+		}
+
+		key := strings.Join(record, "|")
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write record: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func main() {
-    sampleData := []DataRecord{
-        {ID: 1, Email: "test@example.com", Phone: "(123) 456-7890"},
-        {ID: 2, Email: "invalid-email", Phone: "555-1234"},
-        {ID: 1, Email: "test@example.com", Phone: "1234567890"},
-        {ID: 3, Email: "user@domain.org", Phone: "+1-800-555-0199"},
-    }
-    
-    cleaned := processRecords(sampleData)
-    
-    fmt.Printf("Original records: %d\n", len(sampleData))
-    fmt.Printf("Cleaned records: %d\n", len(cleaned))
-    
-    for _, record := range cleaned {
-        fmt.Printf("ID: %d, Email: %s, Phone: %s\n", 
-            record.ID, record.Email, record.Phone)
-    }
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_cleaner <input.csv> <output.csv>")
+		os.Exit(1)
+	}
+
+	if err := cleanCSV(os.Args[1], os.Args[2]); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Data cleaning completed successfully")
 }
