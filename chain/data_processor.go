@@ -89,3 +89,37 @@ func FindMaxValueRecord(records []Record) (Record, error) {
     }
     return maxRecord, nil
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataCleaner struct {
+	whitespaceRegex *regexp.Regexp
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+	}
+}
+
+func (dc *DataCleaner) Normalize(input string) string {
+	trimmed := strings.TrimSpace(input)
+	normalized := dc.whitespaceRegex.ReplaceAllString(trimmed, " ")
+	return strings.ToLower(normalized)
+}
+
+func (dc *DataCleaner) RemoveSpecialChars(input string, keep string) string {
+	pattern := "[^a-zA-Z0-9" + regexp.QuoteMeta(keep) + "]+"
+	re := regexp.MustCompile(pattern)
+	return re.ReplaceAllString(input, "")
+}
+
+func ProcessString(input string) string {
+	cleaner := NewDataCleaner()
+	normalized := cleaner.Normalize(input)
+	return cleaner.RemoveSpecialChars(normalized, " _-")
+}
