@@ -114,3 +114,173 @@ func LoadConfig(path string) (*AppConfig, error) {
 
     return &config, nil
 }
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+)
+
+type Config struct {
+	Server struct {
+		Host string `json:"host" env:"SERVER_HOST" default:"localhost"`
+		Port int    `json:"port" env:"SERVER_PORT" default:"8080"`
+	} `json:"server"`
+	Database struct {
+		URL      string `json:"url" env:"DATABASE_URL" required:"true"`
+		PoolSize int    `json:"pool_size" env:"DB_POOL_SIZE" default:"10"`
+	} `json:"database"`
+	LogLevel string `json:"log_level" env:"LOG_LEVEL" default:"info"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	cfg := &Config{}
+	
+	if configPath != "" {
+		if err := loadFromFile(configPath, cfg); err != nil {
+			return nil, fmt.Errorf("failed to load config file: %w", err)
+		}
+	}
+	
+	if err := loadFromEnv(cfg); err != nil {
+		return nil, fmt.Errorf("failed to load environment variables: %w", err)
+	}
+	
+	if err := validateConfig(cfg); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+	
+	return cfg, nil
+}
+
+func loadFromFile(path string, cfg *Config) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid config path: %w", err)
+	}
+	
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return fmt.Errorf("failed to parse config JSON: %w", err)
+	}
+	
+	return nil
+}
+
+func loadFromEnv(cfg *Config) error {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+	
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldValue := v.Field(i)
+		
+		if field.Type.Kind() == reflect.Struct {
+			if err := processStruct(fieldValue, field); err != nil {
+				return err
+			}
+		} else {
+			if err := processField(fieldValue, field); err != nil {
+				return err
+			}
+		}
+	}
+	
+	return nil
+}
+
+func processStruct(structValue reflect.Value, structField reflect.StructField) error {
+	for i := 0; i < structValue.NumField(); i++ {
+		field := structValue.Type().Field(i)
+		fieldValue := structValue.Field(i)
+		
+		if err := processField(fieldValue, field); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func processField(fieldValue reflect.Value, field reflect.StructField) error {
+	envTag := field.Tag.Get("env")
+	if envTag == "" {
+		return nil
+	}
+	
+	envValue := os.Getenv(envTag)
+	if envValue == "" {
+		defaultTag := field.Tag.Get("default")
+		if defaultTag != "" && fieldValue.IsZero() {
+			setFieldValue(fieldValue, defaultTag)
+		}
+		return nil
+	}
+	
+	setFieldValue(fieldValue, envValue)
+	return nil
+}
+
+func setFieldValue(field reflect.Value, value string) {
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int:
+		var intVal int
+		fmt.Sscanf(value, "%d", &intVal)
+		field.SetInt(int64(intVal))
+	case reflect.Bool:
+		boolVal := strings.ToLower(value) == "true" || value == "1"
+		field.SetBool(boolVal)
+	}
+}
+
+func validateConfig(cfg *Config) error {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+	
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldValue := v.Field(i)
+		
+		if field.Type.Kind() == reflect.Struct {
+			if err := validateStruct(fieldValue, field); err != nil {
+				return err
+			}
+		} else {
+			if err := validateField(fieldValue, field); err != nil {
+				return err
+			}
+		}
+	}
+	
+	return nil
+}
+
+func validateStruct(structValue reflect.Value, structField reflect.StructField) error {
+	for i := 0; i < structValue.NumField(); i++ {
+		field := structValue.Type().Field(i)
+		fieldValue := structValue.Field(i)
+		
+		if err := validateField(fieldValue, field); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateField(fieldValue reflect.Value, field reflect.StructField) error {
+	required := field.Tag.Get("required")
+	if required == "true" && fieldValue.IsZero() {
+		envTag := field.Tag.Get("env")
+		return fmt.Errorf("field '%s' (env: %s) is required but not set", field.Name, envTag)
+	}
+	return nil
+}
