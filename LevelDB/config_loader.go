@@ -209,4 +209,46 @@ func overrideWithEnv(c *Config) {
 	if val := os.Getenv("LOG_LEVEL"); val != "" {
 		c.LogLevel = strings.ToUpper(val)
 	}
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    Port        int
+    Debug       bool
+    DatabaseURL string
+    AllowedHosts []string
+}
+
+func Load() (*Config, error) {
+    cfg := &Config{
+        Port:        8080,
+        Debug:       false,
+        DatabaseURL: "postgres://localhost:5432/app",
+        AllowedHosts: []string{"localhost"},
+    }
+
+    if portStr := os.Getenv("APP_PORT"); portStr != "" {
+        if port, err := strconv.Atoi(portStr); err == nil {
+            cfg.Port = port
+        }
+    }
+
+    if debugStr := os.Getenv("APP_DEBUG"); debugStr != "" {
+        cfg.Debug = strings.ToLower(debugStr) == "true"
+    }
+
+    if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+        cfg.DatabaseURL = dbURL
+    }
+
+    if hosts := os.Getenv("ALLOWED_HOSTS"); hosts != "" {
+        cfg.AllowedHosts = strings.Split(hosts, ",")
+    }
+
+    return cfg, nil
 }
