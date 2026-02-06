@@ -100,4 +100,59 @@ func main() {
 	cleaned := RemoveDuplicates(input)
 	fmt.Printf("Original: %v\n", input)
 	fmt.Printf("Cleaned: %v\n", cleaned)
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataCleaner struct {
+	seen map[string]bool
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		seen: make(map[string]bool),
+	}
+}
+
+func (dc *DataCleaner) Normalize(input string) string {
+	return strings.ToLower(strings.TrimSpace(input))
+}
+
+func (dc *DataCleaner) IsDuplicate(value string) bool {
+	normalized := dc.Normalize(value)
+	if dc.seen[normalized] {
+		return true
+	}
+	dc.seen[normalized] = true
+	return false
+}
+
+func (dc *DataCleaner) ProcessRecords(records []string) []string {
+	var unique []string
+	for _, record := range records {
+		if !dc.IsDuplicate(record) {
+			unique = append(unique, record)
+		}
+	}
+	return unique
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+	
+	sampleData := []string{
+		"  Apple  ",
+		"banana",
+		"APPLE",
+		"  Banana  ",
+		"Cherry",
+		"cherry ",
+	}
+	
+	fmt.Println("Original data:", sampleData)
+	cleaned := cleaner.ProcessRecords(sampleData)
+	fmt.Println("Cleaned data:", cleaned)
 }
