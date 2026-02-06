@@ -94,3 +94,72 @@ func main() {
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
 }
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+// DataCleaner provides methods for cleaning string data
+type DataCleaner struct{}
+
+// Deduplicate removes duplicate entries from a slice of strings
+func (dc DataCleaner) Deduplicate(items []string) []string {
+    seen := make(map[string]bool)
+    result := []string{}
+    for _, item := range items {
+        if !seen[item] {
+            seen[item] = true
+            result = append(result, item)
+        }
+    }
+    return result
+}
+
+// ValidateEmail checks if a string is a valid email format
+func (dc DataCleaner) ValidateEmail(email string) bool {
+    if len(email) < 3 || len(email) > 254 {
+        return false
+    }
+    if !strings.Contains(email, "@") {
+        return false
+    }
+    parts := strings.Split(email, "@")
+    if len(parts) != 2 {
+        return false
+    }
+    if len(parts[0]) == 0 || len(parts[1]) == 0 {
+        return false
+    }
+    return true
+}
+
+// TrimSpaces removes leading and trailing whitespace from all strings
+func (dc DataCleaner) TrimSpaces(items []string) []string {
+    result := make([]string, len(items))
+    for i, item := range items {
+        result[i] = strings.TrimSpace(item)
+    }
+    return result
+}
+
+func main() {
+    cleaner := DataCleaner{}
+    
+    sampleData := []string{"  john@example.com", "jane@test.org", "  john@example.com", "invalid-email", ""}
+    
+    fmt.Println("Original data:", sampleData)
+    
+    trimmed := cleaner.TrimSpaces(sampleData)
+    fmt.Println("After trimming:", trimmed)
+    
+    deduped := cleaner.Deduplicate(trimmed)
+    fmt.Println("After deduplication:", deduped)
+    
+    fmt.Println("\nEmail validation results:")
+    for _, email := range deduped {
+        isValid := cleaner.ValidateEmail(email)
+        fmt.Printf("%s: %v\n", email, isValid)
+    }
+}
