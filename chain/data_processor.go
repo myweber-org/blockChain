@@ -334,3 +334,62 @@ func CalculateStatistics(records []DataRecord) (float64, float64, int) {
 	average := sum / float64(count)
 	return average, max, count
 }
+package main
+
+import (
+    "strings"
+    "unicode"
+)
+
+func NormalizeUsername(input string) string {
+    trimmed := strings.TrimSpace(input)
+    var result strings.Builder
+    for _, r := range trimmed {
+        if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
+            result.WriteRune(unicode.ToLower(r))
+        }
+    }
+    return result.String()
+}
+
+func ValidateEmail(email string) bool {
+    if len(email) > 254 {
+        return false
+    }
+    atIndex := strings.LastIndex(email, "@")
+    if atIndex < 1 || atIndex > len(email)-3 {
+        return false
+    }
+    localPart := email[:atIndex]
+    domainPart := email[atIndex+1:]
+    
+    if len(localPart) == 0 || len(domainPart) == 0 {
+        return false
+    }
+    
+    if strings.ContainsAny(localPart, " ()[];:,\\\"") {
+        return false
+    }
+    
+    if strings.Contains(domainPart, "..") || strings.HasPrefix(domainPart, ".") || strings.HasSuffix(domainPart, ".") {
+        return false
+    }
+    
+    return strings.Contains(domainPart, ".")
+}
+
+func SanitizeInput(input string) string {
+    replacements := map[string]string{
+        "<":  "&lt;",
+        ">":  "&gt;",
+        "\"": "&quot;",
+        "'":  "&#39;",
+        "&":  "&amp;",
+    }
+    
+    result := input
+    for old, new := range replacements {
+        result = strings.ReplaceAll(result, old, new)
+    }
+    return result
+}
