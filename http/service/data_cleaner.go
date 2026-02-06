@@ -224,3 +224,18 @@ func main() {
 	fmt.Printf("Cleaned data saved to: %s\n", outputFile)
 	fmt.Printf("Removed %d duplicate rows\n", len(records)-len(uniqueRecords))
 }
+package datautils
+
+func RemoveDuplicates(input []string) []string {
+    seen := make(map[string]struct{})
+    result := make([]string, 0, len(input))
+    
+    for _, item := range input {
+        if _, exists := seen[item]; !exists {
+            seen[item] = struct{}{}
+            result = append(result, item)
+        }
+    }
+    
+    return result
+}
