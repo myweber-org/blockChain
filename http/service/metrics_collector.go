@@ -313,4 +313,51 @@ func main() {
 			displayMetrics(metrics)
 		}
 	}
+}package main
+
+import (
+    "fmt"
+    "runtime"
+    "time"
+)
+
+type SystemMetrics struct {
+    Timestamp     time.Time
+    CPUPercent    float64
+    MemoryUsedMB  uint64
+    MemoryTotalMB uint64
+    GoroutineCount int
+}
+
+func collectMetrics() SystemMetrics {
+    var memStats runtime.MemStats
+    runtime.ReadMemStats(&memStats)
+
+    return SystemMetrics{
+        Timestamp:     time.Now(),
+        MemoryUsedMB:  memStats.Alloc / 1024 / 1024,
+        MemoryTotalMB: memStats.Sys / 1024 / 1024,
+        GoroutineCount: runtime.NumGoroutine(),
+    }
+}
+
+func printMetrics(metrics SystemMetrics) {
+    fmt.Printf("[%s] Memory: %dMB/%dMB | Goroutines: %d\n",
+        metrics.Timestamp.Format("15:04:05"),
+        metrics.MemoryUsedMB,
+        metrics.MemoryTotalMB,
+        metrics.GoroutineCount)
+}
+
+func main() {
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            metrics := collectMetrics()
+            printMetrics(metrics)
+        }
+    }
 }
