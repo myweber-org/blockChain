@@ -926,4 +926,84 @@ func main() {
 	if record := processor.FindByEmail(searchEmail); record != nil {
 		fmt.Printf("Found record for %s: %s (ID: %d)\n", searchEmail, record.Name, record.ID)
 	}
+}package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"io"
+	"os"
+	"strconv"
+)
+
+type Record struct {
+	ID    int
+	Name  string
+	Value float64
+}
+
+func ReadCSVFile(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := []Record{}
+
+	// Skip header
+	_, err = reader.Read()
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if len(row) != 3 {
+			return nil, errors.New("invalid row format")
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			return nil, err
+		}
+
+		name := row[1]
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return records, nil
+}
+
+func ValidateRecords(records []Record) error {
+	for _, r := range records {
+		if r.ID <= 0 {
+			return errors.New("invalid ID")
+		}
+		if r.Name == "" {
+			return errors.New("empty name")
+		}
+		if r.Value < 0 {
+			return errors.New("negative value")
+		}
+	}
+	return nil
 }
