@@ -618,3 +618,65 @@ func main() {
 		fmt.Printf("ID: %d, Name: %s, Value: %.2f\n", rec.ID, rec.Name, rec.Value)
 	}
 }
+package main
+
+import (
+	"errors"
+	"strings"
+	"time"
+)
+
+type DataRecord struct {
+	ID        string
+	Timestamp time.Time
+	Value     float64
+	Tags      []string
+	Valid     bool
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("record ID cannot be empty")
+	}
+	if record.Value < 0 {
+		return errors.New("record value cannot be negative")
+	}
+	if record.Timestamp.After(time.Now()) {
+		return errors.New("record timestamp cannot be in the future")
+	}
+	return nil
+}
+
+func TransformTags(tags []string) []string {
+	transformed := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		cleanTag := strings.TrimSpace(tag)
+		cleanTag = strings.ToLower(cleanTag)
+		if cleanTag != "" {
+			transformed = append(transformed, cleanTag)
+		}
+	}
+	return transformed
+}
+
+func CalculateAverage(values []float64) (float64, error) {
+	if len(values) == 0 {
+		return 0, errors.New("cannot calculate average of empty slice")
+	}
+	
+	var sum float64
+	for _, v := range values {
+		sum += v
+	}
+	return sum / float64(len(values)), nil
+}
+
+func FilterValidRecords(records []DataRecord) []DataRecord {
+	validRecords := make([]DataRecord, 0)
+	for _, record := range records {
+		if record.Valid && ValidateRecord(record) == nil {
+			validRecords = append(validRecords, record)
+		}
+	}
+	return validRecords
+}
