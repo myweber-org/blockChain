@@ -426,4 +426,78 @@ func overrideFromEnv(config *AppConfig) {
     if val := os.Getenv("LOG_LEVEL"); val != "" {
         config.LogLevel = val
     }
+}package config
+
+import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Config struct {
+	Server struct {
+		Host string `yaml:"host" env:"SERVER_HOST"`
+		Port int    `yaml:"port" env:"SERVER_PORT"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host" env:"DB_HOST"`
+		Port     int    `yaml:"port" env:"DB_PORT"`
+		Username string `yaml:"username" env:"DB_USER"`
+		Password string `yaml:"password" env:"DB_PASS"`
+		Name     string `yaml:"name" env:"DB_NAME"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level" env:"LOG_LEVEL"`
+		Output string `yaml:"output" env:"LOG_OUTPUT"`
+	} `yaml:"logging"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := ioutil.ReadFile(absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	config.overrideFromEnv()
+	return &config, nil
+}
+
+func (c *Config) overrideFromEnv() {
+	overrideString(&c.Server.Host, "SERVER_HOST")
+	overrideInt(&c.Server.Port, "SERVER_PORT")
+	overrideString(&c.Database.Host, "DB_HOST")
+	overrideInt(&c.Database.Port, "DB_PORT")
+	overrideString(&c.Database.Username, "DB_USER")
+	overrideString(&c.Database.Password, "DB_PASS")
+	overrideString(&c.Database.Name, "DB_NAME")
+	overrideString(&c.Logging.Level, "LOG_LEVEL")
+	overrideString(&c.Logging.Output, "LOG_OUTPUT")
+}
+
+func overrideString(field *string, envVar string) {
+	if val := os.Getenv(envVar); val != "" {
+		*field = val
+	}
+}
+
+func overrideInt(field *int, envVar string) {
+	if val := os.Getenv(envVar); val != "" {
+		var intVal int
+		if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
+			*field = intVal
+		}
+	}
 }
