@@ -78,3 +78,71 @@ func logError(ctx context.Context, msg string, err error) {
 	default:
 	}
 }
+package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type ActivityLog struct {
+	UserID    string
+	Path      string
+	Method    string
+	Timestamp time.Time
+	IPAddress string
+}
+
+type ActivityLogger struct {
+	store chan ActivityLog
+}
+
+func NewActivityLogger(bufferSize int) *ActivityLogger {
+	al := &ActivityLogger{
+		store: make(chan ActivityLog, bufferSize),
+	}
+	go al.processLogs()
+	return al
+}
+
+func (al *ActivityLogger) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			userID = "anonymous"
+		}
+
+		activity := ActivityLog{
+			UserID:    userID,
+			Path:      r.URL.Path,
+			Method:    r.Method,
+			Timestamp: start,
+			IPAddress: r.RemoteAddr,
+		}
+
+		select {
+		case al.store <- activity:
+		default:
+			log.Println("Activity log buffer full, dropping entry")
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (al *ActivityLogger) processLogs() {
+	for activity := range al.store {
+		log.Printf("ACTIVITY: User=%s IP=%s Method=%s Path=%s Time=%s",
+			activity.UserID,
+			activity.IPAddress,
+			activity.Method,
+			activity.Path,
+			activity.Timestamp.Format(time.RFC3339))
+	}
+}
+
+func (al *ActivityLogger) Close() {
+	close(al.store)
+}
