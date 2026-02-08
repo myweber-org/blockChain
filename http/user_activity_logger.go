@@ -6,26 +6,27 @@ import (
 	"time"
 )
 
-type ActivityLog struct {
-	Timestamp time.Time
-	Method    string
-	Path      string
-	UserAgent string
-	IP        string
+type ActivityLogger struct {
+	handler http.Handler
 }
 
-func ActivityLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		activity := ActivityLog{
-			Timestamp: time.Now().UTC(),
-			Method:    r.Method,
-			Path:      r.URL.Path,
-			UserAgent: r.UserAgent(),
-			IP:        r.RemoteAddr,
-		}
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
+}
 
-		log.Printf("Activity: %s %s from %s (%s)", activity.Method, activity.Path, activity.IP, activity.UserAgent)
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	userAgent := r.Header.Get("User-Agent")
+	ipAddress := r.RemoteAddr
 
-		next.ServeHTTP(w, r)
-	})
+	al.handler.ServeHTTP(w, r)
+
+	duration := time.Since(start)
+	log.Printf("Activity: %s %s | IP: %s | Agent: %s | Duration: %v",
+		r.Method,
+		r.URL.Path,
+		ipAddress,
+		userAgent,
+		duration,
+	)
 }
