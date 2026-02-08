@@ -1,242 +1,80 @@
 package middleware
 
 import (
-	"log"
+	"context"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 type ActivityLogger struct {
-	handler http.Handler
+	limiter *rate.Limiter
+	store   ActivityStore
 }
 
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
+type ActivityStore interface {
+	LogActivity(ctx context.Context, userID string, action string, metadata map[string]interface{}) error
 }
 
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	
-	al.handler.ServeHTTP(w, r)
-	
-	duration := time.Since(start)
-	
-	log.Printf(
-		"Activity: %s %s from %s took %v",
-		r.Method,
-		r.URL.Path,
-		r.RemoteAddr,
-		duration,
-	)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	al.handler.ServeHTTP(w, r)
-	duration := time.Since(start)
-
-	log.Printf(
-		"[%s] %s %s from %s completed in %v",
-		time.Now().Format("2006-01-02 15:04:05"),
-		r.Method,
-		r.URL.Path,
-		r.RemoteAddr,
-		duration,
-	)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+func NewActivityLogger(store ActivityStore, requestsPerSecond float64, burst int) *ActivityLogger {
+	return &ActivityLogger{
+		limiter: rate.NewLimiter(rate.Limit(requestsPerSecond), burst),
+		store:   store,
 	}
-
-	al.handler.ServeHTTP(recorder, r)
-
-	duration := time.Since(startTime)
-	log.Printf(
-		"Method: %s | Path: %s | Status: %d | Duration: %v | User-Agent: %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.UserAgent(),
-	)
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
-	}
-
-	al.handler.ServeHTTP(recorder, r)
-
-	duration := time.Since(startTime)
-	log.Printf(
-		"[%s] %s %s %d %v",
-		time.Now().Format(time.RFC3339),
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-	)
-}
-
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	Logger *log.Logger
-}
-
-func NewActivityLogger(logger *log.Logger) *ActivityLogger {
-	return &ActivityLogger{Logger: logger}
-}
-
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+func (al *ActivityLogger) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		userAgent := r.UserAgent()
-		clientIP := r.RemoteAddr
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
 
-		recorder := &responseRecorder{
-			ResponseWriter: w,
-			statusCode:     http.StatusOK,
+		if !al.limiter.Allow() {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
 		}
 
-		next.ServeHTTP(recorder, r)
+		userID := extractUserID(r)
+		if userID == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
 
-		duration := time.Since(start)
-		al.Logger.Printf(
-			"Method: %s | Path: %s | Status: %d | Duration: %v | IP: %s | Agent: %s",
-			r.Method,
-			r.URL.Path,
-			recorder.statusCode,
-			duration,
-			clientIP,
-			userAgent,
-		)
+		action := r.Method + " " + r.URL.Path
+		metadata := map[string]interface{}{
+			"user_agent": r.UserAgent(),
+			"ip_address": r.RemoteAddr,
+			"timestamp":  time.Now().UTC(),
+		}
+
+		go func() {
+			if err := al.store.LogActivity(ctx, userID, action, metadata); err != nil && ctx.Err() == nil {
+				logError(r.Context(), "failed to log activity", err)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
 	})
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	recorder := &responseRecorder{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
+func extractUserID(r *http.Request) string {
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		return parseToken(auth)
 	}
-
-	al.handler.ServeHTTP(recorder, r)
-
-	duration := time.Since(start)
-	log.Printf(
-		"Method: %s | Path: %s | Status: %d | Duration: %v | RemoteAddr: %s",
-		r.Method,
-		r.URL.Path,
-		recorder.statusCode,
-		duration,
-		r.RemoteAddr,
-	)
+	return r.URL.Query().Get("user_id")
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
+func parseToken(token string) string {
+	if len(token) > 7 && token[:7] == "Bearer " {
+		return token[7:]
+	}
+	return ""
 }
 
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
+func logError(ctx context.Context, msg string, err error) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
 }
