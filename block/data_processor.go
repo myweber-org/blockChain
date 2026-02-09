@@ -731,3 +731,54 @@ func generateSummary(records []DataRecord) {
 	fmt.Printf("Active records: %d\n", activeCount)
 	fmt.Printf("Inactive records: %d\n", len(records)-activeCount)
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataProcessor struct {
+	whitespaceRegex *regexp.Regexp
+}
+
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+	}
+}
+
+func (dp *DataProcessor) CleanString(input string) string {
+	trimmed := strings.TrimSpace(input)
+	normalized := dp.whitespaceRegex.ReplaceAllString(trimmed, " ")
+	return normalized
+}
+
+func (dp *DataProcessor) NormalizeCase(input string, toUpper bool) string {
+	cleaned := dp.CleanString(input)
+	if toUpper {
+		return strings.ToUpper(cleaned)
+	}
+	return strings.ToLower(cleaned)
+}
+
+func (dp *DataProcessor) ExtractAlphanumeric(input string) string {
+	alphanumericRegex := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	cleaned := dp.CleanString(input)
+	return alphanumericRegex.ReplaceAllString(cleaned, "")
+}
+
+func main() {
+	processor := NewDataProcessor()
+	
+	sampleData := "  Hello   World!  This  is   a  test.  "
+	
+	cleaned := processor.CleanString(sampleData)
+	println("Cleaned:", cleaned)
+	
+	upper := processor.NormalizeCase(sampleData, true)
+	println("Uppercase:", upper)
+	
+	alphanum := processor.ExtractAlphanumeric(sampleData)
+	println("Alphanumeric only:", alphanum)
+}
