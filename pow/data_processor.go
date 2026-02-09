@@ -1,43 +1,51 @@
+
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 )
 
-func SanitizeUsername(input string) string {
-	re := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-	sanitized := re.ReplaceAllString(input, "")
-	return strings.TrimSpace(sanitized)
+type UserProfile struct {
+	Username string
+	Email    string
+	Age      int
 }
 
-func ValidateEmail(email string) bool {
-	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, err := regexp.MatchString(pattern, email)
-	return err == nil && matched
+func NormalizeUsername(username string) (string, error) {
+	trimmed := strings.TrimSpace(username)
+	if trimmed == "" {
+		return "", errors.New("username cannot be empty")
+	}
+	if len(trimmed) < 3 {
+		return "", errors.New("username must be at least 3 characters")
+	}
+	return strings.ToLower(trimmed), nil
 }
 
-func TrimAndLower(input string) string {
-	return strings.ToLower(strings.TrimSpace(input))
+func ValidateEmail(email string) error {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	if !emailRegex.MatchString(email) {
+		return errors.New("invalid email format")
+	}
+	return nil
 }
 
-func ContainsSQLInjection(input string) bool {
-	patterns := []string{
-		`(?i)select.*from`,
-		`(?i)insert.*into`,
-		`(?i)update.*set`,
-		`(?i)delete.*from`,
-		`(?i)drop.*table`,
-		`(?i)union.*select`,
-		`--`,
-		`;`,
+func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
+	normalizedUsername, err := NormalizeUsername(profile.Username)
+	if err != nil {
+		return UserProfile{}, err
+	}
+	profile.Username = normalizedUsername
+
+	if err := ValidateEmail(profile.Email); err != nil {
+		return UserProfile{}, err
 	}
 
-	for _, pattern := range patterns {
-		matched, err := regexp.MatchString(pattern, input)
-		if err == nil && matched {
-			return true
-		}
+	if profile.Age < 0 || profile.Age > 150 {
+		return UserProfile{}, errors.New("age must be between 0 and 150")
 	}
-	return false
+
+	return profile, nil
 }
