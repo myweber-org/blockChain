@@ -623,4 +623,140 @@ func main() {
 		log.Printf("Log entry %d: %s", i, "Sample log message for testing rotation")
 		time.Sleep(10 * time.Millisecond)
 	}
+}package main
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+type LogRotator struct {
+    FilePath    string
+    MaxSize     int64
+    MaxFiles    int
+    RotationTime time.Duration
+    currentSize int64
+    file        *os.File
+    ticker      *time.Ticker
+    done        chan bool
+}
+
+func NewLogRotator(filePath string, maxSize int64, maxFiles int, rotationTime time.Duration) (*LogRotator, error) {
+    lr := &LogRotator{
+        FilePath:    filePath,
+        MaxSize:     maxSize,
+        MaxFiles:    maxFiles,
+        RotationTime: rotationTime,
+        done:        make(chan bool),
+    }
+
+    if err := lr.openFile(); err != nil {
+        return nil, err
+    }
+
+    if rotationTime > 0 {
+        lr.ticker = time.NewTicker(rotationTime)
+        go lr.timeBasedRotation()
+    }
+
+    return lr, nil
+}
+
+func (lr *LogRotator) openFile() error {
+    dir := filepath.Dir(lr.FilePath)
+    if err := os.MkdirAll(dir, 0755); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(lr.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+
+    lr.file = file
+    lr.currentSize = info.Size()
+    return nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+    if lr.currentSize+int64(len(p)) > lr.MaxSize && lr.MaxSize > 0 {
+        if err := lr.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := lr.file.Write(p)
+    if err == nil {
+        lr.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+    if err := lr.file.Close(); err != nil {
+        return err
+    }
+
+    for i := lr.MaxFiles - 1; i > 0; i-- {
+        oldName := fmt.Sprintf("%s.%d", lr.FilePath, i)
+        newName := fmt.Sprintf("%s.%d", lr.FilePath, i+1)
+        if _, err := os.Stat(oldName); err == nil {
+            os.Rename(oldName, newName)
+        }
+    }
+
+    backupName := fmt.Sprintf("%s.1", lr.FilePath)
+    os.Rename(lr.FilePath, backupName)
+
+    return lr.openFile()
+}
+
+func (lr *LogRotator) timeBasedRotation() {
+    for {
+        select {
+        case <-lr.ticker.C:
+            if err := lr.rotate(); err != nil {
+                fmt.Fprintf(os.Stderr, "Rotation error: %v\n", err)
+            }
+        case <-lr.done:
+            return
+        }
+    }
+}
+
+func (lr *LogRotator) Close() error {
+    if lr.ticker != nil {
+        lr.ticker.Stop()
+        close(lr.done)
+    }
+    return lr.file.Close()
+}
+
+func main() {
+    rotator, err := NewLogRotator(
+        "/var/log/myapp/app.log",
+        10*1024*1024, // 10MB
+        5,            // keep 5 backup files
+        time.Hour*24, // daily rotation
+    )
+    if err != nil {
+        panic(err)
+    }
+    defer rotator.Close()
+
+    for i := 0; i < 1000; i++ {
+        logEntry := fmt.Sprintf("[%s] Log entry %d\n", time.Now().Format(time.RFC3339), i)
+        if _, err := rotator.Write([]byte(logEntry)); err != nil {
+            fmt.Fprintf(os.Stderr, "Write error: %v\n", err)
+        }
+        time.Sleep(time.Millisecond * 10)
+    }
 }
