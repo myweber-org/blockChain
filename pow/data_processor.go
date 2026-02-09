@@ -56,3 +56,55 @@ func ProcessUserInput(email, username string, age int) (UserData, error) {
 
 	return userData, nil
 }
+package main
+
+import (
+	"strings"
+	"unicode"
+)
+
+func CleanInput(input string) string {
+	return strings.TrimSpace(input)
+}
+
+func NormalizeWhitespace(input string) string {
+	var result strings.Builder
+	prevSpace := false
+
+	for _, r := range input {
+		if unicode.IsSpace(r) {
+			if !prevSpace {
+				result.WriteRune(' ')
+				prevSpace = true
+			}
+		} else {
+			result.WriteRune(r)
+			prevSpace = false
+		}
+	}
+
+	return result.String()
+}
+
+func RemoveSpecialChars(input string, keepSet string) string {
+	var result strings.Builder
+	keepMap := make(map[rune]bool)
+
+	for _, r := range keepSet {
+		keepMap[r] = true
+	}
+
+	for _, r := range input {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) || keepMap[r] {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
+}
+
+func ProcessData(input string) string {
+	cleaned := CleanInput(input)
+	normalized := NormalizeWhitespace(cleaned)
+	return RemoveSpecialChars(normalized, "._-@")
+}
