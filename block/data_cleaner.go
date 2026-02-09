@@ -7,101 +7,60 @@ import (
 )
 
 type DataRecord struct {
-	ID   int
-	Name string
-	Age  int
+	ID    int
+	Email string
+	Valid bool
 }
 
-func RemoveDuplicates(records []DataRecord) []DataRecord {
-	seen := make(map[int]bool)
-	var result []DataRecord
+func DeduplicateEmails(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var unique []DataRecord
+
 	for _, record := range records {
-		if !seen[record.ID] {
-			seen[record.ID] = true
-			result = append(result, record)
+		email := strings.ToLower(strings.TrimSpace(record.Email))
+		if !seen[email] && email != "" {
+			seen[email] = true
+			record.Email = email
+			unique = append(unique, record)
 		}
 	}
-	return result
+	return unique
 }
 
-func ValidateRecord(record DataRecord) error {
-	if record.ID <= 0 {
-		return fmt.Errorf("invalid ID: %d", record.ID)
+func ValidateEmailFormat(email string) bool {
+	if len(email) < 3 || !strings.Contains(email, "@") {
+		return false
 	}
-	if strings.TrimSpace(record.Name) == "" {
-		return fmt.Errorf("name cannot be empty")
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return false
 	}
-	if record.Age < 0 || record.Age > 150 {
-		return fmt.Errorf("age out of range: %d", record.Age)
+	if !strings.Contains(parts[1], ".") {
+		return false
 	}
-	return nil
+	return true
 }
 
-func CleanData(records []DataRecord) ([]DataRecord, []string) {
-	var cleaned []DataRecord
-	var errors []string
-
-	uniqueRecords := RemoveDuplicates(records)
-
-	for _, record := range uniqueRecords {
-		if err := ValidateRecord(record); err != nil {
-			errors = append(errors, fmt.Sprintf("Record ID %d: %v", record.ID, err))
-		} else {
-			cleaned = append(cleaned, record)
-		}
+func CleanDataset(records []DataRecord) []DataRecord {
+	records = DeduplicateEmails(records)
+	for i := range records {
+		records[i].Valid = ValidateEmailFormat(records[i].Email)
 	}
-
-	return cleaned, errors
+	return records
 }
 
 func main() {
 	sampleData := []DataRecord{
-		{ID: 1, Name: "Alice", Age: 30},
-		{ID: 2, Name: "Bob", Age: 25},
-		{ID: 1, Name: "Alice", Age: 30},
-		{ID: 3, Name: "", Age: 40},
-		{ID: 4, Name: "Charlie", Age: 200},
+		{1, "user@example.com", false},
+		{2, "USER@example.com", false},
+		{3, "invalid-email", false},
+		{4, "another@test.org", false},
+		{5, "user@example.com", false},
 	}
 
-	cleaned, errors := CleanData(sampleData)
-
-	fmt.Println("Cleaned Records:")
+	cleaned := CleanDataset(sampleData)
+	fmt.Printf("Processed %d records\n", len(cleaned))
 	for _, record := range cleaned {
-		fmt.Printf("ID: %d, Name: %s, Age: %d\n", record.ID, record.Name, record.Age)
+		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", record.ID, record.Email, record.Valid)
 	}
-
-	if len(errors) > 0 {
-		fmt.Println("\nValidation Errors:")
-		for _, err := range errors {
-			fmt.Println(err)
-		}
-	}
-}
-package main
-
-import "fmt"
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-	seen := make(map[T]bool)
-	result := []T{}
-
-	for _, item := range slice {
-		if !seen[item] {
-			seen[item] = true
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func main() {
-	numbers := []int{1, 2, 2, 3, 4, 4, 5, 5}
-	uniqueNumbers := RemoveDuplicates(numbers)
-	fmt.Println("Original:", numbers)
-	fmt.Println("Unique:", uniqueNumbers)
-
-	strings := []string{"apple", "banana", "apple", "orange", "banana"}
-	uniqueStrings := RemoveDuplicates(strings)
-	fmt.Println("Original:", strings)
-	fmt.Println("Unique:", uniqueStrings)
 }
