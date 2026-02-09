@@ -28,7 +28,7 @@ func NewSlidingWindowAggregator(windowSize time.Duration, maxPoints int) *Slidin
 	}
 }
 
-func (swa *SlidingWindowAggregator) AddValue(value float64) {
+func (swa *SlidingWindowAggregator) AddPoint(value float64) {
 	swa.mu.Lock()
 	defer swa.mu.Unlock()
 
@@ -44,8 +44,8 @@ func (swa *SlidingWindowAggregator) AddValue(value float64) {
 	}
 }
 
-func (swa *SlidingWindowAggregator) cleanupOldPoints(currentTime time.Time) {
-	cutoff := currentTime.Add(-swa.windowSize)
+func (swa *SlidingWindowAggregator) cleanupOldPoints(now time.Time) {
+	cutoff := now.Add(-swa.windowSize)
 	for e := swa.dataPoints.Front(); e != nil; {
 		next := e.Next()
 		if dp := e.Value.(DataPoint); dp.Timestamp.Before(cutoff) {
@@ -55,7 +55,7 @@ func (swa *SlidingWindowAggregator) cleanupOldPoints(currentTime time.Time) {
 	}
 }
 
-func (swa *SlidingWindowAggregator) GetPercentile(p float64) (float64, bool) {
+func (swa *SlidingWindowAggregator) CalculatePercentile(p float64) (float64, bool) {
 	swa.mu.RLock()
 	defer swa.mu.RUnlock()
 
@@ -73,7 +73,7 @@ func (swa *SlidingWindowAggregator) GetPercentile(p float64) (float64, bool) {
 	return values[index], true
 }
 
-func (swa *SlidingWindowAggregator) GetStatistics() (min, max, avg float64, count int) {
+func (swa *SlidingWindowAggregator) GetStats() (min, max, avg float64, count int) {
 	swa.mu.RLock()
 	defer swa.mu.RUnlock()
 
@@ -90,7 +90,6 @@ func (swa *SlidingWindowAggregator) GetStatistics() (min, max, avg float64, coun
 		value := e.Value.(DataPoint).Value
 		sum += value
 		count++
-
 		if value < min {
 			min = value
 		}
