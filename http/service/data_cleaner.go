@@ -274,4 +274,55 @@ func main() {
 	cleaned := removeDuplicates(data)
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Email string
+	Valid bool
+}
+
+func RemoveDuplicates(records []DataRecord) []DataRecord {
+	seen := make(map[string]bool)
+	var unique []DataRecord
+	for _, record := range records {
+		if !seen[record.Email] {
+			seen[record.Email] = true
+			unique = append(unique, record)
+		}
+	}
+	return unique
+}
+
+func ValidateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func CleanData(records []DataRecord) []DataRecord {
+	unique := RemoveDuplicates(records)
+	var cleaned []DataRecord
+	for _, record := range unique {
+		record.Valid = ValidateEmail(record.Email)
+		cleaned = append(cleaned, record)
+	}
+	return cleaned
+}
+
+func main() {
+	records := []DataRecord{
+		{1, "test@example.com", false},
+		{2, "invalid-email", false},
+		{3, "test@example.com", false},
+		{4, "user@domain.org", false},
+	}
+
+	cleaned := CleanData(records)
+	for _, r := range cleaned {
+		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
+	}
 }
