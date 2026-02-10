@@ -125,4 +125,106 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		duration,
 		r.RemoteAddr,
 	)
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "time"
+)
+
+type ActivityLog struct {
+    Timestamp time.Time `json:"timestamp"`
+    UserID    string    `json:"user_id"`
+    Action    string    `json:"action"`
+    Details   string    `json:"details"`
+}
+
+type ActivityLogger struct {
+    logFile string
+}
+
+func NewActivityLogger(logFile string) *ActivityLogger {
+    return &ActivityLogger{
+        logFile: logFile,
+    }
+}
+
+func (l *ActivityLogger) LogActivity(userID, action, details string) error {
+    logEntry := ActivityLog{
+        Timestamp: time.Now(),
+        UserID:    userID,
+        Action:    action,
+        Details:   details,
+    }
+
+    file, err := os.OpenFile(l.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to open log file: %w", err)
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    if err := encoder.Encode(logEntry); err != nil {
+        return fmt.Errorf("failed to write log entry: %w", err)
+    }
+
+    return nil
+}
+
+func (l *ActivityLogger) ReadRecentActivities(limit int) ([]ActivityLog, error) {
+    file, err := os.Open(l.logFile)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return []ActivityLog{}, nil
+        }
+        return nil, fmt.Errorf("failed to open log file: %w", err)
+    }
+    defer file.Close()
+
+    var logs []ActivityLog
+    decoder := json.NewDecoder(file)
+    for decoder.More() {
+        var logEntry ActivityLog
+        if err := decoder.Decode(&logEntry); err != nil {
+            return logs, fmt.Errorf("failed to decode log entry: %w", err)
+        }
+        logs = append(logs, logEntry)
+    }
+
+    if len(logs) > limit {
+        logs = logs[len(logs)-limit:]
+    }
+
+    return logs, nil
+}
+
+func main() {
+    logger := NewActivityLogger("user_activity.log")
+
+    // Example usage
+    err := logger.LogActivity("user123", "LOGIN", "User logged in from IP 192.168.1.100")
+    if err != nil {
+        fmt.Printf("Error logging activity: %v\n", err)
+    }
+
+    err = logger.LogActivity("user123", "VIEW_PAGE", "Accessed dashboard page")
+    if err != nil {
+        fmt.Printf("Error logging activity: %v\n", err)
+    }
+
+    recentLogs, err := logger.ReadRecentActivities(5)
+    if err != nil {
+        fmt.Printf("Error reading logs: %v\n", err)
+    }
+
+    fmt.Printf("Recent activities (%d):\n", len(recentLogs))
+    for _, log := range recentLogs {
+        fmt.Printf("[%s] %s - %s: %s\n", 
+            log.Timestamp.Format(time.RFC3339), 
+            log.UserID, 
+            log.Action, 
+            log.Details)
+    }
 }
