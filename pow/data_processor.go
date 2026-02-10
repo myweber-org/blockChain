@@ -1,134 +1,139 @@
-
 package main
 
 import (
+	"encoding/csv"
 	"errors"
-	"regexp"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
 	"strings"
 )
 
-type UserProfile struct {
-	Username string
-	Email    string
-	Age      int
+type Record struct {
+	ID      int
+	Name    string
+	Value   float64
+	Active  bool
 }
 
-func NormalizeUsername(username string) (string, error) {
-	trimmed := strings.TrimSpace(username)
-	if trimmed == "" {
-		return "", errors.New("username cannot be empty")
+func ParseCSVFile(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	if len(trimmed) < 3 {
-		return "", errors.New("username must be at least 3 characters")
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []Record
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if len(row) != 4 {
+			return nil, fmt.Errorf("invalid column count at line %d: expected 4, got %d", lineNumber, len(row))
+		}
+
+		record, err := parseRow(row, lineNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, record)
 	}
-	return strings.ToLower(trimmed), nil
+
+	if len(records) == 0 {
+		return nil, errors.New("no valid records found in file")
+	}
+
+	return records, nil
 }
 
-func ValidateEmail(email string) error {
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	if !emailRegex.MatchString(email) {
-		return errors.New("invalid email format")
+func parseRow(row []string, lineNumber int) (Record, error) {
+	var record Record
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
 	}
+	record.ID = id
+
+	record.Name = strings.TrimSpace(row[1])
+	if record.Name == "" {
+		return Record{}, fmt.Errorf("empty name at line %d", lineNumber)
+	}
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
+	}
+	record.Value = value
+
+	active, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid active flag at line %d: %w", lineNumber, err)
+	}
+	record.Active = active
+
+	return record, nil
+}
+
+func ValidateRecords(records []Record) error {
+	seenIDs := make(map[int]bool)
+
+	for _, record := range records {
+		if record.ID <= 0 {
+			return fmt.Errorf("invalid record ID: %d (must be positive)", record.ID)
+		}
+
+		if seenIDs[record.ID] {
+			return fmt.Errorf("duplicate record ID: %d", record.ID)
+		}
+		seenIDs[record.ID] = true
+
+		if record.Value < 0 {
+			return fmt.Errorf("negative value for record ID %d: %f", record.ID, record.Value)
+		}
+	}
+
 	return nil
 }
 
-func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
-	normalizedUsername, err := NormalizeUsername(profile.Username)
+func ProcessData(filename string) error {
+	records, err := ParseCSVFile(filename)
 	if err != nil {
-		return UserProfile{}, err
-	}
-	profile.Username = normalizedUsername
-
-	if err := ValidateEmail(profile.Email); err != nil {
-		return UserProfile{}, err
+		return fmt.Errorf("parsing failed: %w", err)
 	}
 
-	if profile.Age < 0 || profile.Age > 150 {
-		return UserProfile{}, errors.New("age must be between 0 and 150")
+	if err := ValidateRecords(records); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	return profile, nil
-}
-package main
+	totalValue := 0.0
+	activeCount := 0
 
-import (
-    "encoding/csv"
-    "errors"
-    "io"
-    "os"
-    "strconv"
-)
+	for _, record := range records {
+		totalValue += record.Value
+		if record.Active {
+			activeCount++
+		}
+	}
 
-type DataRecord struct {
-    ID    int
-    Name  string
-    Value float64
-}
+	fmt.Printf("Processing complete:\n")
+	fmt.Printf("  Total records: %d\n", len(records))
+	fmt.Printf("  Active records: %d\n", activeCount)
+	fmt.Printf("  Total value: %.2f\n", totalValue)
+	fmt.Printf("  Average value: %.2f\n", totalValue/float64(len(records)))
 
-func ReadCSVFile(filename string) ([]DataRecord, error) {
-    file, err := os.Open(filename)
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
-
-    reader := csv.NewReader(file)
-    var records []DataRecord
-
-    for {
-        row, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return nil, err
-        }
-
-        if len(row) != 3 {
-            return nil, errors.New("invalid csv format")
-        }
-
-        id, err := strconv.Atoi(row[0])
-        if err != nil {
-            return nil, err
-        }
-
-        value, err := strconv.ParseFloat(row[2], 64)
-        if err != nil {
-            return nil, err
-        }
-
-        record := DataRecord{
-            ID:    id,
-            Name:  row[1],
-            Value: value,
-        }
-
-        records = append(records, record)
-    }
-
-    return records, nil
-}
-
-func ValidateRecords(records []DataRecord) error {
-    for _, record := range records {
-        if record.ID <= 0 {
-            return errors.New("invalid id")
-        }
-        if record.Name == "" {
-            return errors.New("empty name")
-        }
-        if record.Value < 0 {
-            return errors.New("negative value")
-        }
-    }
-    return nil
-}
-
-func CalculateTotal(records []DataRecord) float64 {
-    var total float64
-    for _, record := range records {
-        total += record.Value
-    }
-    return total
+	return nil
 }
