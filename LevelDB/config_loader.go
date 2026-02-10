@@ -3,99 +3,75 @@ package config
 import (
 	"errors"
 	"os"
-	"path/filepath"
-
-	"gopkg.in/yaml.v3"
+	"strconv"
+	"strings"
 )
 
-type Config struct {
-	Server struct {
-		Host string `yaml:"host" env:"SERVER_HOST"`
-		Port int    `yaml:"port" env:"SERVER_PORT"`
-	} `yaml:"server"`
-	Database struct {
-		URL      string `yaml:"url" env:"DB_URL"`
-		MaxConns int    `yaml:"max_connections" env:"DB_MAX_CONNS"`
-	} `yaml:"database"`
-	LogLevel string `yaml:"log_level" env:"LOG_LEVEL"`
+type AppConfig struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+	APIKey     string
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	if configPath == "" {
-		configPath = "config.yaml"
-	}
+func LoadConfig() (*AppConfig, error) {
+	cfg := &AppConfig{}
+	var err error
 
-	absPath, err := filepath.Abs(configPath)
+	cfg.ServerPort, err = getEnvInt("SERVER_PORT", 8080)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := os.ReadFile(absPath)
+	cfg.DBHost = getEnvString("DB_HOST", "localhost")
+	
+	cfg.DBPort, err = getEnvInt("DB_PORT", 5432)
 	if err != nil {
 		return nil, err
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	cfg.DebugMode, err = getEnvBool("DEBUG_MODE", false)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := overrideFromEnv(&cfg); err != nil {
-		return nil, err
+	cfg.APIKey = getEnvString("API_KEY", "")
+	if cfg.APIKey == "" {
+		return nil, errors.New("API_KEY is required")
 	}
 
-	if err := validateConfig(&cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
+	return cfg, nil
 }
 
-func overrideFromEnv(cfg *Config) error {
-	if val := os.Getenv("SERVER_HOST"); val != "" {
-		cfg.Server.Host = val
+func getEnvString(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	if val := os.Getenv("SERVER_PORT"); val != "" {
-		port, err := strconv.Atoi(val)
-		if err != nil {
-			return errors.New("invalid SERVER_PORT value")
-		}
-		cfg.Server.Port = port
-	}
-	if val := os.Getenv("DB_URL"); val != "" {
-		cfg.Database.URL = val
-	}
-	if val := os.Getenv("DB_MAX_CONNS"); val != "" {
-		maxConns, err := strconv.Atoi(val)
-		if err != nil {
-			return errors.New("invalid DB_MAX_CONNS value")
-		}
-		cfg.Database.MaxConns = maxConns
-	}
-	if val := os.Getenv("LOG_LEVEL"); val != "" {
-		cfg.LogLevel = val
-	}
-	return nil
+	return defaultValue
 }
 
-func validateConfig(cfg *Config) error {
-	if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
-		return errors.New("server port must be between 1 and 65535")
+func getEnvInt(key string, defaultValue int) (int, error) {
+	if value := os.Getenv(key); value != "" {
+		intValue, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, errors.New("invalid integer value for " + key)
+		}
+		return intValue, nil
 	}
-	if cfg.Database.URL == "" {
-		return errors.New("database URL is required")
+	return defaultValue, nil
+}
+
+func getEnvBool(key string, defaultValue bool) (bool, error) {
+	if value := os.Getenv(key); value != "" {
+		lowerValue := strings.ToLower(value)
+		if lowerValue == "true" || lowerValue == "1" {
+			return true, nil
+		}
+		if lowerValue == "false" || lowerValue == "0" {
+			return false, nil
+		}
+		return false, errors.New("invalid boolean value for " + key)
 	}
-	if cfg.Database.MaxConns < 1 {
-		return errors.New("database max connections must be at least 1")
-	}
-	validLogLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
-	}
-	if !validLogLevels[cfg.LogLevel] {
-		return errors.New("invalid log level")
-	}
-	return nil
+	return defaultValue, nil
 }
