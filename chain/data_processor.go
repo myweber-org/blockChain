@@ -139,3 +139,60 @@ func CalculateStats(records []DataRecord) (float64, float64, int) {
 	average := sum / float64(len(records))
 	return average, max - min, len(records)
 }
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
+
+type UserData struct {
+	ID        int       `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+	Active    bool      `json:"active"`
+}
+
+func ValidateEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
+}
+
+func TransformName(name string) string {
+	return strings.ToUpper(strings.TrimSpace(name))
+}
+
+func ProcessUserData(rawData []byte) (*UserData, error) {
+	var user UserData
+	if err := json.Unmarshal(rawData, &user); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user data: %w", err)
+	}
+
+	if !ValidateEmail(user.Email) {
+		return nil, fmt.Errorf("invalid email format: %s", user.Email)
+	}
+
+	user.Name = TransformName(user.Name)
+	user.CreatedAt = time.Now().UTC()
+
+	return &user, nil
+}
+
+func FilterActiveUsers(users []UserData) []UserData {
+	var activeUsers []UserData
+	for _, user := range users {
+		if user.Active {
+			activeUsers = append(activeUsers, user)
+		}
+	}
+	return activeUsers
+}
+
+func GenerateReport(users []UserData) string {
+	activeUsers := FilterActiveUsers(users)
+	return fmt.Sprintf("Total users: %d, Active users: %d", len(users), len(activeUsers))
+}
