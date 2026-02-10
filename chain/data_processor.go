@@ -1,51 +1,27 @@
-
 package main
 
 import (
-	"errors"
-	"regexp"
-	"strings"
+	"fmt"
 )
 
-type UserData struct {
-	Email    string
-	Username string
-	Age      int
+func MovingAverage(data []float64, windowSize int) []float64 {
+	if windowSize <= 0 || windowSize > len(data) {
+		return nil
+	}
+
+	result := make([]float64, len(data)-windowSize+1)
+	for i := 0; i < len(result); i++ {
+		sum := 0.0
+		for j := 0; j < windowSize; j++ {
+			sum += data[i+j]
+		}
+		result[i] = sum / float64(windowSize)
+	}
+	return result
 }
 
-func ValidateEmail(email string) error {
-	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, err := regexp.MatchString(pattern, email)
-	if err != nil {
-		return err
-	}
-	if !matched {
-		return errors.New("invalid email format")
-	}
-	return nil
-}
-
-func SanitizeUsername(username string) string {
-	return strings.TrimSpace(username)
-}
-
-func ValidateAge(age int) error {
-	if age < 0 || age > 150 {
-		return errors.New("age must be between 0 and 150")
-	}
-	return nil
-}
-
-func ProcessUserData(data UserData) (UserData, error) {
-	if err := ValidateEmail(data.Email); err != nil {
-		return UserData{}, err
-	}
-
-	data.Username = SanitizeUsername(data.Username)
-
-	if err := ValidateAge(data.Age); err != nil {
-		return UserData{}, err
-	}
-
-	return data, nil
+func main() {
+	sampleData := []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0}
+	averages := MovingAverage(sampleData, 3)
+	fmt.Println("Moving averages:", averages)
 }
