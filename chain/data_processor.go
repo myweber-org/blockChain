@@ -1,80 +1,103 @@
+
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
-)
-
-func MovingAverage(data []float64, windowSize int) []float64 {
-	if windowSize <= 0 || windowSize > len(data) {
-		return nil
-	}
-
-	result := make([]float64, len(data)-windowSize+1)
-	for i := 0; i < len(result); i++ {
-		sum := 0.0
-		for j := 0; j < windowSize; j++ {
-			sum += data[i+j]
-		}
-		result[i] = sum / float64(windowSize)
-	}
-	return result
-}
-
-func main() {
-	sampleData := []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0}
-	averages := MovingAverage(sampleData, 3)
-	fmt.Println("Moving averages:", averages)
-}
-package main
-
-import (
-	"errors"
+	"io"
+	"os"
 	"strings"
-	"time"
 )
 
-type DataRecord struct {
-	ID        string
-	Value     float64
-	Timestamp time.Time
-	Category  string
+type DataProcessor struct {
+	InputPath  string
+	OutputPath string
 }
 
-func ValidateRecord(record DataRecord) error {
-	if record.ID == "" {
-		return errors.New("ID cannot be empty")
+func NewDataProcessor(input, output string) *DataProcessor {
+	return &DataProcessor{
+		InputPath:  input,
+		OutputPath: output,
 	}
-	if record.Value < 0 {
-		return errors.New("value must be non-negative")
+}
+
+func (dp *DataProcessor) Process() error {
+	inputFile, err := os.Open(dp.InputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
 	}
-	if record.Timestamp.IsZero() {
-		return errors.New("timestamp must be set")
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(dp.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	if strings.TrimSpace(record.Category) == "" {
-		return errors.New("category cannot be empty")
+	defer outputFile.Close()
+
+	reader := csv.NewReader(inputFile)
+	writer := csv.NewWriter(outputFile)
+	defer writer.Flush()
+
+	headers, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read headers: %w", err)
 	}
+
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("failed to write headers: %w", err)
+	}
+
+	recordCount := 0
+	cleanedCount := 0
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		recordCount++
+		cleanedRecord := dp.cleanRecord(record)
+		if dp.isValidRecord(cleanedRecord) {
+			if err := writer.Write(cleanedRecord); err != nil {
+				return fmt.Errorf("failed to write record: %w", err)
+			}
+			cleanedCount++
+		}
+	}
+
+	fmt.Printf("Processed %d records, wrote %d valid records\n", recordCount, cleanedCount)
 	return nil
 }
 
-func TransformRecord(record DataRecord, multiplier float64) DataRecord {
-	if multiplier <= 0 {
-		multiplier = 1.0
+func (dp *DataProcessor) cleanRecord(record []string) []string {
+	cleaned := make([]string, len(record))
+	for i, field := range record {
+		cleaned[i] = strings.TrimSpace(field)
 	}
-	return DataRecord{
-		ID:        strings.ToUpper(record.ID),
-		Value:     record.Value * multiplier,
-		Timestamp: record.Timestamp.UTC(),
-		Category:  strings.ToLower(strings.TrimSpace(record.Category)),
-	}
+	return cleaned
 }
 
-func ProcessRecords(records []DataRecord, multiplier float64) ([]DataRecord, error) {
-	var processed []DataRecord
-	for _, record := range records {
-		if err := ValidateRecord(record); err != nil {
-			return nil, err
+func (dp *DataProcessor) isValidRecord(record []string) bool {
+	for _, field := range record {
+		if field == "" {
+			return false
 		}
-		processed = append(processed, TransformRecord(record, multiplier))
 	}
-	return processed, nil
+	return true
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_processor <input.csv> <output.csv>")
+		os.Exit(1)
+	}
+
+	processor := NewDataProcessor(os.Args[1], os.Args[2])
+	if err := processor.Process(); err != nil {
+		fmt.Printf("Error processing data: %v\n", err)
+		os.Exit(1)
+	}
 }
