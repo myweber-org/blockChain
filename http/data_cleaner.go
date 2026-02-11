@@ -348,3 +348,125 @@ func main() {
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
 }
+package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Record struct {
+    ID    int
+    Name  string
+    Email string
+    Score float64
+}
+
+func cleanCSV(inputPath, outputPath string) error {
+    inputFile, err := os.Open(inputPath)
+    if err != nil {
+        return fmt.Errorf("failed to open input file: %w", err)
+    }
+    defer inputFile.Close()
+
+    outputFile, err := os.Create(outputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
+
+    reader := csv.NewReader(inputFile)
+    writer := csv.NewWriter(outputFile)
+    defer writer.Flush()
+
+    headers, err := reader.Read()
+    if err != nil {
+        return fmt.Errorf("failed to read headers: %w", err)
+    }
+
+    if err := writer.Write(headers); err != nil {
+        return fmt.Errorf("failed to write headers: %w", err)
+    }
+
+    lineNumber := 1
+    for {
+        lineNumber++
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            fmt.Printf("skipping line %d: %v\n", lineNumber, err)
+            continue
+        }
+
+        cleaned, skip := validateAndCleanRow(row)
+        if skip {
+            fmt.Printf("skipping invalid row at line %d\n", lineNumber)
+            continue
+        }
+
+        if err := writer.Write(cleaned); err != nil {
+            return fmt.Errorf("failed to write row: %w", err)
+        }
+    }
+
+    return nil
+}
+
+func validateAndCleanRow(row []string) ([]string, bool) {
+    if len(row) != 4 {
+        return nil, true
+    }
+
+    id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+    if err != nil || id <= 0 {
+        return nil, true
+    }
+
+    name := strings.TrimSpace(row[1])
+    if name == "" {
+        return nil, true
+    }
+    name = strings.ToLower(name)
+    name = strings.Title(name)
+
+    email := strings.TrimSpace(row[2])
+    if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+        return nil, true
+    }
+    email = strings.ToLower(email)
+
+    score, err := strconv.ParseFloat(strings.TrimSpace(row[3]), 64)
+    if err != nil || score < 0 || score > 100 {
+        return nil, true
+    }
+
+    return []string{
+        strconv.Itoa(id),
+        name,
+        email,
+        strconv.FormatFloat(score, 'f', 2, 64),
+    }, false
+}
+
+func main() {
+    if len(os.Args) != 3 {
+        fmt.Println("usage: data_cleaner <input.csv> <output.csv>")
+        os.Exit(1)
+    }
+
+    inputFile := os.Args[1]
+    outputFile := os.Args[2]
+
+    if err := cleanCSV(inputFile, outputFile); err != nil {
+        fmt.Printf("error: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Println("data cleaning completed successfully")
+}
