@@ -245,3 +245,63 @@ func main() {
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataCleaner struct {
+	seen map[string]bool
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		seen: make(map[string]bool),
+	}
+}
+
+func (dc *DataCleaner) Deduplicate(items []string) []string {
+	var unique []string
+	for _, item := range items {
+		normalized := strings.ToLower(strings.TrimSpace(item))
+		if !dc.seen[normalized] && dc.validate(item) {
+			dc.seen[normalized] = true
+			unique = append(unique, item)
+		}
+	}
+	return unique
+}
+
+func (dc *DataCleaner) validate(item string) bool {
+	return len(item) > 0 && len(item) < 100
+}
+
+func (dc *DataCleaner) Reset() {
+	dc.seen = make(map[string]bool)
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+	
+	data := []string{
+		"apple",
+		"Apple",
+		"banana",
+		"  banana  ",
+		"",
+		"cherry",
+		"cherry",
+	}
+	
+	cleaned := cleaner.Deduplicate(data)
+	fmt.Printf("Original: %v\n", data)
+	fmt.Printf("Cleaned: %v\n", cleaned)
+	
+	cleaner.Reset()
+	
+	moreData := []string{"grape", "Grape", "GRAPE"}
+	moreCleaned := cleaner.Deduplicate(moreData)
+	fmt.Printf("More cleaned: %v\n", moreCleaned)
+}
