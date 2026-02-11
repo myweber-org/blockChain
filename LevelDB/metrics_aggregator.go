@@ -126,4 +126,63 @@ func main() {
 	for k, v := range stats {
 		fmt.Printf("%s: %.2f\n", k, v)
 	}
+}package metrics
+
+import (
+	"sync"
+	"time"
+)
+
+type Aggregator struct {
+	mu            sync.RWMutex
+	latencySum    time.Duration
+	requestCount  int64
+	errorCount    int64
+	lastResetTime time.Time
+}
+
+func NewAggregator() *Aggregator {
+	return &Aggregator{
+		lastResetTime: time.Now(),
+	}
+}
+
+func (a *Aggregator) Record(latency time.Duration, isError bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.latencySum += latency
+	a.requestCount++
+	if isError {
+		a.errorCount++
+	}
+}
+
+func (a *Aggregator) GetStats() (avgLatency time.Duration, errorRate float64, totalRequests int64) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.requestCount == 0 {
+		return 0, 0, 0
+	}
+
+	avgLatency = a.latencySum / time.Duration(a.requestCount)
+	errorRate = float64(a.errorCount) / float64(a.requestCount)
+	return avgLatency, errorRate, a.requestCount
+}
+
+func (a *Aggregator) Reset() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.latencySum = 0
+	a.requestCount = 0
+	a.errorCount = 0
+	a.lastResetTime = time.Now()
+}
+
+func (a *Aggregator) TimeSinceReset() time.Duration {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return time.Since(a.lastResetTime)
 }
