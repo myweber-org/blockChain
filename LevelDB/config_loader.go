@@ -1,77 +1,85 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
-	"strconv"
-	"strings"
+	"path/filepath"
 )
 
+type DatabaseConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Database string `json:"database"`
+}
+
+type ServerConfig struct {
+	Port         int    `json:"port"`
+	ReadTimeout  int    `json:"read_timeout"`
+	WriteTimeout int    `json:"write_timeout"`
+	Environment  string `json:"environment"`
+}
+
 type AppConfig struct {
-	ServerPort int
-	DBHost     string
-	DBPort     int
-	DebugMode  bool
-	APIKey     string
+	Database DatabaseConfig `json:"database"`
+	Server   ServerConfig   `json:"server"`
+	LogLevel string         `json:"log_level"`
 }
 
-func LoadConfig() (*AppConfig, error) {
-	cfg := &AppConfig{}
-	var err error
+func LoadConfig(configPath string) (*AppConfig, error) {
+	if configPath == "" {
+		return nil, errors.New("config path cannot be empty")
+	}
 
-	cfg.ServerPort, err = getEnvInt("SERVER_PORT", 8080)
+	absPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.DBHost = getEnvString("DB_HOST", "localhost")
-	
-	cfg.DBPort, err = getEnvInt("DB_PORT", 5432)
+	fileData, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.DebugMode, err = getEnvBool("DEBUG_MODE", false)
-	if err != nil {
+	var config AppConfig
+	if err := json.Unmarshal(fileData, &config); err != nil {
 		return nil, err
 	}
 
-	cfg.APIKey = getEnvString("API_KEY", "")
-	if cfg.APIKey == "" {
-		return nil, errors.New("API_KEY is required")
+	if err := validateConfig(&config); err != nil {
+		return nil, err
 	}
 
-	return cfg, nil
+	setDefaults(&config)
+	return &config, nil
 }
 
-func getEnvString(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func validateConfig(config *AppConfig) error {
+	if config.Database.Host == "" {
+		return errors.New("database host is required")
 	}
-	return defaultValue
+	if config.Database.Port <= 0 || config.Database.Port > 65535 {
+		return errors.New("database port must be between 1 and 65535")
+	}
+	if config.Server.Port <= 0 || config.Server.Port > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
+	if config.Server.Environment != "development" && config.Server.Environment != "production" {
+		return errors.New("environment must be either 'development' or 'production'")
+	}
+	return nil
 }
 
-func getEnvInt(key string, defaultValue int) (int, error) {
-	if value := os.Getenv(key); value != "" {
-		intValue, err := strconv.Atoi(value)
-		if err != nil {
-			return 0, errors.New("invalid integer value for " + key)
-		}
-		return intValue, nil
+func setDefaults(config *AppConfig) {
+	if config.LogLevel == "" {
+		config.LogLevel = "info"
 	}
-	return defaultValue, nil
-}
-
-func getEnvBool(key string, defaultValue bool) (bool, error) {
-	if value := os.Getenv(key); value != "" {
-		lowerValue := strings.ToLower(value)
-		if lowerValue == "true" || lowerValue == "1" {
-			return true, nil
-		}
-		if lowerValue == "false" || lowerValue == "0" {
-			return false, nil
-		}
-		return false, errors.New("invalid boolean value for " + key)
+	if config.Server.ReadTimeout == 0 {
+		config.Server.ReadTimeout = 30
 	}
-	return defaultValue, nil
+	if config.Server.WriteTimeout == 0 {
+		config.Server.WriteTimeout = 30
+	}
 }
