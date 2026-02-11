@@ -239,3 +239,80 @@ func main() {
 		fmt.Printf("%s: %.2f\n", k, v)
 	}
 }
+package metrics
+
+import (
+	"sort"
+	"sync"
+	"time"
+)
+
+type Aggregator struct {
+	windowSize   time.Duration
+	percentile   float64
+	measurements []measurement
+	mu           sync.RWMutex
+}
+
+type measurement struct {
+	value     float64
+	timestamp time.Time
+}
+
+func NewAggregator(windowSize time.Duration, percentile float64) *Aggregator {
+	return &Aggregator{
+		windowSize: windowSize,
+		percentile: percentile,
+		measurements: make([]measurement, 0),
+	}
+}
+
+func (a *Aggregator) Add(value float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	
+	now := time.Now()
+	a.measurements = append(a.measurements, measurement{
+		value:     value,
+		timestamp: now,
+	})
+	a.cleanup(now)
+}
+
+func (a *Aggregator) GetPercentile() (float64, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	
+	if len(a.measurements) == 0 {
+		return 0, false
+	}
+	
+	values := make([]float64, len(a.measurements))
+	for i, m := range a.measurements {
+		values[i] = m.value
+	}
+	
+	sort.Float64s(values)
+	index := int(float64(len(values)-1) * a.percentile / 100.0)
+	return values[index], true
+}
+
+func (a *Aggregator) cleanup(now time.Time) {
+	cutoff := now.Add(-a.windowSize)
+	validStart := 0
+	
+	for i, m := range a.measurements {
+		if m.timestamp.After(cutoff) {
+			validStart = i
+			break
+		}
+	}
+	
+	a.measurements = a.measurements[validStart:]
+}
+
+func (a *Aggregator) Count() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return len(a.measurements)
+}
