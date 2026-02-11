@@ -1,186 +1,111 @@
-package main
+package session
 
 import (
-    "sync"
+    "crypto/rand"
+    "encoding/base64"
+    "errors"
     "time"
+
+    "github.com/go-redis/redis/v8"
+    "golang.org/x/net/context"
+)
+
+var (
+    ErrInvalidToken = errors.New("invalid session token")
+    ErrSessionExpired = errors.New("session has expired")
 )
 
 type Session struct {
-    ID        string
-    UserID    int
-    Data      map[string]interface{}
+    UserID    string
+    Email     string
     CreatedAt time.Time
     ExpiresAt time.Time
 }
 
-type SessionManager struct {
-    sessions map[string]*Session
-    mu       sync.RWMutex
-    ttl      time.Duration
+type Manager struct {
+    client *redis.Client
+    prefix string
+    ttl    time.Duration
 }
 
-func NewSessionManager(ttl time.Duration) *SessionManager {
-    sm := &SessionManager{
-        sessions: make(map[string]*Session),
-        ttl:      ttl,
+func NewManager(client *redis.Client, prefix string, ttl time.Duration) *Manager {
+    return &Manager{
+        client: client,
+        prefix: prefix,
+        ttl:    ttl,
     }
-    go sm.cleanupWorker()
-    return sm
 }
 
-func (sm *SessionManager) CreateSession(userID int, initialData map[string]interface{}) string {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
+func generateToken() (string, error) {
+    bytes := make([]byte, 32)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+    return base64.URLEncoding.EncodeToString(bytes), nil
+}
 
-    sessionID := generateSessionID()
-    now := time.Now()
-    session := &Session{
-        ID:        sessionID,
+func (m *Manager) Create(userID, email string) (string, error) {
+    token, err := generateToken()
+    if err != nil {
+        return "", err
+    }
+
+    session := Session{
         UserID:    userID,
-        Data:      initialData,
-        CreatedAt: now,
-        ExpiresAt: now.Add(sm.ttl),
+        Email:     email,
+        CreatedAt: time.Now(),
+        ExpiresAt: time.Now().Add(m.ttl),
     }
-    sm.sessions[sessionID] = session
-    return sessionID
-}
 
-func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
-    sm.mu.RLock()
-    defer sm.mu.RUnlock()
-
-    session, exists := sm.sessions[sessionID]
-    if !exists || time.Now().After(session.ExpiresAt) {
-        return nil, false
+    key := m.prefix + token
+    ctx := context.Background()
+    
+    err = m.client.Set(ctx, key, session, m.ttl).Err()
+    if err != nil {
+        return "", err
     }
-    return session, true
+
+    return token, nil
 }
 
-func (sm *SessionManager) UpdateSessionData(sessionID string, key string, value interface{}) bool {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
+func (m *Manager) Validate(token string) (*Session, error) {
+    key := m.prefix + token
+    ctx := context.Background()
 
-    session, exists := sm.sessions[sessionID]
-    if !exists || time.Now().After(session.ExpiresAt) {
-        return false
-    }
-    session.Data[key] = value
-    session.ExpiresAt = time.Now().Add(sm.ttl)
-    return true
-}
-
-func (sm *SessionManager) DeleteSession(sessionID string) {
-    sm.mu.Lock()
-    defer sm.mu.Unlock()
-    delete(sm.sessions, sessionID)
-}
-
-func (sm *SessionManager) cleanupWorker() {
-    ticker := time.NewTicker(time.Minute)
-    defer ticker.Stop()
-
-    for range ticker.C {
-        sm.mu.Lock()
-        now := time.Now()
-        for id, session := range sm.sessions {
-            if now.After(session.ExpiresAt) {
-                delete(sm.sessions, id)
-            }
+    var session Session
+    err := m.client.Get(ctx, key).Scan(&session)
+    if err != nil {
+        if err == redis.Nil {
+            return nil, ErrInvalidToken
         }
-        sm.mu.Unlock()
+        return nil, err
     }
-}
 
-func generateSessionID() string {
-    return "sess_" + time.Now().Format("20060102150405") + "_" + randomString(16)
-}
-
-func randomString(length int) string {
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    b := make([]byte, length)
-    for i := range b {
-        b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+    if time.Now().After(session.ExpiresAt) {
+        m.client.Del(ctx, key)
+        return nil, ErrSessionExpired
     }
-    return string(b)
-}package main
 
-import (
-	"sync"
-	"time"
-)
-
-type Session struct {
-	ID        string
-	UserID    int
-	Data      map[string]interface{}
-	ExpiresAt time.Time
+    return &session, nil
 }
 
-type SessionManager struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	ttl      time.Duration
+func (m *Manager) Refresh(token string) error {
+    key := m.prefix + token
+    ctx := context.Background()
+
+    exists, err := m.client.Exists(ctx, key).Result()
+    if err != nil {
+        return err
+    }
+    if exists == 0 {
+        return ErrInvalidToken
+    }
+
+    return m.client.Expire(ctx, key, m.ttl).Err()
 }
 
-func NewSessionManager(ttl time.Duration) *SessionManager {
-	sm := &SessionManager{
-		sessions: make(map[string]*Session),
-		ttl:      ttl,
-	}
-	go sm.cleanupWorker()
-	return sm
-}
-
-func (sm *SessionManager) CreateSession(userID int) *Session {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	session := &Session{
-		ID:        generateSessionID(),
-		UserID:    userID,
-		Data:      make(map[string]interface{}),
-		ExpiresAt: time.Now().Add(sm.ttl),
-	}
-	sm.sessions[session.ID] = session
-	return session
-}
-
-func (sm *SessionManager) GetSession(id string) *Session {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
-	session, exists := sm.sessions[id]
-	if !exists || time.Now().After(session.ExpiresAt) {
-		return nil
-	}
-	return session
-}
-
-func (sm *SessionManager) cleanupWorker() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		sm.mu.Lock()
-		now := time.Now()
-		for id, session := range sm.sessions {
-			if now.After(session.ExpiresAt) {
-				delete(sm.sessions, id)
-			}
-		}
-		sm.mu.Unlock()
-	}
-}
-
-func generateSessionID() string {
-	return "sess_" + time.Now().Format("20060102150405") + "_" + randomString(16)
-}
-
-func randomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-	}
-	return string(b)
+func (m *Manager) Invalidate(token string) error {
+    key := m.prefix + token
+    ctx := context.Background()
+    return m.client.Del(ctx, key).Err()
 }
