@@ -83,4 +83,35 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to process CSV:", err)
 	}
+}package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+func SanitizeString(input string) string {
+	// Remove leading and trailing whitespace
+	trimmed := strings.TrimSpace(input)
+	
+	// Replace multiple spaces with a single space
+	re := regexp.MustCompile(`\s+`)
+	normalized := re.ReplaceAllString(trimmed, " ")
+	
+	// Convert to lowercase for consistency
+	lowercased := strings.ToLower(normalized)
+	
+	return lowercased
+}
+
+func RemoveSpecialCharacters(input string) string {
+	// Keep only alphanumeric characters and spaces
+	re := regexp.MustCompile(`[^a-zA-Z0-9\s]`)
+	return re.ReplaceAllString(input, "")
+}
+
+func NormalizeWhitespace(input string) string {
+	// Replace various whitespace characters with standard space
+	re := regexp.MustCompile(`[\t\n\r\f\v]+`)
+	return re.ReplaceAllString(input, " ")
 }
