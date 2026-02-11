@@ -274,4 +274,32 @@ func main() {
     }
     
     fmt.Printf("Activity logged successfully at %s\n", logger.Timestamp.Format(time.RFC3339))
+}package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type ActivityLogger struct {
+	handler http.Handler
+}
+
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
+}
+
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	al.handler.ServeHTTP(w, r)
+	duration := time.Since(start)
+
+	log.Printf(
+		"Method: %s | Path: %s | RemoteAddr: %s | Duration: %v",
+		r.Method,
+		r.URL.Path,
+		r.RemoteAddr,
+		duration,
+	)
 }
