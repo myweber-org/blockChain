@@ -305,3 +305,83 @@ func main() {
 	moreCleaned := cleaner.Deduplicate(moreData)
 	fmt.Printf("More cleaned: %v\n", moreCleaned)
 }
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type Record struct {
+	ID    int
+	Email string
+	Valid bool
+}
+
+func DeduplicateRecords(records []Record) []Record {
+	seen := make(map[string]bool)
+	var unique []Record
+	for _, rec := range records {
+		email := strings.ToLower(strings.TrimSpace(rec.Email))
+		if !seen[email] {
+			seen[email] = true
+			unique = append(unique, Record{
+				ID:    rec.ID,
+				Email: email,
+				Valid: rec.Valid,
+			})
+		}
+	}
+	return unique
+}
+
+func ValidateEmail(email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return errors.New("email cannot be empty")
+	}
+	if !strings.Contains(email, "@") {
+		return errors.New("email must contain @ symbol")
+	}
+	if !strings.Contains(email, ".") {
+		return errors.New("email must contain domain")
+	}
+	return nil
+}
+
+func CleanData(records []Record) ([]Record, error) {
+	var cleaned []Record
+	for _, rec := range records {
+		if err := ValidateEmail(rec.Email); err != nil {
+			continue
+		}
+		cleaned = append(cleaned, rec)
+	}
+	if len(cleaned) == 0 {
+		return nil, errors.New("no valid records after cleaning")
+	}
+	return DeduplicateRecords(cleaned), nil
+}
+
+func main() {
+	records := []Record{
+		{1, "user@example.com", true},
+		{2, "invalid-email", false},
+		{3, "USER@EXAMPLE.COM", true},
+		{4, "test@domain.org", true},
+		{5, "", false},
+	}
+
+	cleaned, err := CleanData(records)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Original: %d records\n", len(records))
+	fmt.Printf("Cleaned: %d records\n", len(cleaned))
+	for _, rec := range cleaned {
+		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", rec.ID, rec.Email, rec.Valid)
+	}
+}
