@@ -195,4 +195,25 @@ func main() {
 	}
 
 	fmt.Printf("Data cleaned successfully. Output written to %s\n", outputFile)
+}package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+// TrimSpaces removes leading and trailing whitespace from each string in the slice.
+func TrimSpaces(input []string) []string {
+	trimmed := make([]string, len(input))
+	for i, s := range input {
+		trimmed[i] = strings.TrimSpace(s)
+	}
+	return trimmed
+}
+
+func main() {
+	data := []string{"  apple ", "banana  ", "  cherry  ", "date"}
+	cleaned := TrimSpaces(data)
+	fmt.Println("Original:", data)
+	fmt.Println("Cleaned:", cleaned)
 }
