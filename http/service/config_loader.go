@@ -343,4 +343,73 @@ func NewValidationError(msg string) *ValidationError {
 
 func (e *ValidationError) Error() string {
 	return "config validation error: " + e.Message
+}package config
+
+import (
+    "fmt"
+    "io/ioutil"
+    "os"
+
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
+}
+
+type ServerConfig struct {
+    Port         int    `yaml:"port"`
+    ReadTimeout  int    `yaml:"read_timeout"`
+    WriteTimeout int    `yaml:"write_timeout"`
+}
+
+type Config struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+    Debug    bool           `yaml:"debug"`
+}
+
+func LoadConfig(path string) (*Config, error) {
+    if _, err := os.Stat(path); os.IsNotExist(err) {
+        return nil, fmt.Errorf("config file not found: %s", path)
+    }
+
+    data, err := ioutil.ReadFile(path)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %v", err)
+    }
+
+    var config Config
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %v", err)
+    }
+
+    if err := validateConfig(&config); err != nil {
+        return nil, fmt.Errorf("config validation failed: %v", err)
+    }
+
+    return &config, nil
+}
+
+func validateConfig(c *Config) error {
+    if c.Database.Host == "" {
+        return fmt.Errorf("database host is required")
+    }
+    if c.Database.Port <= 0 || c.Database.Port > 65535 {
+        return fmt.Errorf("invalid database port: %d", c.Database.Port)
+    }
+    if c.Server.Port <= 0 || c.Server.Port > 65535 {
+        return fmt.Errorf("invalid server port: %d", c.Server.Port)
+    }
+    if c.Server.ReadTimeout < 0 {
+        return fmt.Errorf("read timeout cannot be negative")
+    }
+    if c.Server.WriteTimeout < 0 {
+        return fmt.Errorf("write timeout cannot be negative")
+    }
+    return nil
 }
