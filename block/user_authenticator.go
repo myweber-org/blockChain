@@ -364,4 +364,54 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(UserIDKey).(string)
 	return userID, ok
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type User struct {
+	ID    string
+	Email string
+	Role  string
+}
+
+func Authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenString == authHeader {
+			http.Error(w, "Bearer token required", http.StatusUnauthorized)
+			return
+		}
+
+		user, err := validateToken(tokenString)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func validateToken(tokenString string) (*User, error) {
+	// Token validation logic would go here
+	// This is a simplified example
+	if tokenString == "valid_token_example" {
+		return &User{
+			ID:    "user123",
+			Email: "user@example.com",
+			Role:  "admin",
+		}, nil
+	}
+	return nil, fmt.Errorf("invalid token")
 }
