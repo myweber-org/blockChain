@@ -1,91 +1,60 @@
-
 package main
 
 import (
-    "regexp"
-    "strings"
+	"regexp"
+	"strings"
 )
 
 type User struct {
-    ID       int
-    Username string
-    Email    string
+	ID       int
+	Username string
+	Email    string
+	Age      int
 }
 
 func ValidateUsername(username string) bool {
-    if len(username) < 3 || len(username) > 20 {
-        return false
-    }
-    validUsername := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-    return validUsername.MatchString(username)
+	if len(username) < 3 || len(username) > 20 {
+		return false
+	}
+	validPattern := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+	return validPattern.MatchString(username)
 }
 
 func SanitizeEmail(email string) string {
-    trimmed := strings.TrimSpace(email)
-    return strings.ToLower(trimmed)
+	trimmed := strings.TrimSpace(email)
+	return strings.ToLower(trimmed)
 }
 
-func ValidateUserInput(user User) (bool, []string) {
-    var errors []string
-
-    if !ValidateUsername(user.Username) {
-        errors = append(errors, "Username must be 3-20 characters and contain only letters, numbers, and underscores")
-    }
-
-    if user.Email == "" {
-        errors = append(errors, "Email cannot be empty")
-    }
-
-    return len(errors) == 0, errors
-}package main
-
-import (
-    "regexp"
-    "strings"
-)
-
-type UserData struct {
-    Username string
-    Email    string
-    Age      int
+func ValidateUserAge(age int) bool {
+	return age >= 13 && age <= 120
 }
 
-func ValidateUsername(username string) bool {
-    if len(username) < 3 || len(username) > 20 {
-        return false
-    }
-    validUsername := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-    return validUsername.MatchString(username)
+func ProcessUserInput(username, email string, age int) (User, error) {
+	if !ValidateUsername(username) {
+		return User{}, &ValidationError{Field: "username", Message: "invalid username format"}
+	}
+
+	sanitizedEmail := SanitizeEmail(email)
+	if !strings.Contains(sanitizedEmail, "@") {
+		return User{}, &ValidationError{Field: "email", Message: "invalid email address"}
+	}
+
+	if !ValidateUserAge(age) {
+		return User{}, &ValidationError{Field: "age", Message: "age must be between 13 and 120"}
+	}
+
+	return User{
+		Username: username,
+		Email:    sanitizedEmail,
+		Age:      age,
+	}, nil
 }
 
-func SanitizeEmail(email string) string {
-    trimmed := strings.TrimSpace(email)
-    return strings.ToLower(trimmed)
+type ValidationError struct {
+	Field   string
+	Message string
 }
 
-func ValidateAge(age int) bool {
-    return age >= 13 && age <= 120
+func (e *ValidationError) Error() string {
+	return e.Field + ": " + e.Message
 }
-
-func ProcessUserData(data UserData) (UserData, error) {
-    if !ValidateUsername(data.Username) {
-        return UserData{}, ErrInvalidUsername
-    }
-
-    sanitizedEmail := SanitizeEmail(data.Email)
-
-    if !ValidateAge(data.Age) {
-        return UserData{}, ErrInvalidAge
-    }
-
-    return UserData{
-        Username: data.Username,
-        Email:    sanitizedEmail,
-        Age:      data.Age,
-    }, nil
-}
-
-var (
-    ErrInvalidUsername = errors.New("invalid username format")
-    ErrInvalidAge      = errors.New("age must be between 13 and 120")
-)
