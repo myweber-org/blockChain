@@ -523,4 +523,140 @@ func main() {
         logger.Write([]byte(msg))
         time.Sleep(10 * time.Millisecond)
     }
+}package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const (
+	maxFileSize  = 10 * 1024 * 1024
+	maxBackups   = 5
+	logExtension = ".log"
+)
+
+type LogRotator struct {
+	filePath string
+	file     *os.File
+	size     int64
+}
+
+func NewLogRotator(path string) (*LogRotator, error) {
+	rotator := &LogRotator{filePath: path}
+	if err := rotator.openFile(); err != nil {
+		return nil, err
+	}
+	return rotator, nil
+}
+
+func (lr *LogRotator) openFile() error {
+	file, err := os.OpenFile(lr.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+	lr.file = file
+	lr.size = info.Size()
+	return nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if lr.size+int64(len(p)) > maxFileSize {
+		if err := lr.rotate(); err != nil {
+			return 0, err
+		}
+	}
+	n, err := lr.file.Write(p)
+	if err == nil {
+		lr.size += int64(n)
+	}
+	return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+	if err := lr.file.Close(); err != nil {
+		return err
+	}
+
+	timestamp := time.Now().Format("20060102150405")
+	backupPath := lr.filePath + "." + timestamp + logExtension
+	if err := os.Rename(lr.filePath, backupPath); err != nil {
+		return err
+	}
+
+	if err := lr.openFile(); err != nil {
+		return err
+	}
+
+	return lr.cleanupOldBackups()
+}
+
+func (lr *LogRotator) cleanupOldBackups() error {
+	dir := filepath.Dir(lr.filePath)
+	base := filepath.Base(lr.filePath)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	var backups []string
+	prefix := base + "."
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, logExtension) {
+			backups = append(backups, name)
+		}
+	}
+
+	if len(backups) <= maxBackups {
+		return nil
+	}
+
+	sort.Strings(backups)
+	toRemove := backups[:len(backups)-maxBackups]
+
+	for _, name := range toRemove {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (lr *LogRotator) Close() error {
+	if lr.file != nil {
+		return lr.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	rotator, err := NewLogRotator("application.log")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create log rotator: %v\n", err)
+		os.Exit(1)
+	}
+	defer rotator.Close()
+
+	for i := 0; i < 100; i++ {
+		message := fmt.Sprintf("Log entry %d at %s\n", i, time.Now().Format(time.RFC3339))
+		if _, err := rotator.Write([]byte(message)); err != nil {
+			fmt.Fprintf(os.Stderr, "Write error: %v\n", err)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
