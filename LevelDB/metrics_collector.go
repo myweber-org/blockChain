@@ -204,4 +204,84 @@ func main() {
                 metrics.GoroutineCount)
         }
     }
+}package main
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type MetricsCollector struct {
+	requestCount    int
+	errorCount      int
+	totalLatency    time.Duration
+	latencySamples  []time.Duration
+}
+
+func NewMetricsCollector() *MetricsCollector {
+	return &MetricsCollector{
+		latencySamples: make([]time.Duration, 0),
+	}
+}
+
+func (mc *MetricsCollector) RecordRequest(latency time.Duration, err error) {
+	mc.requestCount++
+	mc.totalLatency += latency
+	mc.latencySamples = append(mc.latencySamples, latency)
+	
+	if err != nil {
+		mc.errorCount++
+	}
+}
+
+func (mc *MetricsCollector) AverageLatency() time.Duration {
+	if mc.requestCount == 0 {
+		return 0
+	}
+	return mc.totalLatency / time.Duration(mc.requestCount)
+}
+
+func (mc *MetricsCollector) ErrorRate() float64 {
+	if mc.requestCount == 0 {
+		return 0.0
+	}
+	return float64(mc.errorCount) / float64(mc.requestCount)
+}
+
+func (mc *MetricsCollector) PercentileLatency(p float64) time.Duration {
+	if len(mc.latencySamples) == 0 {
+		return 0
+	}
+	
+	// Simple implementation - for production use proper percentile calculation
+	index := int(float64(len(mc.latencySamples)-1) * p / 100.0)
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(mc.latencySamples) {
+		index = len(mc.latencySamples) - 1
+	}
+	return mc.latencySamples[index]
+}
+
+func main() {
+	collector := NewMetricsCollector()
+	
+	// Simulate some requests
+	for i := 0; i < 100; i++ {
+		start := time.Now()
+		
+		// Simulate HTTP request
+		_, err := http.Get("http://example.com")
+		latency := time.Since(start)
+		
+		collector.RecordRequest(latency, err)
+		time.Sleep(10 * time.Millisecond)
+	}
+	
+	log.Printf("Requests processed: %d", collector.requestCount)
+	log.Printf("Average latency: %v", collector.AverageLatency())
+	log.Printf("Error rate: %.2f%%", collector.ErrorRate()*100)
+	log.Printf("95th percentile latency: %v", collector.PercentileLatency(95))
 }
