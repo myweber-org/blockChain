@@ -1,67 +1,4 @@
-package auth
-
-import (
-	"errors"
-	"time"
-
-	"github.com/golang-jwt/jwt/v4"
-)
-
-var secretKey = []byte("your-secret-key-change-in-production")
-
-type Claims struct {
-	Username string `json:"username"`
-	UserID   int    `json:"user_id"`
-	jwt.RegisteredClaims
-}
-
-func GenerateToken(username string, userID int) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
-	claims := &Claims{
-		Username: username,
-		UserID:   userID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "myapp",
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secretKey)
-}
-
-func ValidateToken(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return secretKey, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims, nil
-	}
-
-	return nil, errors.New("invalid token")
-}
-
-func RefreshToken(tokenString string) (string, error) {
-	claims, err := ValidateToken(tokenString)
-	if err != nil {
-		return "", err
-	}
-
-	if time.Until(claims.ExpiresAt.Time) > 30*time.Minute {
-		return "", errors.New("token not expired enough to refresh")
-	}
-
-	return GenerateToken(claims.Username, claims.UserID)
-}package middleware
+package middleware
 
 import (
 	"context"
@@ -80,7 +17,9 @@ type Authenticator struct {
 }
 
 func NewAuthenticator(secretKey string) *Authenticator {
-	return &Authenticator{secretKey: []byte(secretKey)}
+	return &Authenticator{
+		secretKey: []byte(secretKey),
+	}
 }
 
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
@@ -116,8 +55,8 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		userID, ok := claims["user_id"].(string)
-		if !ok {
+		userID, ok := claims["userID"].(string)
+		if !ok || userID == "" {
 			http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
 			return
 		}
