@@ -203,4 +203,129 @@ func main() {
 	fmt.Printf("Processed %d records\n", len(records))
 	avg, stdDev := calculateStats(records)
 	fmt.Printf("Average: %.2f, Standard Deviation: %.2f\n", avg, stdDev)
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
+	Valid bool
+}
+
+func ParseCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := []DataRecord{}
+	lineNumber := 0
+
+	for {
+		line, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		lineNumber++
+		if lineNumber == 1 {
+			continue
+		}
+
+		if len(line) < 4 {
+			continue
+		}
+
+		id, err := strconv.Atoi(strings.TrimSpace(line[0]))
+		if err != nil {
+			continue
+		}
+
+		name := strings.TrimSpace(line[1])
+		if name == "" {
+			continue
+		}
+
+		value, err := strconv.ParseFloat(strings.TrimSpace(line[2]), 64)
+		if err != nil {
+			continue
+		}
+
+		valid := strings.ToLower(strings.TrimSpace(line[3])) == "true"
+
+		record := DataRecord{
+			ID:    id,
+			Name:  name,
+			Value: value,
+			Valid: valid,
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func FilterValidRecords(records []DataRecord) []DataRecord {
+	var validRecords []DataRecord
+	for _, record := range records {
+		if record.Valid && record.Value > 0 {
+			validRecords = append(validRecords, record)
+		}
+	}
+	return validRecords
+}
+
+func CalculateAverage(records []DataRecord) float64 {
+	if len(records) == 0 {
+		return 0.0
+	}
+
+	total := 0.0
+	for _, record := range records {
+		total += record.Value
+	}
+	return total / float64(len(records))
+}
+
+func ProcessDataFile(inputFile string) error {
+	records, err := ParseCSVFile(inputFile)
+	if err != nil {
+		return err
+	}
+
+	validRecords := FilterValidRecords(records)
+	average := CalculateAverage(validRecords)
+
+	fmt.Printf("Total records: %d\n", len(records))
+	fmt.Printf("Valid records: %d\n", len(validRecords))
+	fmt.Printf("Average value: %.2f\n", average)
+
+	return nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: data_processor <input_file.csv>")
+		os.Exit(1)
+	}
+
+	err := ProcessDataFile(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		os.Exit(1)
+	}
 }
