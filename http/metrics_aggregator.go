@@ -173,4 +173,122 @@ func (swa *SlidingWindowAggregator) GetCurrentAggregates() AggregatedResult {
 	defer swa.mu.RUnlock()
 
 	return swa.calculateAggregates(time.Now())
+}package aggregator
+
+import (
+	"sync"
+	"time"
+)
+
+type Metric struct {
+	Timestamp time.Time
+	Value     float64
+}
+
+type SlidingWindowAggregator struct {
+	windowSize time.Duration
+	metrics    []Metric
+	mu         sync.RWMutex
+}
+
+func NewSlidingWindowAggregator(windowSize time.Duration) *SlidingWindowAggregator {
+	return &SlidingWindowAggregator{
+		windowSize: windowSize,
+		metrics:    make([]Metric, 0),
+	}
+}
+
+func (swa *SlidingWindowAggregator) AddMetric(value float64) {
+	swa.mu.Lock()
+	defer swa.mu.Unlock()
+
+	now := time.Now()
+	swa.metrics = append(swa.metrics, Metric{
+		Timestamp: now,
+		Value:     value,
+	})
+	swa.cleanupOldMetrics(now)
+}
+
+func (swa *SlidingWindowAggregator) cleanupOldMetrics(currentTime time.Time) {
+	cutoff := currentTime.Add(-swa.windowSize)
+	validStart := 0
+
+	for i, metric := range swa.metrics {
+		if metric.Timestamp.After(cutoff) {
+			validStart = i
+			break
+		}
+	}
+
+	if validStart > 0 {
+		swa.metrics = swa.metrics[validStart:]
+	}
+}
+
+func (swa *SlidingWindowAggregator) GetAverage() float64 {
+	swa.mu.RLock()
+	defer swa.mu.RUnlock()
+
+	now := time.Now()
+	swa.cleanupOldMetrics(now)
+
+	if len(swa.metrics) == 0 {
+		return 0.0
+	}
+
+	var sum float64
+	for _, metric := range swa.metrics {
+		sum += metric.Value
+	}
+	return sum / float64(len(swa.metrics))
+}
+
+func (swa *SlidingWindowAggregator) GetMax() float64 {
+	swa.mu.RLock()
+	defer swa.mu.RUnlock()
+
+	now := time.Now()
+	swa.cleanupOldMetrics(now)
+
+	if len(swa.metrics) == 0 {
+		return 0.0
+	}
+
+	max := swa.metrics[0].Value
+	for _, metric := range swa.metrics[1:] {
+		if metric.Value > max {
+			max = metric.Value
+		}
+	}
+	return max
+}
+
+func (swa *SlidingWindowAggregator) GetMin() float64 {
+	swa.mu.RLock()
+	defer swa.mu.RUnlock()
+
+	now := time.Now()
+	swa.cleanupOldMetrics(now)
+
+	if len(swa.metrics) == 0 {
+		return 0.0
+	}
+
+	min := swa.metrics[0].Value
+	for _, metric := range swa.metrics[1:] {
+		if metric.Value < min {
+			min = metric.Value
+		}
+	}
+	return min
+}
+
+func (swa *SlidingWindowAggregator) GetCount() int {
+	swa.mu.RLock()
+	defer swa.mu.RUnlock()
+
+	now := time.Now()
+	swa.cleanupOldMetrics(now)
+	return len(swa.metrics)
 }
