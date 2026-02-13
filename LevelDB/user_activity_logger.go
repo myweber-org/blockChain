@@ -121,4 +121,57 @@ type responseRecorder struct {
 func (rr *responseRecorder) WriteHeader(code int) {
 	rr.statusCode = code
 	rr.ResponseWriter.WriteHeader(code)
+}package middleware
+
+import (
+	"net/http"
+	"sync"
+	"time"
+)
+
+type ActivityLogger struct {
+	mu          sync.RWMutex
+	activities  map[string][]time.Time
+	rateLimit   int
+	window      time.Duration
+	nextHandler http.Handler
+}
+
+func NewActivityLogger(limit int, window time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return &ActivityLogger{
+			activities:  make(map[string][]time.Time),
+			rateLimit:   limit,
+			window:      window,
+			nextHandler: next,
+		}
+	}
+}
+
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	userIP := r.RemoteAddr
+	now := time.Now()
+
+	al.mu.Lock()
+	windowStart := now.Add(-al.window)
+	userActivities := al.activities[userIP]
+
+	var validActivities []time.Time
+	for _, activity := range userActivities {
+		if activity.After(windowStart) {
+			validActivities = append(validActivities, activity)
+		}
+	}
+
+	if len(validActivities) >= al.rateLimit {
+		al.mu.Unlock()
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
+	validActivities = append(validActivities, now)
+	al.activities[userIP] = validActivities
+	al.mu.Unlock()
+
+	al.nextHandler.ServeHTTP(w, r)
 }
