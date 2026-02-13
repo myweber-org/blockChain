@@ -1120,3 +1120,133 @@ func ProcessUserInput(rawUsername, rawEmail string, age int) (UserData, error) {
 
 	return userData, nil
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID        int
+	Name      string
+	Value     float64
+	Validated bool
+}
+
+func processCSVFile(inputPath string, outputPath string) error {
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	csvReader := csv.NewReader(inputFile)
+	csvWriter := csv.NewWriter(outputFile)
+	defer csvWriter.Flush()
+
+	headers, err := csvReader.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read CSV headers: %w", err)
+	}
+
+	outputHeaders := append(headers, "Validated", "ProcessedValue")
+	if err := csvWriter.Write(outputHeaders); err != nil {
+		return fmt.Errorf("failed to write output headers: %w", err)
+	}
+
+	recordCount := 0
+	validCount := 0
+
+	for {
+		row, err := csvReader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read CSV row: %w", err)
+		}
+
+		if len(row) < 3 {
+			continue
+		}
+
+		record, validationErr := validateAndParseRecord(row)
+		recordCount++
+
+		if validationErr == nil {
+			record.Validated = true
+			validCount++
+		}
+
+		processedValue := record.Value * 1.1
+		outputRow := []string{
+			strconv.Itoa(record.ID),
+			record.Name,
+			strconv.FormatFloat(record.Value, 'f', 2, 64),
+			strconv.FormatBool(record.Validated),
+			strconv.FormatFloat(processedValue, 'f', 2, 64),
+		}
+
+		if err := csvWriter.Write(outputRow); err != nil {
+			return fmt.Errorf("failed to write output row: %w", err)
+		}
+	}
+
+	fmt.Printf("Processing complete. Records: %d, Valid: %d\n", recordCount, validCount)
+	return nil
+}
+
+func validateAndParseRecord(row []string) (DataRecord, error) {
+	var record DataRecord
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return record, fmt.Errorf("invalid ID format")
+	}
+	record.ID = id
+
+	name := strings.TrimSpace(row[1])
+	if name == "" {
+		return record, fmt.Errorf("name cannot be empty")
+	}
+	record.Name = name
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return record, fmt.Errorf("invalid value format")
+	}
+	if value < 0 {
+		return record, fmt.Errorf("value cannot be negative")
+	}
+	record.Value = value
+
+	return record, nil
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_processor <input_file.csv> <output_file.csv>")
+		os.Exit(1)
+	}
+
+	inputFile := os.Args[1]
+	outputFile := os.Args[2]
+
+	if err := processCSVFile(inputFile, outputFile); err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Data processing completed successfully")
+}
