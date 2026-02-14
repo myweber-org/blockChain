@@ -1249,4 +1249,54 @@ func main() {
 	}
 
 	fmt.Println("Data processing completed successfully")
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "strings"
+)
+
+// DataPayload represents a generic structure for incoming JSON data.
+type DataPayload struct {
+    ID    string `json:"id"`
+    Value int    `json:"value"`
+    Tags  []string `json:"tags"`
+}
+
+// ValidatePayload checks the integrity of the DataPayload.
+// It returns an error if the ID is empty or if the Value is negative.
+func ValidatePayload(payload DataPayload) error {
+    if strings.TrimSpace(payload.ID) == "" {
+        return fmt.Errorf("payload ID cannot be empty")
+    }
+    if payload.Value < 0 {
+        return fmt.Errorf("payload value cannot be negative, got %d", payload.Value)
+    }
+    return nil
+}
+
+// ParseJSONData unmarshals a JSON byte slice into a DataPayload and validates it.
+func ParseJSONData(rawData []byte) (*DataPayload, error) {
+    var payload DataPayload
+    if err := json.Unmarshal(rawData, &payload); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+    }
+
+    if err := ValidatePayload(payload); err != nil {
+        return nil, fmt.Errorf("validation failed: %w", err)
+    }
+
+    return &payload, nil
+}
+
+func main() {
+    // Example usage
+    jsonStr := `{"id": "test-123", "value": 42, "tags": ["go", "json", "util"]}`
+    payload, err := ParseJSONData([]byte(jsonStr))
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+        return
+    }
+    fmt.Printf("Parsed payload: %+v\n", payload)
 }
