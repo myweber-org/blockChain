@@ -1,3 +1,4 @@
+
 package middleware
 
 import (
@@ -6,78 +7,37 @@ import (
 	"time"
 )
 
-type ActivityLogger struct {
-	Logger *log.Logger
+type ActivityLog struct {
+	UserID    string
+	Path      string
+	Method    string
+	Timestamp time.Time
+	IPAddress string
 }
 
-func NewActivityLogger(logger *log.Logger) *ActivityLogger {
-	return &ActivityLogger{Logger: logger}
-}
-
-func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+func ActivityLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		userAgent := r.UserAgent()
-		clientIP := r.RemoteAddr
-		method := r.Method
-		path := r.URL.Path
 
-		recorder := &responseRecorder{
-			ResponseWriter: w,
-			statusCode:     http.StatusOK,
+		userID := "anonymous"
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+			userID = extractUserID(authHeader)
 		}
 
-		next.ServeHTTP(recorder, r)
+		activity := ActivityLog{
+			UserID:    userID,
+			Path:      r.URL.Path,
+			Method:    r.Method,
+			Timestamp: start,
+			IPAddress: r.RemoteAddr,
+		}
 
-		duration := time.Since(start)
-		status := recorder.statusCode
+		log.Printf("Activity: %s %s by %s from %s", activity.Method, activity.Path, activity.UserID, activity.IPAddress)
 
-		al.Logger.Printf(
-			"IP: %s | Method: %s | Path: %s | Status: %d | Duration: %v | Agent: %s",
-			clientIP,
-			method,
-			path,
-			status,
-			duration,
-			userAgent,
-		)
+		next.ServeHTTP(w, r)
 	})
 }
 
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rr *responseRecorder) WriteHeader(code int) {
-	rr.statusCode = code
-	rr.ResponseWriter.WriteHeader(code)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	al.handler.ServeHTTP(w, r)
-	duration := time.Since(start)
-
-	log.Printf(
-		"Method: %s | Path: %s | Duration: %v | Timestamp: %s",
-		r.Method,
-		r.URL.Path,
-		duration,
-		time.Now().Format(time.RFC3339),
-	)
+func extractUserID(token string) string {
+	return "user_" + token[:8]
 }
