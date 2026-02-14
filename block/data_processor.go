@@ -965,4 +965,88 @@ func ProcessUserInput(rawUsername string, rawEmail string, rawAge int) (UserData
     }
 
     return userData, nil
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Active    bool   `json:"active"`
+	Tags      []string `json:"tags"`
+}
+
+func validateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
+
+func normalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func transformTags(tags []string) []string {
+	uniqueTags := make(map[string]bool)
+	var result []string
+	for _, tag := range tags {
+		normalized := strings.ToLower(strings.TrimSpace(tag))
+		if normalized != "" && !uniqueTags[normalized] {
+			uniqueTags[normalized] = true
+			result = append(result, normalized)
+		}
+	}
+	return result
+}
+
+func processUserProfile(rawData []byte) (*UserProfile, error) {
+	var profile UserProfile
+	if err := json.Unmarshal(rawData, &profile); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %v", err)
+	}
+
+	if profile.Username == "" {
+		return nil, fmt.Errorf("username cannot be empty")
+	}
+	profile.Username = normalizeUsername(profile.Username)
+
+	if !validateEmail(profile.Email) {
+		return nil, fmt.Errorf("invalid email format: %s", profile.Email)
+	}
+
+	if profile.Age < 0 || profile.Age > 150 {
+		return nil, fmt.Errorf("age must be between 0 and 150")
+	}
+
+	profile.Tags = transformTags(profile.Tags)
+
+	return &profile, nil
+}
+
+func main() {
+	jsonData := `{
+		"id": 1,
+		"username": "  JohnDoe  ",
+		"email": "john@example.com",
+		"age": 30,
+		"active": true,
+		"tags": ["Go", "backend", "GO", "  ", "devops"]
+	}`
+
+	processedProfile, err := processUserProfile([]byte(jsonData))
+	if err != nil {
+		fmt.Printf("Error processing profile: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Processed Profile: %+v\n", processedProfile)
+	output, _ := json.MarshalIndent(processedProfile, "", "  ")
+	fmt.Println("JSON Output:", string(output))
 }
