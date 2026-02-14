@@ -1300,3 +1300,151 @@ func main() {
     }
     fmt.Printf("Parsed payload: %+v\n", payload)
 }
+package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
+	Valid bool
+}
+
+func ParseCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := make([]DataRecord, 0)
+	lineNumber := 0
+
+	for {
+		line, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if lineNumber == 0 {
+			lineNumber++
+			continue
+		}
+
+		record, err := parseCSVLine(line, lineNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, record)
+		lineNumber++
+	}
+
+	return records, nil
+}
+
+func parseCSVLine(fields []string, lineNumber int) (DataRecord, error) {
+	if len(fields) != 4 {
+		return DataRecord{}, fmt.Errorf("invalid field count at line %d: expected 4, got %d", lineNumber, len(fields))
+	}
+
+	id, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
+	}
+
+	name := fields[1]
+	if name == "" {
+		return DataRecord{}, fmt.Errorf("empty name at line %d", lineNumber)
+	}
+
+	value, err := strconv.ParseFloat(fields[2], 64)
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
+	}
+
+	valid, err := strconv.ParseBool(fields[3])
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid valid flag at line %d: %w", lineNumber, err)
+	}
+
+	return DataRecord{
+		ID:    id,
+		Name:  name,
+		Value: value,
+		Valid: valid,
+	}, nil
+}
+
+func ValidateRecords(records []DataRecord) ([]DataRecord, []error) {
+	validRecords := make([]DataRecord, 0)
+	validationErrors := make([]error, 0)
+
+	for _, record := range records {
+		err := validateSingleRecord(record)
+		if err != nil {
+			validationErrors = append(validationErrors, err)
+			continue
+		}
+		validRecords = append(validRecords, record)
+	}
+
+	return validRecords, validationErrors
+}
+
+func validateSingleRecord(record DataRecord) error {
+	if record.ID <= 0 {
+		return errors.New("ID must be positive")
+	}
+	if len(record.Name) > 100 {
+		return errors.New("name exceeds maximum length")
+	}
+	if record.Value < 0 {
+		return errors.New("value cannot be negative")
+	}
+	return nil
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, int) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
+
+	var sum float64
+	var validCount int
+	minValue := records[0].Value
+	maxValue := records[0].Value
+
+	for _, record := range records {
+		if record.Valid {
+			sum += record.Value
+			validCount++
+
+			if record.Value < minValue {
+				minValue = record.Value
+			}
+			if record.Value > maxValue {
+				maxValue = record.Value
+			}
+		}
+	}
+
+	average := 0.0
+	if validCount > 0 {
+		average = sum / float64(validCount)
+	}
+
+	return average, maxValue - minValue, validCount
+}
