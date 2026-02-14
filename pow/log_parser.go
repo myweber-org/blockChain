@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -14,30 +15,45 @@ type LogEntry struct {
 	Message   string
 }
 
-func parseLogLine(line string) (LogEntry, bool) {
+func parseLogLine(line string) (*LogEntry, error) {
 	pattern := `^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.+)$`
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(line)
 
-	if len(matches) != 4 {
-		return LogEntry{}, false
+	if matches == nil {
+		return nil, fmt.Errorf("invalid log format")
 	}
 
-	return LogEntry{
+	return &LogEntry{
 		Timestamp: matches[1],
-		Level:     matches[2],
+		Level:     strings.ToUpper(matches[2]),
 		Message:   matches[3],
-	}, true
+	}, nil
 }
 
 func filterErrors(entries []LogEntry) []LogEntry {
-	var errors []LogEntry
+	var errorEntries []LogEntry
 	for _, entry := range entries {
-		if strings.ToUpper(entry.Level) == "ERROR" {
-			errors = append(errors, entry)
+		if entry.Level == "ERROR" {
+			errorEntries = append(errorEntries, entry)
 		}
 	}
-	return errors
+	return errorEntries
+}
+
+func readLogFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	return lines, scanner.Err()
 }
 
 func main() {
@@ -47,24 +63,19 @@ func main() {
 	}
 
 	filename := os.Args[1]
-	file, err := os.Open(filename)
+	lines, err := readLogFile(filename)
 	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
-		os.Exit(1)
-	}
-	defer file.Close()
-
-	var entries []LogEntry
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		if entry, ok := parseLogLine(scanner.Text()); ok {
-			entries = append(entries, entry)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
 		os.Exit(1)
+	}
+
+	var entries []LogEntry
+	for _, line := range lines {
+		entry, err := parseLogLine(line)
+		if err != nil {
+			continue
+		}
+		entries = append(entries, *entry)
 	}
 
 	errorEntries := filterErrors(entries)
