@@ -284,4 +284,70 @@ func main() {
 	log.Printf("Average latency: %v", collector.AverageLatency())
 	log.Printf("Error rate: %.2f%%", collector.ErrorRate()*100)
 	log.Printf("95th percentile latency: %v", collector.PercentileLatency(95))
+}package main
+
+import (
+    "fmt"
+    "runtime"
+    "time"
+)
+
+type SystemMetrics struct {
+    Timestamp   time.Time
+    CPUPercent  float64
+    MemoryAlloc uint64
+    Goroutines  int
+}
+
+func collectMetrics() SystemMetrics {
+    var m runtime.MemStats
+    runtime.ReadMemStats(&m)
+
+    return SystemMetrics{
+        Timestamp:   time.Now().UTC(),
+        CPUPercent:  getCPUUsage(),
+        MemoryAlloc: m.Alloc,
+        Goroutines:  runtime.NumGoroutine(),
+    }
+}
+
+func getCPUUsage() float64 {
+    // Simplified CPU usage calculation
+    // In production, use proper system monitoring libraries
+    start := time.Now()
+    var count int64
+    for i := 0; i < 1000000; i++ {
+        count += int64(i)
+    }
+    elapsed := time.Since(start).Seconds()
+    
+    // Simulate CPU usage based on processing time
+    usage := 1.0 / (elapsed + 0.1) * 10
+    if usage > 100.0 {
+        usage = 100.0
+    }
+    return usage
+}
+
+func printMetrics(metrics SystemMetrics) {
+    fmt.Printf("Metrics collected at: %s\n", metrics.Timestamp.Format(time.RFC3339))
+    fmt.Printf("CPU Usage: %.2f%%\n", metrics.CPUPercent)
+    fmt.Printf("Memory Allocated: %d bytes\n", metrics.MemoryAlloc)
+    fmt.Printf("Active Goroutines: %d\n", metrics.Goroutines)
+    fmt.Println("---")
+}
+
+func main() {
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
+
+    fmt.Println("Starting system metrics collector...")
+    
+    for {
+        select {
+        case <-ticker.C:
+            metrics := collectMetrics()
+            printMetrics(metrics)
+        }
+    }
 }
