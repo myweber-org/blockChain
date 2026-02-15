@@ -839,3 +839,139 @@ func (rl *RotatingLogger) Close() error {
     }
     return nil
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	maxFileSize = 10 * 1024 * 1024 // 10MB
+	maxBackups  = 5
+)
+
+type RotatingWriter struct {
+	mu          sync.Mutex
+	currentSize int64
+	basePath    string
+	file        *os.File
+	sequence    int
+}
+
+func NewRotatingWriter(path string) (*RotatingWriter, error) {
+	w := &RotatingWriter{
+		basePath: path,
+	}
+	if err := w.openCurrent(); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+func (w *RotatingWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.currentSize+int64(len(p)) > maxFileSize {
+		if err := w.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := w.file.Write(p)
+	if err == nil {
+		w.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (w *RotatingWriter) openCurrent() error {
+	file, err := os.OpenFile(w.basePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+
+	w.file = file
+	w.currentSize = stat.Size()
+	return nil
+}
+
+func (w *RotatingWriter) rotate() error {
+	if w.file != nil {
+		w.file.Close()
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	backupPath := fmt.Sprintf("%s.%s", w.basePath, timestamp)
+	if err := os.Rename(w.basePath, backupPath); err != nil {
+		return err
+	}
+
+	w.sequence++
+	if w.sequence > maxBackups {
+		w.cleanOldBackups()
+	}
+
+	return w.openCurrent()
+}
+
+func (w *RotatingWriter) cleanOldBackups() {
+	dir := filepath.Dir(w.basePath)
+	base := filepath.Base(w.basePath)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	var backups []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, base+".") {
+			backups = append(backups, name)
+		}
+	}
+
+	if len(backups) <= maxBackups {
+		return
+	}
+
+	for i := 0; i < len(backups)-maxBackups; i++ {
+		os.Remove(filepath.Join(dir, backups[i]))
+	}
+}
+
+func (w *RotatingWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.file != nil {
+		return w.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	writer, err := NewRotatingWriter("app.log")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create writer: %v\n", err)
+		os.Exit(1)
+	}
+	defer writer.Close()
+
+	for i := 0; i < 100; i++ {
+		message := fmt.Sprintf("Log entry %d at %s\n", i, time.Now().Format(time.RFC3339))
+		writer.Write([]byte(message))
+		time.Sleep(100 * time.Millisecond)
+	}
+}
