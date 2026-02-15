@@ -68,3 +68,45 @@ func main() {
 	fmt.Println("Original:", slice)
 	fmt.Println("Unique:", unique)
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataCleaner struct {
+	seen map[string]bool
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		seen: make(map[string]bool),
+	}
+}
+
+func (dc *DataCleaner) Clean(input string) string {
+	normalized := strings.ToLower(strings.TrimSpace(input))
+	if dc.seen[normalized] {
+		return ""
+	}
+	dc.seen[normalized] = true
+	return normalized
+}
+
+func (dc *DataCleaner) ProcessList(items []string) []string {
+	var cleaned []string
+	for _, item := range items {
+		if result := dc.Clean(item); result != "" {
+			cleaned = append(cleaned, result)
+		}
+	}
+	return cleaned
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+	data := []string{"  Apple", "apple", "BANANA", "banana ", "Cherry", "cherry"}
+	result := cleaner.ProcessList(data)
+	fmt.Println("Cleaned data:", result)
+}
