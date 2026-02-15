@@ -285,4 +285,153 @@ func main() {
 	}
 
 	fmt.Printf("Loaded config: %+v\n", loadedConfig)
+}package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileStats struct {
+	LineCount int
+	WordCount int
+	CharCount int
+	FilePath  string
+	Processed bool
+	Error     error
+}
+
+func processFile(path string, wg *sync.WaitGroup, results chan<- FileStats) {
+	defer wg.Done()
+
+	stats := FileStats{FilePath: path}
+
+	file, err := os.Open(path)
+	if err != nil {
+		stats.Error = err
+		results <- stats
+		return
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	lineScanner := bufio.NewScanner(reader)
+
+	for lineScanner.Scan() {
+		line := lineScanner.Text()
+		stats.LineCount++
+		stats.CharCount += len(line)
+
+		wordScanner := bufio.NewScanner(bufio.NewReader(filepath.Clean(line)))
+		wordScanner.Split(bufio.ScanWords)
+		for wordScanner.Scan() {
+			stats.WordCount++
+		}
+	}
+
+	if err := lineScanner.Err(); err != nil {
+		stats.Error = err
+		results <- stats
+		return
+	}
+
+	stats.Processed = true
+	results <- stats
+}
+
+func aggregateResults(results <-chan FileStats, totalFiles int) ([]FileStats, error) {
+	processedFiles := make([]FileStats, 0, totalFiles)
+	var finalErr error
+
+	for i := 0; i < totalFiles; i++ {
+		stats := <-results
+		processedFiles = append(processedFiles, stats)
+
+		if stats.Error != nil && finalErr == nil {
+			finalErr = stats.Error
+		}
+	}
+
+	if finalErr != nil {
+		return processedFiles, finalErr
+	}
+	return processedFiles, nil
+}
+
+func validatePaths(paths []string) error {
+	if len(paths) == 0 {
+		return errors.New("no file paths provided")
+	}
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return fmt.Errorf("file does not exist: %s", path)
+		}
+	}
+	return nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_processor <file1> [file2] ...")
+		os.Exit(1)
+	}
+
+	filePaths := os.Args[1:]
+
+	if err := validatePaths(filePaths); err != nil {
+		fmt.Printf("Validation error: %v\n", err)
+		os.Exit(1)
+	}
+
+	startTime := time.Now()
+	var wg sync.WaitGroup
+	results := make(chan FileStats, len(filePaths))
+
+	for _, path := range filePaths {
+		wg.Add(1)
+		go processFile(path, &wg, results)
+	}
+
+	wg.Wait()
+	close(results)
+
+	processedStats, err := aggregateResults(results, len(filePaths))
+	if err != nil {
+		fmt.Printf("Processing completed with errors: %v\n", err)
+	}
+
+	totalLines := 0
+	totalWords := 0
+	totalChars := 0
+	successCount := 0
+
+	for _, stats := range processedStats {
+		if stats.Processed {
+			successCount++
+			totalLines += stats.LineCount
+			totalWords += stats.WordCount
+			totalChars += stats.CharCount
+
+			fmt.Printf("File: %s\n", stats.FilePath)
+			fmt.Printf("  Lines: %d, Words: %d, Characters: %d\n",
+				stats.LineCount, stats.WordCount, stats.CharCount)
+		} else if stats.Error != nil {
+			fmt.Printf("File: %s - Error: %v\n", stats.FilePath, stats.Error)
+		}
+	}
+
+	duration := time.Since(startTime)
+	fmt.Printf("\nSummary:\n")
+	fmt.Printf("  Files processed successfully: %d/%d\n", successCount, len(filePaths))
+	fmt.Printf("  Total lines: %d\n", totalLines)
+	fmt.Printf("  Total words: %d\n", totalWords)
+	fmt.Printf("  Total characters: %d\n", totalChars)
+	fmt.Printf("  Processing time: %v\n", duration)
 }
