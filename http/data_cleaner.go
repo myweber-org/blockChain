@@ -224,4 +224,15 @@ func main() {
 
 	validRecords := validateRecords(records)
 	fmt.Println("Valid records count:", len(validRecords))
+}package utils
+
+func TrimWhitespace(slice []string) []string {
+    result := make([]string, 0, len(slice))
+    for _, s := range slice {
+        trimmed := strings.TrimSpace(s)
+        if trimmed != "" {
+            result = append(result, trimmed)
+        }
+    }
+    return result
 }
