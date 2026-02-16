@@ -1,101 +1,72 @@
 package config
 
 import (
-	"os"
-	"strconv"
-)
-
-type Config struct {
-	ServerPort int
-	DBHost     string
-	DBPort     int
-	DebugMode  bool
-}
-
-func Load() (*Config, error) {
-	cfg := &Config{
-		ServerPort: getEnvAsInt("SERVER_PORT", 8080),
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnvAsInt("DB_PORT", 5432),
-		DebugMode:  getEnvAsBool("DEBUG_MODE", false),
-	}
-	return cfg, nil
-}
-
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsInt(key string, defaultValue int) int {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.Atoi(valueStr); err == nil {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsBool(key string, defaultValue bool) bool {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.ParseBool(valueStr); err == nil {
-		return value
-	}
-	return defaultValue
-}package config
-
-import (
+    "fmt"
+    "io"
     "os"
-    "strconv"
-    "strings"
+
+    "gopkg.in/yaml.v3"
 )
 
-type Config struct {
-    DatabaseURL  string
-    MaxConnections int
-    DebugMode    bool
-    AllowedHosts []string
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Name     string `yaml:"name"`
 }
 
-func Load() (*Config, error) {
-    cfg := &Config{
-        DatabaseURL:  getEnv("DB_URL", "postgres://localhost:5432/app"),
-        MaxConnections: getEnvAsInt("MAX_CONNECTIONS", 10),
-        DebugMode:    getEnvAsBool("DEBUG_MODE", false),
-        AllowedHosts: getEnvAsSlice("ALLOWED_HOSTS", []string{"localhost", "127.0.0.1"}),
-    }
-    
-    return cfg, nil
+type ServerConfig struct {
+    Port         int    `yaml:"port"`
+    ReadTimeout  int    `yaml:"read_timeout"`
+    WriteTimeout int    `yaml:"write_timeout"`
 }
 
-func getEnv(key, defaultValue string) string {
-    if value := os.Getenv(key); value != "" {
-        return value
-    }
-    return defaultValue
+type AppConfig struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+    Debug    bool           `yaml:"debug"`
 }
 
-func getEnvAsInt(key string, defaultValue int) int {
-    valueStr := getEnv(key, "")
-    if value, err := strconv.Atoi(valueStr); err == nil {
-        return value
+func LoadConfig(path string) (*AppConfig, error) {
+    file, err := os.Open(path)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open config file: %w", err)
     }
-    return defaultValue
+    defer file.Close()
+
+    data, err := io.ReadAll(file)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var config AppConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
+
+    if err := validateConfig(&config); err != nil {
+        return nil, fmt.Errorf("config validation failed: %w", err)
+    }
+
+    return &config, nil
 }
 
-func getEnvAsBool(key string, defaultValue bool) bool {
-    valueStr := getEnv(key, "")
-    if value, err := strconv.ParseBool(valueStr); err == nil {
-        return value
+func validateConfig(config *AppConfig) error {
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host is required")
     }
-    return defaultValue
-}
-
-func getEnvAsSlice(key string, defaultValue []string) []string {
-    valueStr := getEnv(key, "")
-    if valueStr == "" {
-        return defaultValue
+    if config.Database.Port <= 0 || config.Database.Port > 65535 {
+        return fmt.Errorf("invalid database port: %d", config.Database.Port)
     }
-    return strings.Split(valueStr, ",")
+    if config.Server.Port <= 0 || config.Server.Port > 65535 {
+        return fmt.Errorf("invalid server port: %d", config.Server.Port)
+    }
+    if config.Server.ReadTimeout < 0 {
+        return fmt.Errorf("read timeout cannot be negative")
+    }
+    if config.Server.WriteTimeout < 0 {
+        return fmt.Errorf("write timeout cannot be negative")
+    }
+    return nil
 }
