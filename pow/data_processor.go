@@ -353,3 +353,44 @@ func main() {
     averaged := MovingAverage(sampleData, 3)
     fmt.Printf("Moving average result: %v\n", averaged)
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+// DataProcessor handles cleaning and validation of string data
+type DataProcessor struct {
+	whitespaceRegex *regexp.Regexp
+}
+
+// NewDataProcessor creates a new DataProcessor instance
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+	}
+}
+
+// CleanString removes extra whitespace and trims the input
+func (dp *DataProcessor) CleanString(input string) string {
+	trimmed := strings.TrimSpace(input)
+	return dp.whitespaceRegex.ReplaceAllString(trimmed, " ")
+}
+
+// ValidateEmail checks if a string is a valid email address
+func (dp *DataProcessor) ValidateEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
+}
+
+// NormalizePhone removes all non-digit characters from phone number
+func (dp *DataProcessor) NormalizePhone(phone string) string {
+	digitRegex := regexp.MustCompile(`\D`)
+	return digitRegex.ReplaceAllString(phone, "")
+}
+
+// IsEmpty checks if a string is empty or contains only whitespace
+func (dp *DataProcessor) IsEmpty(input string) bool {
+	return strings.TrimSpace(input) == ""
+}
