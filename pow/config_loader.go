@@ -117,4 +117,84 @@ func overrideBool(field *bool, envVar string) {
     if val := os.Getenv(envVar); val != "" {
         *field = val == "true" || val == "1" || val == "yes"
     }
+}package config
+
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+	FeatureFlags []string
+}
+
+func LoadConfig() (*Config, error) {
+	cfg := &Config{
+		ServerPort: getEnvAsInt("SERVER_PORT", 8080),
+		DBHost:     getEnv("DB_HOST", "localhost"),
+		DBPort:     getEnvAsInt("DB_PORT", 5432),
+		DebugMode:  getEnvAsBool("DEBUG_MODE", false),
+		FeatureFlags: getEnvAsSlice("FEATURE_FLAGS", []string{}, ","),
+	}
+
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.Atoi(valueStr); err == nil {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.ParseBool(valueStr); err == nil {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsSlice(key string, defaultValue []string, sep string) []string {
+	valueStr := getEnv(key, "")
+	if valueStr == "" {
+		return defaultValue
+	}
+	return strings.Split(valueStr, sep)
+}
+
+func validateConfig(cfg *Config) error {
+	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+		return &ConfigError{Field: "ServerPort", Message: "port must be between 1 and 65535"}
+	}
+	if cfg.DBPort < 1 || cfg.DBPort > 65535 {
+		return &ConfigError{Field: "DBPort", Message: "port must be between 1 and 65535"}
+	}
+	return nil
+}
+
+type ConfigError struct {
+	Field   string
+	Message string
+}
+
+func (e *ConfigError) Error() string {
+	return "config error: " + e.Field + " - " + e.Message
 }
