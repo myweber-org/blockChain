@@ -158,4 +158,67 @@ func main() {
 	}
 
 	fmt.Printf("Cleaned %d temporary files older than 7 days from %s\n", removedCount, tempDir)
+}package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	tempFilePrefix = "temp_"
+	maxAgeHours    = 24
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_cleaner <directory_path>")
+		os.Exit(1)
+	}
+
+	dirPath := os.Args[1]
+	err := cleanTempFiles(dirPath)
+	if err != nil {
+		fmt.Printf("Error cleaning files: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Cleanup completed successfully")
+}
+
+func cleanTempFiles(dirPath string) error {
+	return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		filename := filepath.Base(path)
+		if !isTempFile(filename) {
+			return nil
+		}
+
+		if isFileOld(info.ModTime()) {
+			return os.Remove(path)
+		}
+
+		return nil
+	})
+}
+
+func isTempFile(filename string) bool {
+	if len(filename) < len(tempFilePrefix) {
+		return false
+	}
+	return filename[:len(tempFilePrefix)] == tempFilePrefix
+}
+
+func isFileOld(modTime time.Time) bool {
+	age := time.Since(modTime)
+	return age > maxAgeHours*time.Hour
 }
