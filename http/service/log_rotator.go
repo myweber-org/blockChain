@@ -1174,3 +1174,145 @@ func main() {
 
     fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	maxFileSize    = 10 * 1024 * 1024 // 10MB
+	backupCount    = 5
+	compressBackup = true
+)
+
+type RotatingLogger struct {
+	mu         sync.Mutex
+	file       *os.File
+	size       int64
+	basePath   string
+	currentDay string
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+	rl := &RotatingLogger{
+		basePath: path,
+	}
+	if err := rl.rotateIfNeeded(); err != nil {
+		return nil, err
+	}
+	return rl, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if err := rl.rotateIfNeeded(); err != nil {
+		return 0, err
+	}
+
+	n, err = rl.file.Write(p)
+	rl.size += int64(n)
+	return n, err
+}
+
+func (rl *RotatingLogger) rotateIfNeeded() error {
+	now := time.Now()
+	currentDate := now.Format("2006-01-02")
+
+	if rl.file == nil || rl.size >= maxFileSize || rl.currentDay != currentDate {
+		if rl.file != nil {
+			rl.file.Close()
+			if err := rl.performRotation(); err != nil {
+				return err
+			}
+		}
+
+		if err := os.MkdirAll(filepath.Dir(rl.basePath), 0755); err != nil {
+			return err
+		}
+
+		file, err := os.OpenFile(rl.basePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return err
+		}
+
+		rl.file = file
+		rl.size = info.Size()
+		rl.currentDay = currentDate
+	}
+	return nil
+}
+
+func (rl *RotatingLogger) performRotation() error {
+	for i := backupCount - 1; i >= 0; i-- {
+		srcPath := rl.getBackupPath(i)
+		dstPath := rl.getBackupPath(i + 1)
+
+		if _, err := os.Stat(srcPath); err == nil {
+			if i == backupCount-1 {
+				os.Remove(srcPath)
+				continue
+			}
+
+			if compressBackup && i == 0 {
+				dstPath = strings.TrimSuffix(dstPath, filepath.Ext(dstPath)) + ".gz"
+			}
+
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := os.Rename(rl.basePath, rl.getBackupPath(0)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (rl *RotatingLogger) getBackupPath(index int) string {
+	if index == 0 {
+		return rl.basePath + ".1"
+	}
+	return fmt.Sprintf("%s.%d", rl.basePath, index+1)
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.file != nil {
+		return rl.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("/var/log/myapp/app.log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	log.SetOutput(io.MultiWriter(os.Stdout, logger))
+
+	for i := 0; i < 100; i++ {
+		log.Printf("Log entry %d: Application is running smoothly", i)
+		time.Sleep(100 * time.Millisecond)
+	}
+}
