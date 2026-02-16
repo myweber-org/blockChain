@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -20,44 +19,41 @@ func DeduplicateEmails(records []DataRecord) []DataRecord {
 		email := strings.ToLower(strings.TrimSpace(record.Email))
 		if !seen[email] && email != "" {
 			seen[email] = true
-			record.Email = email
-			unique = append(unique, record)
+			unique = append(unique, DataRecord{
+				ID:    record.ID,
+				Email: email,
+				Valid: validateEmail(email),
+			})
 		}
 	}
 	return unique
 }
 
-func ValidateEmailFormat(email string) bool {
-	if len(email) < 3 || !strings.Contains(email, "@") {
-		return false
-	}
-	parts := strings.Split(email, "@")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return false
-	}
-	return strings.Contains(parts[1], ".")
+func validateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
 }
 
-func CleanData(records []DataRecord) []DataRecord {
-	records = DeduplicateEmails(records)
-	for i := range records {
-		records[i].Valid = ValidateEmailFormat(records[i].Email)
+func PrintRecords(records []DataRecord) {
+	for _, r := range records {
+		status := "INVALID"
+		if r.Valid {
+			status = "VALID"
+		}
+		fmt.Printf("ID: %d, Email: %s, Status: %s\n", r.ID, r.Email, status)
 	}
-	return records
 }
 
 func main() {
 	sampleData := []DataRecord{
 		{1, "user@example.com", false},
 		{2, "USER@example.com", false},
-		{3, "invalid-email", false},
-		{4, "test@domain", false},
+		{3, "test@domain.org", false},
+		{4, "invalid-email", false},
 		{5, "user@example.com", false},
+		{6, "", false},
 	}
 
-	cleaned := CleanData(sampleData)
-	fmt.Printf("Processed %d records\n", len(cleaned))
-	for _, record := range cleaned {
-		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", record.ID, record.Email, record.Valid)
-	}
+	cleaned := DeduplicateEmails(sampleData)
+	fmt.Println("Cleaned Data Records:")
+	PrintRecords(cleaned)
 }
