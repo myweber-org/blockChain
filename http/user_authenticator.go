@@ -44,4 +44,59 @@ func AuthMiddleware(secretKey string) func(http.Handler) http.Handler {
             next.ServeHTTP(w, r)
         })
     }
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type Authenticator struct {
+	secretKey string
+}
+
+func NewAuthenticator(secretKey string) *Authenticator {
+	return &Authenticator{secretKey: secretKey}
+}
+
+func (a *Authenticator) ValidateToken(tokenString string) (bool, error) {
+	if tokenString == "" {
+		return false, nil
+	}
+
+	claims, err := parseJWT(tokenString, a.secretKey)
+	if err != nil {
+		return false, err
+	}
+
+	return claims.Valid() == nil, nil
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
+
+		valid, err := a.ValidateToken(parts[1])
+		if err != nil {
+			http.Error(w, "Token validation error", http.StatusInternalServerError)
+			return
+		}
+
+		if !valid {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
