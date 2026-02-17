@@ -147,4 +147,49 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr,
 		duration,
 	)
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"time"
+)
+
+type ActivityLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	UserID    string    `json:"user_id"`
+	Action    string    `json:"action"`
+	Resource  string    `json:"resource"`
+}
+
+func logActivity(userID, action, resource string) {
+	activity := ActivityLog{
+		Timestamp: time.Now(),
+		UserID:    userID,
+		Action:    action,
+		Resource:  resource,
+	}
+
+	file, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("Failed to open log file: %v", err)
+		return
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(activity); err != nil {
+		log.Printf("Failed to encode activity: %v", err)
+		return
+	}
+
+	fmt.Printf("Logged: %s performed %s on %s\n", userID, action, resource)
+}
+
+func main() {
+	logActivity("user123", "CREATE", "document.pdf")
+	logActivity("user456", "VIEW", "profile.html")
+	logActivity("user789", "DELETE", "temp_file.txt")
 }
