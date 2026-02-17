@@ -503,3 +503,156 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+package logutil
+
+import (
+	"compress/gzip"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type Rotator struct {
+	mu          sync.Mutex
+	file        *os.File
+	filePath    string
+	maxSize     int64
+	currentSize int64
+	backupCount int
+}
+
+func NewRotator(filePath string, maxSize int64, backupCount int) (*Rotator, error) {
+	if maxSize <= 0 {
+		return nil, fmt.Errorf("maxSize must be positive")
+	}
+	if backupCount < 0 {
+		return nil, fmt.Errorf("backupCount cannot be negative")
+	}
+
+	rotator := &Rotator{
+		filePath:    filePath,
+		maxSize:     maxSize,
+		backupCount: backupCount,
+	}
+
+	if err := rotator.openFile(); err != nil {
+		return nil, err
+	}
+
+	return rotator, nil
+}
+
+func (r *Rotator) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.currentSize+int64(len(p)) > r.maxSize {
+		if err := r.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := r.file.Write(p)
+	if err == nil {
+		r.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (r *Rotator) rotate() error {
+	if err := r.file.Close(); err != nil {
+		return err
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	backupPath := fmt.Sprintf("%s.%s.gz", r.filePath, timestamp)
+
+	if err := compressFile(r.filePath, backupPath); err != nil {
+		return err
+	}
+
+	if err := os.Remove(r.filePath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if err := r.cleanupOldBackups(); err != nil {
+		return err
+	}
+
+	return r.openFile()
+}
+
+func compressFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	dest, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dest.Close()
+
+	gz := gzip.NewWriter(dest)
+	defer gz.Close()
+
+	_, err = io.Copy(gz, source)
+	return err
+}
+
+func (r *Rotator) cleanupOldBackups() error {
+	if r.backupCount == 0 {
+		return nil
+	}
+
+	pattern := fmt.Sprintf("%s.*.gz", filepath.Base(r.filePath))
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(r.filePath), pattern))
+	if err != nil {
+		return err
+	}
+
+	if len(matches) <= r.backupCount {
+		return nil
+	}
+
+	oldest := matches[:len(matches)-r.backupCount]
+	for _, file := range oldest {
+		if err := os.Remove(file); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *Rotator) openFile() error {
+	file, err := os.OpenFile(r.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+
+	r.file = file
+	r.currentSize = info.Size()
+	return nil
+}
+
+func (r *Rotator) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.file != nil {
+		return r.file.Close()
+	}
+	return nil
+}
