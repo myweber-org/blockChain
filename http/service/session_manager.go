@@ -759,4 +759,74 @@ func randomString(length int) string {
 		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
 	}
 	return string(b)
+}package session
+
+import (
+    "crypto/rand"
+    "encoding/hex"
+    "errors"
+    "time"
+)
+
+type Session struct {
+    ID        string
+    UserID    int
+    ExpiresAt time.Time
+    Data      map[string]interface{}
+}
+
+var sessions = make(map[string]Session)
+
+func GenerateToken() (string, error) {
+    bytes := make([]byte, 16)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+    return hex.EncodeToString(bytes), nil
+}
+
+func CreateSession(userID int, duration time.Duration) (Session, error) {
+    token, err := GenerateToken()
+    if err != nil {
+        return Session{}, err
+    }
+
+    session := Session{
+        ID:        token,
+        UserID:    userID,
+        ExpiresAt: time.Now().Add(duration),
+        Data:      make(map[string]interface{}),
+    }
+
+    sessions[token] = session
+    return session, nil
+}
+
+func ValidateSession(token string) (Session, error) {
+    session, exists := sessions[token]
+    if !exists {
+        return Session{}, errors.New("session not found")
+    }
+
+    if time.Now().After(session.ExpiresAt) {
+        delete(sessions, token)
+        return Session{}, errors.New("session expired")
+    }
+
+    return session, nil
+}
+
+func DeleteSession(token string) {
+    delete(sessions, token)
+}
+
+func UpdateSessionData(token string, key string, value interface{}) error {
+    session, exists := sessions[token]
+    if !exists {
+        return errors.New("session not found")
+    }
+
+    session.Data[key] = value
+    sessions[token] = session
+    return nil
 }
