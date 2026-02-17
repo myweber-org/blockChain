@@ -1521,3 +1521,156 @@ func main() {
     fmt.Printf("Average value: %.2f\n", avg)
     fmt.Printf("Variance: %.2f\n", var)
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID      int
+	Name    string
+	Value   float64
+	Active  bool
+}
+
+func parseCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []DataRecord
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if len(row) != 4 {
+			return nil, fmt.Errorf("invalid column count at line %d: expected 4, got %d", lineNumber, len(row))
+		}
+
+		id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
+		}
+
+		name := strings.TrimSpace(row[1])
+		if name == "" {
+			return nil, fmt.Errorf("empty name at line %d", lineNumber)
+		}
+
+		value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
+		}
+
+		active, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid active flag at line %d: %w", lineNumber, err)
+		}
+
+		records = append(records, DataRecord{
+			ID:     id,
+			Name:   name,
+			Value:  value,
+			Active: active,
+		})
+	}
+
+	return records, nil
+}
+
+func validateRecords(records []DataRecord) error {
+	seenIDs := make(map[int]bool)
+
+	for _, record := range records {
+		if record.ID <= 0 {
+			return fmt.Errorf("invalid ID %d: must be positive", record.ID)
+		}
+
+		if seenIDs[record.ID] {
+			return fmt.Errorf("duplicate ID %d found", record.ID)
+		}
+		seenIDs[record.ID] = true
+
+		if record.Value < 0 {
+			return fmt.Errorf("negative value %f for record ID %d", record.Value, record.ID)
+		}
+	}
+
+	return nil
+}
+
+func calculateStatistics(records []DataRecord) (float64, float64, int) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
+
+	var total float64
+	var activeCount int
+	minValue := records[0].Value
+
+	for _, record := range records {
+		total += record.Value
+		if record.Active {
+			activeCount++
+		}
+		if record.Value < minValue {
+			minValue = record.Value
+		}
+	}
+
+	average := total / float64(len(records))
+	return average, minValue, activeCount
+}
+
+func processDataFile(filename string) error {
+	records, err := parseCSVFile(filename)
+	if err != nil {
+		return fmt.Errorf("parsing failed: %w", err)
+	}
+
+	if err := validateRecords(records); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	avgValue, minValue, activeCount := calculateStatistics(records)
+
+	fmt.Printf("Data Processing Results:\n")
+	fmt.Printf("Total Records: %d\n", len(records))
+	fmt.Printf("Average Value: %.2f\n", avgValue)
+	fmt.Printf("Minimum Value: %.2f\n", minValue)
+	fmt.Printf("Active Records: %d\n", activeCount)
+
+	return nil
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: data_processor <csv_file>")
+		os.Exit(1)
+	}
+
+	filename := os.Args[1]
+	if err := processDataFile(filename); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+}
