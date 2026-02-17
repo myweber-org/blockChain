@@ -211,4 +211,64 @@ func main() {
 	}
 
 	fmt.Printf("SHA256 hash of %s: %s\n", filename, hash)
+}package main
+
+import (
+	"errors"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+)
+
+type DataChunk struct {
+	ID    int
+	Value string
+}
+
+type Processor struct {
+	mu     sync.Mutex
+	chunks []DataChunk
+}
+
+func (p *Processor) AddChunk(chunk DataChunk) error {
+	if chunk.ID <= 0 {
+		return errors.New("invalid chunk ID")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.chunks = append(p.chunks, chunk)
+	return nil
+}
+
+func (p *Processor) ProcessAll() {
+	var wg sync.WaitGroup
+	for _, chunk := range p.chunks {
+		wg.Add(1)
+		go func(c DataChunk) {
+			defer wg.Done()
+			time.Sleep(50 * time.Millisecond)
+			fmt.Printf("Processed chunk %d: %s\n", c.ID, c.Value)
+		}(chunk)
+	}
+	wg.Wait()
+}
+
+func main() {
+	proc := &Processor{}
+	samples := []DataChunk{
+		{1, "alpha"},
+		{2, "beta"},
+		{3, "gamma"},
+		{4, "delta"},
+	}
+
+	for _, sample := range samples {
+		if err := proc.AddChunk(sample); err != nil {
+			log.Printf("Failed to add chunk: %v", err)
+		}
+	}
+
+	proc.ProcessAll()
+	fmt.Println("Processing completed")
 }
