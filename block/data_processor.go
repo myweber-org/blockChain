@@ -1290,3 +1290,43 @@ func main() {
 		os.Exit(1)
 	}
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+func CleanInput(input string) string {
+	// Remove extra whitespace
+	re := regexp.MustCompile(`\s+`)
+	cleaned := re.ReplaceAllString(input, " ")
+	
+	// Trim spaces from beginning and end
+	cleaned = strings.TrimSpace(cleaned)
+	
+	// Convert to lowercase for normalization
+	cleaned = strings.ToLower(cleaned)
+	
+	return cleaned
+}
+
+func NormalizePhoneNumber(phone string) string {
+	// Remove all non-digit characters
+	re := regexp.MustCompile(`\D`)
+	digits := re.ReplaceAllString(phone, "")
+	
+	// Ensure proper length for US numbers
+	if len(digits) == 10 {
+		return "+1" + digits
+	}
+	
+	return "+" + digits
+}
+
+func ValidateEmail(email string) bool {
+	// Simple email validation regex
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
