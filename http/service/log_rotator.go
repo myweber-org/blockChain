@@ -1315,4 +1315,77 @@ func main() {
 		log.Printf("Log entry %d: Application is running smoothly", i)
 		time.Sleep(100 * time.Millisecond)
 	}
+}package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	maxLogFiles = 5
+	logFileName = "app.log"
+)
+
+func rotateLogs() error {
+	for i := maxLogFiles - 1; i > 0; i-- {
+		oldName := fmt.Sprintf("%s.%d", logFileName, i-1)
+		newName := fmt.Sprintf("%s.%d", logFileName, i)
+		
+		if _, err := os.Stat(oldName); err == nil {
+			err := os.Rename(oldName, newName)
+			if err != nil {
+				return fmt.Errorf("failed to rename %s to %s: %v", oldName, newName, err)
+			}
+		}
+	}
+
+	if _, err := os.Stat(logFileName); err == nil {
+		err := os.Rename(logFileName, fmt.Sprintf("%s.0", logFileName))
+		if err != nil {
+			return fmt.Errorf("failed to rename current log: %v", err)
+		}
+	}
+
+	file, err := os.Create(logFileName)
+	if err != nil {
+		return fmt.Errorf("failed to create new log file: %v", err)
+	}
+	file.Close()
+
+	return nil
+}
+
+func writeLog(message string) error {
+	file, err := os.OpenFile(logFileName, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	_, err = fmt.Fprintf(file, "[%s] %s\n", timestamp, message)
+	return err
+}
+
+func main() {
+	err := rotateLogs()
+	if err != nil {
+		fmt.Printf("Log rotation failed: %v\n", err)
+		return
+	}
+
+	for i := 0; i < 10; i++ {
+		msg := fmt.Sprintf("Test log entry %d", i)
+		err := writeLog(msg)
+		if err != nil {
+			fmt.Printf("Failed to write log: %v\n", err)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	fmt.Println("Log rotation completed successfully")
 }
