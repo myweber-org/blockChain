@@ -185,3 +185,55 @@ func main() {
 	
 	http.ListenAndServe(":8080", nil)
 }
+package main
+
+import (
+    "fmt"
+    "runtime"
+    "time"
+)
+
+type SystemMetrics struct {
+    Timestamp   time.Time
+    Goroutines  int
+    AllocBytes  uint64
+    TotalAlloc  uint64
+    SysBytes    uint64
+    NumGC       uint32
+}
+
+func collectMetrics() SystemMetrics {
+    var m runtime.MemStats
+    runtime.ReadMemStats(&m)
+    
+    return SystemMetrics{
+        Timestamp:   time.Now(),
+        Goroutines:  runtime.NumGoroutine(),
+        AllocBytes:  m.Alloc,
+        TotalAlloc:  m.TotalAlloc,
+        SysBytes:    m.Sys,
+        NumGC:       m.NumGC,
+    }
+}
+
+func logMetrics(metrics SystemMetrics) {
+    fmt.Printf("[%s] Goroutines: %d, Alloc: %.2f MB, Sys: %.2f MB, GC Cycles: %d\n",
+        metrics.Timestamp.Format("15:04:05"),
+        metrics.Goroutines,
+        float64(metrics.AllocBytes)/1024/1024,
+        float64(metrics.SysBytes)/1024/1024,
+        metrics.NumGC)
+}
+
+func main() {
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-ticker.C:
+            metrics := collectMetrics()
+            logMetrics(metrics)
+        }
+    }
+}
