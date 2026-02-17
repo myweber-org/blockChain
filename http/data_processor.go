@@ -402,3 +402,38 @@ func ProcessUserInput(email, username string, age int) (UserData, error) {
 	}
 	return userData, nil
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataCleaner struct {
+	whitespaceRegex *regexp.Regexp
+	emailRegex      *regexp.Regexp
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+		emailRegex:      regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`),
+	}
+}
+
+func (dc *DataCleaner) NormalizeWhitespace(input string) string {
+	trimmed := strings.TrimSpace(input)
+	return dc.whitespaceRegex.ReplaceAllString(trimmed, " ")
+}
+
+func (dc *DataCleaner) ValidateEmail(email string) bool {
+	return dc.emailRegex.MatchString(email)
+}
+
+func (dc *DataCleaner) ProcessUserInput(rawInput string) (string, bool) {
+	cleaned := dc.NormalizeWhitespace(rawInput)
+	if cleaned == "" {
+		return "", false
+	}
+	return cleaned, true
+}
