@@ -1447,3 +1447,190 @@ func main() {
         time.Sleep(10 * time.Millisecond)
     }
 }
+package main
+
+import (
+    "compress/gzip"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "strconv"
+    "strings"
+    "sync"
+    "time"
+)
+
+type LogRotator struct {
+    mu            sync.Mutex
+    basePath      string
+    maxSize       int64
+    maxBackups    int
+    currentSize   int64
+    currentFile   *os.File
+    compressOld   bool
+}
+
+func NewLogRotator(basePath string, maxSizeMB int, maxBackups int, compress bool) (*LogRotator, error) {
+    maxSize := int64(maxSizeMB) * 1024 * 1024
+    
+    rotator := &LogRotator{
+        basePath:    basePath,
+        maxSize:     maxSize,
+        maxBackups:  maxBackups,
+        compressOld: compress,
+    }
+    
+    err := rotator.openCurrentFile()
+    if err != nil {
+        return nil, err
+    }
+    
+    return rotator, nil
+}
+
+func (r *LogRotator) Write(p []byte) (int, error) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    if r.currentSize+int64(len(p)) > r.maxSize {
+        err := r.rotate()
+        if err != nil {
+            return 0, err
+        }
+    }
+    
+    n, err := r.currentFile.Write(p)
+    if err != nil {
+        return n, err
+    }
+    
+    r.currentSize += int64(n)
+    return n, nil
+}
+
+func (r *LogRotator) rotate() error {
+    if r.currentFile != nil {
+        r.currentFile.Close()
+    }
+    
+    timestamp := time.Now().Format("20060102_150405")
+    rotatedPath := fmt.Sprintf("%s.%s", r.basePath, timestamp)
+    
+    err := os.Rename(r.basePath, rotatedPath)
+    if err != nil {
+        return err
+    }
+    
+    if r.compressOld {
+        compressedPath := rotatedPath + ".gz"
+        err := compressFile(rotatedPath, compressedPath)
+        if err != nil {
+            return err
+        }
+        os.Remove(rotatedPath)
+        rotatedPath = compressedPath
+    }
+    
+    err = r.cleanupOldBackups()
+    if err != nil {
+        return err
+    }
+    
+    return r.openCurrentFile()
+}
+
+func (r *LogRotator) openCurrentFile() error {
+    file, err := os.OpenFile(r.basePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+    if err != nil {
+        return err
+    }
+    
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+    
+    r.currentFile = file
+    r.currentSize = info.Size()
+    return nil
+}
+
+func (r *LogRotator) cleanupOldBackups() error {
+    pattern := r.basePath + ".*"
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return err
+    }
+    
+    if len(matches) <= r.maxBackups {
+        return nil
+    }
+    
+    toDelete := len(matches) - r.maxBackups
+    for i := 0; i < toDelete; i++ {
+        os.Remove(matches[i])
+    }
+    
+    return nil
+}
+
+func compressFile(src, dst string) error {
+    source, err := os.Open(src)
+    if err != nil {
+        return err
+    }
+    defer source.Close()
+    
+    destination, err := os.Create(dst)
+    if err != nil {
+        return err
+    }
+    defer destination.Close()
+    
+    gz := gzip.NewWriter(destination)
+    defer gz.Close()
+    
+    _, err = io.Copy(gz, source)
+    return err
+}
+
+func (r *LogRotator) Close() error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    if r.currentFile != nil {
+        return r.currentFile.Close()
+    }
+    return nil
+}
+
+func extractTimestamp(filename string) (time.Time, error) {
+    parts := strings.Split(filename, ".")
+    if len(parts) < 2 {
+        return time.Time{}, fmt.Errorf("invalid filename format")
+    }
+    
+    timestampStr := parts[len(parts)-1]
+    if strings.HasSuffix(timestampStr, ".gz") {
+        timestampStr = timestampStr[:len(timestampStr)-3]
+    }
+    
+    return time.Parse("20060102_150405", timestampStr)
+}
+
+func parseBackupNumber(filename string) int {
+    parts := strings.Split(filename, ".")
+    if len(parts) < 3 {
+        return 0
+    }
+    
+    numStr := parts[len(parts)-1]
+    num, err := strconv.Atoi(numStr)
+    if err != nil {
+        return 0
+    }
+    
+    return num
+}
