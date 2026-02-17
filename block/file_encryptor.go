@@ -5,18 +5,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 )
 
-const keySize = 32
-
 func generateKey() ([]byte, error) {
-	key := make([]byte, keySize)
-	_, err := rand.Read(key)
-	if err != nil {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
 	return key, nil
@@ -34,7 +32,7 @@ func encryptData(plaintext []byte, key []byte) ([]byte, error) {
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
 
@@ -67,48 +65,36 @@ func decryptData(ciphertext []byte, key []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func saveToFile(filename string, data []byte) error {
-	return os.WriteFile(filename, data, 0644)
-}
-
-func readFromFile(filename string) ([]byte, error) {
-	return os.ReadFile(filename)
-}
-
 func main() {
 	key, err := generateKey()
 	if err != nil {
 		fmt.Printf("Key generation failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
-	originalText := []byte("Sensitive data requiring encryption protection")
-	fmt.Printf("Original: %s\n", originalText)
+	fmt.Printf("Generated key: %s\n", hex.EncodeToString(key))
 
-	encrypted, err := encryptData(originalText, key)
+	originalData := []byte("This is a secret message that needs encryption")
+	fmt.Printf("Original data: %s\n", string(originalData))
+
+	encryptedData, err := encryptData(originalData, key)
 	if err != nil {
 		fmt.Printf("Encryption failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
+	fmt.Printf("Encrypted data (hex): %s\n", hex.EncodeToString(encryptedData))
 
-	err = saveToFile("encrypted.bin", encrypted)
-	if err != nil {
-		fmt.Printf("Save failed: %v\n", err)
-		return
-	}
-
-	loadedData, err := readFromFile("encrypted.bin")
-	if err != nil {
-		fmt.Printf("Read failed: %v\n", err)
-		return
-	}
-
-	decrypted, err := decryptData(loadedData, key)
+	decryptedData, err := decryptData(encryptedData, key)
 	if err != nil {
 		fmt.Printf("Decryption failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
+	fmt.Printf("Decrypted data: %s\n", string(decryptedData))
 
-	fmt.Printf("Decrypted: %s\n", decrypted)
-	fmt.Println("Encryption/decryption cycle completed successfully")
+	if string(originalData) == string(decryptedData) {
+		fmt.Println("Encryption and decryption successful")
+	} else {
+		fmt.Println("Data mismatch after decryption")
+		os.Exit(1)
+	}
 }
