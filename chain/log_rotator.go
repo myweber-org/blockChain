@@ -173,3 +173,90 @@ func main() {
 
 	fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+)
+
+const maxLogSize = 10 * 1024 * 1024 // 10MB
+
+type LogRotator struct {
+	filePath string
+	currentSize int64
+}
+
+func NewLogRotator(path string) *LogRotator {
+	return &LogRotator{
+		filePath: path,
+	}
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if lr.shouldRotate(int64(len(p))) {
+		err := lr.rotate()
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	file, err := os.OpenFile(lr.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	n, err := file.Write(p)
+	if err == nil {
+		lr.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (lr *LogRotator) shouldRotate(additionalBytes int64) bool {
+	info, err := os.Stat(lr.filePath)
+	if os.IsNotExist(err) {
+		return false
+	}
+	if err != nil {
+		return false
+	}
+	return info.Size()+additionalBytes > maxLogSize
+}
+
+func (lr *LogRotator) rotate() error {
+	timestamp := time.Now().Unix()
+	backupPath := lr.filePath + "." + strconv.FormatInt(timestamp, 10)
+	
+	err := os.Rename(lr.filePath, backupPath)
+	if err != nil {
+		return err
+	}
+	
+	lr.currentSize = 0
+	return nil
+}
+
+func (lr *LogRotator) CleanOldLogs(maxBackups int) error {
+	pattern := lr.filePath + ".*"
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	
+	if len(matches) <= maxBackups {
+		return nil
+	}
+	
+	for i := 0; i < len(matches)-maxBackups; i++ {
+		err := os.Remove(matches[i])
+		if err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
