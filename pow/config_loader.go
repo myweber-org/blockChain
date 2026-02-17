@@ -85,4 +85,61 @@ type ConfigError struct {
 
 func (e ConfigError) Error() string {
 	return "config error: " + e.Message
+}package config
+
+import (
+    "errors"
+    "io/ioutil"
+    "gopkg.in/yaml.v2"
+)
+
+type DatabaseConfig struct {
+    Host     string `yaml:"host"`
+    Port     int    `yaml:"port"`
+    Username string `yaml:"username"`
+    Password string `yaml:"password"`
+    Database string `yaml:"database"`
+}
+
+type ServerConfig struct {
+    Port         int    `yaml:"port"`
+    ReadTimeout  int    `yaml:"read_timeout"`
+    WriteTimeout int    `yaml:"write_timeout"`
+}
+
+type Config struct {
+    Database DatabaseConfig `yaml:"database"`
+    Server   ServerConfig   `yaml:"server"`
+    Debug    bool           `yaml:"debug"`
+}
+
+func LoadConfig(path string) (*Config, error) {
+    data, err := ioutil.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+
+    var config Config
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, err
+    }
+
+    if err := validateConfig(&config); err != nil {
+        return nil, err
+    }
+
+    return &config, nil
+}
+
+func validateConfig(c *Config) error {
+    if c.Database.Host == "" {
+        return errors.New("database host cannot be empty")
+    }
+    if c.Database.Port <= 0 || c.Database.Port > 65535 {
+        return errors.New("database port must be between 1 and 65535")
+    }
+    if c.Server.Port <= 0 || c.Server.Port > 65535 {
+        return errors.New("server port must be between 1 and 65535")
+    }
+    return nil
 }
