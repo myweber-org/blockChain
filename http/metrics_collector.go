@@ -275,4 +275,61 @@ func main() {
     handler := metricsMiddleware(mux)
     
     http.ListenAndServe(":8080", handler)
+}package main
+
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type SystemMetrics struct {
+	Timestamp    time.Time
+	CPUUsage     float64
+	MemoryAlloc  uint64
+	MemoryTotal  uint64
+	GoroutineCount int
+}
+
+func collectMetrics() SystemMetrics {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	return SystemMetrics{
+		Timestamp:    time.Now(),
+		CPUUsage:     calculateCPUUsage(),
+		MemoryAlloc:  m.Alloc,
+		MemoryTotal:  m.Sys,
+		GoroutineCount: runtime.NumGoroutine(),
+	}
+}
+
+func calculateCPUUsage() float64 {
+	start := time.Now()
+	runtime.Gosched()
+	time.Sleep(10 * time.Millisecond)
+	elapsed := time.Since(start).Seconds()
+	return 1.0 - (elapsed / 0.01)
+}
+
+func displayMetrics(metrics SystemMetrics) {
+	fmt.Printf("Time: %s\n", metrics.Timestamp.Format("15:04:05"))
+	fmt.Printf("CPU Usage: %.2f%%\n", metrics.CPUUsage*100)
+	fmt.Printf("Memory Allocated: %v MB\n", metrics.MemoryAlloc/1024/1024)
+	fmt.Printf("Total Memory: %v MB\n", metrics.MemoryTotal/1024/1024)
+	fmt.Printf("Active Goroutines: %d\n", metrics.GoroutineCount)
+	fmt.Println("---")
+}
+
+func main() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			metrics := collectMetrics()
+			displayMetrics(metrics)
+		}
+	}
 }
