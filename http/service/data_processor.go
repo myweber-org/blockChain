@@ -6,17 +6,16 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"strconv"
 )
 
 type DataRecord struct {
-	ID      string
-	Name    string
-	Email   string
-	Active  string
+	ID    int
+	Name  string
+	Value float64
 }
 
-func ProcessCSVFile(filename string) ([]DataRecord, error) {
+func ParseCSVFile(filename string) ([]DataRecord, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -24,9 +23,7 @@ func ProcessCSVFile(filename string) ([]DataRecord, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.TrimLeadingSpace = true
-
-	var records []DataRecord
+	records := []DataRecord{}
 	lineNumber := 0
 
 	for {
@@ -39,99 +36,72 @@ func ProcessCSVFile(filename string) ([]DataRecord, error) {
 			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
 		}
 
-		if lineNumber == 1 {
-			continue
+		if len(row) != 3 {
+			return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", lineNumber, len(row))
 		}
 
-		if len(row) < 4 {
-			return nil, fmt.Errorf("insufficient columns at line %d", lineNumber)
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid ID at line %d: %w", lineNumber, err)
 		}
 
-		record := DataRecord{
-			ID:     strings.TrimSpace(row[0]),
-			Name:   strings.TrimSpace(row[1]),
-			Email:  strings.TrimSpace(row[2]),
-			Active: strings.TrimSpace(row[3]),
+		name := row[1]
+		if name == "" {
+			return nil, fmt.Errorf("empty name at line %d", lineNumber)
 		}
 
-		if record.ID == "" || record.Name == "" {
-			return nil, fmt.Errorf("missing required fields at line %d", lineNumber)
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value at line %d: %w", lineNumber, err)
 		}
 
-		if !strings.Contains(record.Email, "@") {
-			return nil, fmt.Errorf("invalid email format at line %d", lineNumber)
-		}
-
-		records = append(records, record)
+		records = append(records, DataRecord{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
 	}
 
 	return records, nil
 }
 
-func ValidateRecords(records []DataRecord) []DataRecord {
-	var validRecords []DataRecord
+func ValidateRecords(records []DataRecord) error {
+	seenIDs := make(map[int]bool)
 	for _, record := range records {
-		if record.Active == "true" && len(record.Name) > 0 {
-			validRecords = append(validRecords, record)
+		if record.ID <= 0 {
+			return fmt.Errorf("invalid ID %d: must be positive", record.ID)
 		}
-	}
-	return validRecords
-}
-
-func GenerateReport(records []DataRecord) {
-	fmt.Printf("Total records processed: %d\n", len(records))
-	activeCount := 0
-	for _, record := range records {
-		if record.Active == "true" {
-			activeCount++
+		if seenIDs[record.ID] {
+			return fmt.Errorf("duplicate ID %d found", record.ID)
 		}
-	}
-	fmt.Printf("Active records: %d\n", activeCount)
-	fmt.Println("--- Record Details ---")
-	for i, record := range records {
-		fmt.Printf("%d. ID: %s, Name: %s, Email: %s, Active: %s\n",
-			i+1, record.ID, record.Name, record.Email, record.Active)
-	}
-}package main
+		seenIDs[record.ID] = true
 
-import (
-	"errors"
-	"strings"
-)
-
-type UserData struct {
-	Username string
-	Email    string
-	Age      int
-}
-
-func ValidateUserData(data UserData) error {
-	if strings.TrimSpace(data.Username) == "" {
-		return errors.New("username cannot be empty")
-	}
-	if !strings.Contains(data.Email, "@") {
-		return errors.New("invalid email format")
-	}
-	if data.Age < 0 || data.Age > 150 {
-		return errors.New("age must be between 0 and 150")
+		if record.Value < 0 {
+			return fmt.Errorf("negative value %f for ID %d", record.Value, record.ID)
+		}
 	}
 	return nil
 }
 
-func TransformUsername(username string) string {
-	return strings.ToLower(strings.TrimSpace(username))
-}
+func CalculateStatistics(records []DataRecord) (float64, float64, float64) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
 
-func ProcessUserInput(rawUsername string, rawEmail string, rawAge int) (UserData, error) {
-	transformedUsername := TransformUsername(rawUsername)
-	userData := UserData{
-		Username: transformedUsername,
-		Email:    strings.TrimSpace(rawEmail),
-		Age:      rawAge,
+	var sum, min, max float64
+	min = records[0].Value
+	max = records[0].Value
+
+	for _, record := range records {
+		sum += record.Value
+		if record.Value < min {
+			min = record.Value
+		}
+		if record.Value > max {
+			max = record.Value
+		}
 	}
-	err := ValidateUserData(userData)
-	if err != nil {
-		return UserData{}, err
-	}
-	return userData, nil
+
+	average := sum / float64(len(records))
+	return average, min, max
 }
