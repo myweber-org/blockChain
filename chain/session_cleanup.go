@@ -1,37 +1,44 @@
+
 package main
 
 import (
-    "context"
-    "log"
-    "time"
+	"context"
+	"log"
+	"time"
 
-    "github.com/jackc/pgx/v5/pgxpool"
-)
-
-const (
-    dbURL          = "postgresql://localhost/sessiondb"
-    cleanupTimeout = 10 * time.Second
-    retentionDays  = 30
+	"yourproject/internal/db"
+	"yourproject/internal/models"
 )
 
 func main() {
-    ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
-    defer cancel()
+	ctx := context.Background()
+	database := db.GetDB()
 
-    pool, err := pgxpool.New(ctx, dbURL)
-    if err != nil {
-        log.Fatalf("Unable to connect to database: %v\n", err)
-    }
-    defer pool.Close()
+	// Run cleanup daily at 2 AM
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
 
-    query := `DELETE FROM user_sessions WHERE last_activity < $1`
-    cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	for {
+		select {
+		case <-ticker.C:
+			cleanupExpiredSessions(ctx, database)
+		}
+	}
+}
 
-    result, err := pool.Exec(ctx, query, cutoff)
-    if err != nil {
-        log.Fatalf("Failed to delete expired sessions: %v\n", err)
-    }
+func cleanupExpiredSessions(ctx context.Context, db *db.Database) {
+	cutoff := time.Now().Add(-24 * time.Hour)
 
-    rowsAffected := result.RowsAffected()
-    log.Printf("Cleaned up %d expired session records\n", rowsAffected)
+	result := db.WithContext(ctx).
+		Where("last_activity < ?", cutoff).
+		Delete(&models.Session{})
+
+	if result.Error != nil {
+		log.Printf("Error cleaning up sessions: %v", result.Error)
+		return
+	}
+
+	if result.RowsAffected > 0 {
+		log.Printf("Cleaned up %d expired sessions", result.RowsAffected)
+	}
 }
