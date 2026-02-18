@@ -236,4 +236,88 @@ func main() {
             logMetrics(metrics)
         }
     }
+}package main
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type MetricsCollector struct {
+	requestCount    int
+	errorCount      int
+	totalLatency    time.Duration
+	latencySamples  []time.Duration
+}
+
+func NewMetricsCollector() *MetricsCollector {
+	return &MetricsCollector{
+		latencySamples: make([]time.Duration, 0),
+	}
+}
+
+func (mc *MetricsCollector) RecordRequest(latency time.Duration, isError bool) {
+	mc.requestCount++
+	mc.totalLatency += latency
+	mc.latencySamples = append(mc.latencySamples, latency)
+	if isError {
+		mc.errorCount++
+	}
+}
+
+func (mc *MetricsCollector) GetAverageLatency() time.Duration {
+	if mc.requestCount == 0 {
+		return 0
+	}
+	return mc.totalLatency / time.Duration(mc.requestCount)
+}
+
+func (mc *MetricsCollector) GetErrorRate() float64 {
+	if mc.requestCount == 0 {
+		return 0.0
+	}
+	return float64(mc.errorCount) / float64(mc.requestCount)
+}
+
+func (mc *MetricsCollector) GetPercentile(p float64) time.Duration {
+	if len(mc.latencySamples) == 0 {
+		return 0
+	}
+	// Simplified percentile calculation
+	index := int(float64(len(mc.latencySamples)-1) * p / 100.0)
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(mc.latencySamples) {
+		index = len(mc.latencySamples) - 1
+	}
+	return mc.latencySamples[index]
+}
+
+func main() {
+	collector := NewMetricsCollector()
+
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		defer func() {
+			latency := time.Since(start)
+			collector.RecordRequest(latency, false)
+		}()
+
+		avgLatency := collector.GetAverageLatency()
+		errorRate := collector.GetErrorRate()
+		p95 := collector.GetPercentile(95)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"request_count": ` + string(rune(collector.requestCount)) + `,
+			"average_latency_ms": ` + string(rune(avgLatency.Milliseconds())) + `,
+			"error_rate": ` + string(rune(errorRate)) + `,
+			"p95_latency_ms": ` + string(rune(p95.Milliseconds())) + `
+		}`))
+	})
+
+	log.Println("Starting metrics server on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
