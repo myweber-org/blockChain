@@ -1,284 +1,189 @@
-
 package main
 
 import (
-	"bufio"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
 
-type FileProcessor struct {
-	Workers    int
-	BatchSize  int
-	Results    chan string
-	Errors     chan error
-	wg         sync.WaitGroup
-	mu         sync.Mutex
-	processed  int
+type DataRecord struct {
+	ID        string    `json:"id"`
+	Value     float64   `json:"value"`
+	Timestamp time.Time `json:"timestamp"`
+	Processed bool      `json:"processed"`
 }
 
-func NewFileProcessor(workers, batchSize int) *FileProcessor {
-	return &FileProcessor{
-		Workers:   workers,
-		BatchSize: batchSize,
-		Results:   make(chan string, 100),
-		Errors:    make(chan error, 100),
+type Processor struct {
+	mu          sync.RWMutex
+	records     map[string]DataRecord
+	workerCount int
+}
+
+func NewProcessor(workers int) *Processor {
+	return &Processor{
+		records:     make(map[string]DataRecord),
+		workerCount: workers,
 	}
 }
 
-func (fp *FileProcessor) ProcessDirectory(dirPath string) error {
-	files, err := os.ReadDir(dirPath)
+func (p *Processor) LoadData(filename string) error {
+	file, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	fileChan := make(chan string, len(files))
-	for _, file := range files {
-		if !file.IsDir() {
-			fileChan <- filepath.Join(dirPath, file.Name())
-		}
-	}
-	close(fileChan)
-
-	for i := 0; i < fp.Workers; i++ {
-		fp.wg.Add(1)
-		go fp.worker(fileChan)
-	}
-
-	fp.wg.Wait()
-	close(fp.Results)
-	close(fp.Errors)
-
-	return nil
-}
-
-func (fp *FileProcessor) worker(files <-chan string) {
-	defer fp.wg.Done()
-
-	batch := make([]string, 0, fp.BatchSize)
-	for file := range files {
-		batch = append(batch, file)
-
-		if len(batch) >= fp.BatchSize {
-			fp.processBatch(batch)
-			batch = batch[:0]
-		}
-	}
-
-	if len(batch) > 0 {
-		fp.processBatch(batch)
-	}
-}
-
-func (fp *FileProcessor) processBatch(files []string) {
-	var batchWg sync.WaitGroup
-	batchWg.Add(len(files))
-
-	for _, file := range files {
-		go func(f string) {
-			defer batchWg.Done()
-			if err := fp.processSingleFile(f); err != nil {
-				fp.Errors <- fmt.Errorf("file %s: %w", f, err)
-			}
-		}(file)
-	}
-
-	batchWg.Wait()
-
-	fp.mu.Lock()
-	fp.processed += len(files)
-	fmt.Printf("Processed batch of %d files, total: %d\n", len(files), fp.processed)
-	fp.mu.Unlock()
-}
-
-func (fp *FileProcessor) processSingleFile(filePath string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	lineCount := 0
-	for scanner.Scan() {
-		lineCount++
-		_ = scanner.Text()
+	var records []DataRecord
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&records); err != nil {
+		return fmt.Errorf("failed to decode JSON: %w", err)
 	}
 
-	if err := scanner.Err(); err != nil {
-		return err
+	p.mu.Lock()
+	for _, record := range records {
+		p.records[record.ID] = record
 	}
+	p.mu.Unlock()
 
-	if lineCount == 0 {
-		return errors.New("empty file")
-	}
-
-	fp.Results <- fmt.Sprintf("%s: %d lines", filepath.Base(filePath), lineCount)
+	log.Printf("Loaded %d records from %s", len(records), filename)
 	return nil
 }
 
-func (fp *FileProcessor) Stats() {
-	fmt.Printf("Total files processed: %d\n", fp.processed)
-}
+func (p *Processor) ProcessRecord(id string) error {
+	p.mu.RLock()
+	record, exists := p.records[id]
+	p.mu.RUnlock()
 
-func main() {
-	processor := NewFileProcessor(4, 10)
-
-	go func() {
-		for result := range processor.Results {
-			fmt.Println("Result:", result)
-		}
-	}()
-
-	go func() {
-		for err := range processor.Errors {
-			fmt.Println("Error:", err)
-		}
-	}()
-
-	start := time.Now()
-	if err := processor.ProcessDirectory("."); err != nil {
-		fmt.Println("Processing error:", err)
-		return
+	if !exists {
+		return fmt.Errorf("record with ID %s not found", id)
 	}
-	elapsed := time.Since(start)
 
-	processor.Stats()
-	fmt.Printf("Processing completed in %v\n", elapsed)
-}
-package main
+	if record.Processed {
+		return fmt.Errorf("record %s already processed", id)
+	}
 
-import (
-    "encoding/csv"
-    "fmt"
-    "io"
-    "os"
-    "strconv"
-    "sync"
-)
+	time.Sleep(50 * time.Millisecond)
 
-type Record struct {
-    ID    int
-    Name  string
-    Value float64
+	record.Value = record.Value * 1.1
+	record.Processed = true
+
+	p.mu.Lock()
+	p.records[id] = record
+	p.mu.Unlock()
+
+	return nil
 }
 
-func processFile(filename string, results chan<- Record, errors chan<- error, wg *sync.WaitGroup) {
-    defer wg.Done()
+func (p *Processor) RunConcurrentProcessing() {
+	var wg sync.WaitGroup
+	ids := p.getAllIDs()
 
-    file, err := os.Open(filename)
-    if err != nil {
-        errors <- fmt.Errorf("failed to open file: %w", err)
-        return
-    }
-    defer file.Close()
+	workChan := make(chan string, len(ids))
 
-    reader := csv.NewReader(file)
-    lineNumber := 0
+	for i := 0; i < p.workerCount; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for id := range workChan {
+				if err := p.ProcessRecord(id); err != nil {
+					log.Printf("Worker %d: Error processing %s: %v", workerID, id, err)
+				} else {
+					log.Printf("Worker %d: Successfully processed %s", workerID, id)
+				}
+			}
+		}(i)
+	}
 
-    for {
-        lineNumber++
-        row, err := reader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            errors <- fmt.Errorf("line %d: csv read error: %w", lineNumber, err)
-            continue
-        }
+	for _, id := range ids {
+		workChan <- id
+	}
+	close(workChan)
 
-        if len(row) != 3 {
-            errors <- fmt.Errorf("line %d: invalid column count %d", lineNumber, len(row))
-            continue
-        }
-
-        id, err := strconv.Atoi(row[0])
-        if err != nil {
-            errors <- fmt.Errorf("line %d: invalid ID format: %w", lineNumber, err)
-            continue
-        }
-
-        value, err := strconv.ParseFloat(row[2], 64)
-        if err != nil {
-            errors <- fmt.Errorf("line %d: invalid value format: %w", lineNumber, err)
-            continue
-        }
-
-        results <- Record{
-            ID:    id,
-            Name:  row[1],
-            Value: value,
-        }
-    }
+	wg.Wait()
+	log.Println("All processing completed")
 }
 
-func aggregateResults(results <-chan Record, errors <-chan error) ([]Record, []error) {
-    var records []Record
-    var errs []error
+func (p *Processor) getAllIDs() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
-    for {
-        select {
-        case record, ok := <-results:
-            if !ok {
-                results = nil
-            } else {
-                records = append(records, record)
-            }
-        case err, ok := <-errors:
-            if !ok {
-                errors = nil
-            } else {
-                errs = append(errs, err)
-            }
-        }
+	ids := make([]string, 0, len(p.records))
+	for id := range p.records {
+		ids = append(ids, id)
+	}
+	return ids
+}
 
-        if results == nil && errors == nil {
-            break
-        }
-    }
+func (p *Processor) SaveResults(filename string) error {
+	p.mu.RLock()
+	records := make([]DataRecord, 0, len(p.records))
+	for _, record := range p.records {
+		records = append(records, record)
+	}
+	p.mu.RUnlock()
 
-    return records, errs
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(records); err != nil {
+		return fmt.Errorf("failed to encode JSON: %w", err)
+	}
+
+	log.Printf("Saved %d records to %s", len(records), filename)
+	return nil
+}
+
+func generateSampleData() []DataRecord {
+	records := make([]DataRecord, 100)
+	for i := range records {
+		records[i] = DataRecord{
+			ID:        fmt.Sprintf("REC-%04d", i+1),
+			Value:     float64(i+1) * 10.0,
+			Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+			Processed: false,
+		}
+	}
+	return records
 }
 
 func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: file_processor <filename>")
-        os.Exit(1)
-    }
+	sampleFile := "sample_data.json"
+	outputFile := "processed_data.json"
 
-    filename := os.Args[1]
-    results := make(chan Record, 100)
-    errors := make(chan error, 100)
-    var wg sync.WaitGroup
+	sampleData := generateSampleData()
+	file, err := os.Create(sampleFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(sampleData)
+	file.Close()
 
-    wg.Add(1)
-    go processFile(filename, results, errors, &wg)
+	processor := NewProcessor(5)
 
-    go func() {
-        wg.Wait()
-        close(results)
-        close(errors)
-    }()
+	if err := processor.LoadData(sampleFile); err != nil {
+		log.Fatal(err)
+	}
 
-    records, errs := aggregateResults(results, errors)
+	startTime := time.Now()
+	processor.RunConcurrentProcessing()
+	duration := time.Since(startTime)
 
-    fmt.Printf("Processed %d records\n", len(records))
-    if len(errs) > 0 {
-        fmt.Printf("Encountered %d errors:\n", len(errs))
-        for _, err := range errs {
-            fmt.Printf("  - %v\n", err)
-        }
-    }
+	log.Printf("Processing took %v", duration)
 
-    if len(records) > 0 {
-        fmt.Println("\nFirst 5 records:")
-        for i := 0; i < len(records) && i < 5; i++ {
-            fmt.Printf("  ID: %d, Name: %s, Value: %.2f\n",
-                records[i].ID, records[i].Name, records[i].Value)
-        }
-    }
+	if err := processor.SaveResults(outputFile); err != nil {
+		log.Fatal(err)
+	}
+
+	os.Remove(sampleFile)
+	log.Println("Sample data cleaned up")
 }
