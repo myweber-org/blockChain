@@ -365,4 +365,79 @@ func validateConfig(config *ServerConfig) error {
     }
 
     return nil
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort    int
+    DatabaseURL   string
+    LogLevel      string
+    CacheEnabled  bool
+    MaxConnections int
 }
+
+func Load() (*Config, error) {
+    cfg := &Config{
+        ServerPort:    getEnvAsInt("SERVER_PORT", 8080),
+        DatabaseURL:   getEnv("DATABASE_URL", "postgres://localhost:5432/app"),
+        LogLevel:      getEnv("LOG_LEVEL", "info"),
+        CacheEnabled:  getEnvAsBool("CACHE_ENABLED", true),
+        MaxConnections: getEnvAsInt("MAX_CONNECTIONS", 100),
+    }
+
+    if err := validate(cfg); err != nil {
+        return nil, err
+    }
+
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    if value, exists := os.LookupEnv(key); exists {
+        return value
+    }
+    return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+    valueStr := getEnv(key, "")
+    if value, err := strconv.Atoi(valueStr); err == nil {
+        return value
+    }
+    return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+    valueStr := strings.ToLower(getEnv(key, ""))
+    if valueStr == "true" || valueStr == "1" {
+        return true
+    }
+    if valueStr == "false" || valueStr == "0" {
+        return false
+    }
+    return defaultValue
+}
+
+func validate(cfg *Config) error {
+    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+        return ErrInvalidPort
+    }
+    if cfg.DatabaseURL == "" {
+        return ErrMissingDatabaseURL
+    }
+    if cfg.MaxConnections < 1 {
+        return ErrInvalidMaxConnections
+    }
+    return nil
+}
+
+var (
+    ErrInvalidPort            = errors.New("invalid server port")
+    ErrMissingDatabaseURL     = errors.New("database URL is required")
+    ErrInvalidMaxConnections  = errors.New("max connections must be positive")
+)
