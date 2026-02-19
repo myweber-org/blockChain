@@ -504,3 +504,150 @@ func FilterValidRecords(records []DataRecord) []DataRecord {
 	}
 	return filtered
 }
+package main
+
+import (
+    "encoding/csv"
+    "encoding/json"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+)
+
+type Record struct {
+    ID        int     `json:"id"`
+    Name      string  `json:"name"`
+    Value     float64 `json:"value"`
+    Timestamp string  `json:"timestamp"`
+}
+
+func processCSVFile(filename string) ([]Record, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    reader.Comma = ','
+    reader.TrimLeadingSpace = true
+
+    var records []Record
+    lineNumber := 0
+
+    for {
+        lineNumber++
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, fmt.Errorf("line %d: %v", lineNumber, err)
+        }
+
+        if lineNumber == 1 {
+            continue
+        }
+
+        if len(row) != 4 {
+            return nil, fmt.Errorf("line %d: invalid column count", lineNumber)
+        }
+
+        id, err := strconv.Atoi(row[0])
+        if err != nil {
+            return nil, fmt.Errorf("line %d: invalid ID", lineNumber)
+        }
+
+        value, err := strconv.ParseFloat(row[2], 64)
+        if err != nil {
+            return nil, fmt.Errorf("line %d: invalid value", lineNumber)
+        }
+
+        record := Record{
+            ID:        id,
+            Name:      row[1],
+            Value:     value,
+            Timestamp: row[3],
+        }
+
+        records = append(records, record)
+    }
+
+    return records, nil
+}
+
+func convertToJSON(records []Record) (string, error) {
+    jsonData, err := json.MarshalIndent(records, "", "  ")
+    if err != nil {
+        return "", err
+    }
+    return string(jsonData), nil
+}
+
+func filterByValue(records []Record, minValue float64) []Record {
+    var filtered []Record
+    for _, record := range records {
+        if record.Value >= minValue {
+            filtered = append(filtered, record)
+        }
+    }
+    return filtered
+}
+
+func calculateStatistics(records []Record) (float64, float64) {
+    if len(records) == 0 {
+        return 0, 0
+    }
+
+    var sum float64
+    var max float64 = records[0].Value
+
+    for _, record := range records {
+        sum += record.Value
+        if record.Value > max {
+            max = record.Value
+        }
+    }
+
+    average := sum / float64(len(records))
+    return average, max
+}
+
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: data_processor <csv_file>")
+        os.Exit(1)
+    }
+
+    filename := os.Args[1]
+    records, err := processCSVFile(filename)
+    if err != nil {
+        fmt.Printf("Error processing file: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Processed %d records\n", len(records))
+
+    filtered := filterByValue(records, 50.0)
+    fmt.Printf("Filtered to %d records with value >= 50\n", len(filtered))
+
+    avg, max := calculateStatistics(filtered)
+    fmt.Printf("Average value: %.2f\n", avg)
+    fmt.Printf("Maximum value: %.2f\n", max)
+
+    jsonOutput, err := convertToJSON(filtered)
+    if err != nil {
+        fmt.Printf("Error converting to JSON: %v\n", err)
+        os.Exit(1)
+    }
+
+    outputFile := "output.json"
+    err = os.WriteFile(outputFile, []byte(jsonOutput), 0644)
+    if err != nil {
+        fmt.Printf("Error writing JSON file: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Results written to %s\n", outputFile)
+}
