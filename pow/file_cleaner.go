@@ -148,4 +148,63 @@ func main() {
         }
         return nil
     })
+}package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	tempDir      = "/tmp/app_temp"
+	daysToKeep   = 7
+	filePattern  = "*.tmp"
+)
+
+func main() {
+	err := cleanOldFiles(tempDir, daysToKeep, filePattern)
+	if err != nil {
+		fmt.Printf("Error cleaning files: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Cleanup completed successfully")
+}
+
+func cleanOldFiles(dirPath string, days int, pattern string) error {
+	files, err := filepath.Glob(filepath.Join(dirPath, pattern))
+	if err != nil {
+		return err
+	}
+
+	cutoffTime := time.Now().AddDate(0, 0, -days)
+	removedCount := 0
+
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+
+		if info.ModTime().Before(cutoffTime) {
+			err = os.Remove(file)
+			if err != nil {
+				fmt.Printf("Failed to remove %s: %v\n", file, err)
+			} else {
+				removedCount++
+			}
+		}
+	}
+
+	fmt.Printf("Removed %d old temporary files\n", removedCount)
+	return nil
+}
+
+func initTempDir() error {
+	if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+		return os.MkdirAll(tempDir, 0755)
+	}
+	return nil
 }
