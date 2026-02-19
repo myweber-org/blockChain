@@ -345,4 +345,30 @@ func main() {
 	cleaned := removeDuplicates(data)
 	fmt.Println("Original:", data)
 	fmt.Println("Cleaned:", cleaned)
+}package utils
+
+import (
+	"regexp"
+	"strings"
+)
+
+func SanitizeInput(input string) string {
+	// Remove leading and trailing whitespace
+	trimmed := strings.TrimSpace(input)
+	
+	// Remove any HTML/XML tags
+	re := regexp.MustCompile(`<[^>]*>`)
+	cleaned := re.ReplaceAllString(trimmed, "")
+	
+	// Escape potentially dangerous characters
+	re = regexp.MustCompile(`[;&|$]`)
+	cleaned = re.ReplaceAllString(cleaned, "")
+	
+	// Limit length to prevent buffer overflow attacks
+	maxLength := 1000
+	if len(cleaned) > maxLength {
+		cleaned = cleaned[:maxLength]
+	}
+	
+	return cleaned
 }
