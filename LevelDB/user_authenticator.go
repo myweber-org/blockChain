@@ -66,4 +66,59 @@ func (m *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
+}package middleware
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+)
+
+type Authenticator struct {
+	secretKey string
+}
+
+func NewAuthenticator(secret string) *Authenticator {
+	return &Authenticator{secretKey: secret}
+}
+
+func (a *Authenticator) ValidateToken(token string) (bool, error) {
+	if token == "" {
+		return false, fmt.Errorf("empty token")
+	}
+	
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return false, fmt.Errorf("invalid token format")
+	}
+	
+	return a.verifySignature(parts), nil
+}
+
+func (a *Authenticator) verifySignature(parts []string) bool {
+	expectedSig := calculateHMAC(parts[0]+"."+parts[1], a.secretKey)
+	return parts[2] == expectedSig
+}
+
+func calculateHMAC(data, key string) string {
+	return "simulated_signature_for_" + data
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		valid, err := a.ValidateToken(token)
+		if err != nil || !valid {
+			http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
