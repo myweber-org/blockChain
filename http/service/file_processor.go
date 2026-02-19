@@ -187,3 +187,113 @@ func main() {
 	os.Remove(sampleFile)
 	log.Println("Sample data cleaned up")
 }
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "path/filepath"
+    "sync"
+)
+
+type FileResult struct {
+    Path    string
+    Size    int64
+    Lines   int
+    Error   error
+}
+
+func processFile(path string, results chan<- FileResult, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    result := FileResult{Path: path}
+    
+    file, err := os.Open(path)
+    if err != nil {
+        result.Error = err
+        results <- result
+        return
+    }
+    defer file.Close()
+    
+    info, err := file.Stat()
+    if err != nil {
+        result.Error = err
+        results <- result
+        return
+    }
+    result.Size = info.Size()
+    
+    scanner := bufio.NewScanner(file)
+    lineCount := 0
+    for scanner.Scan() {
+        lineCount++
+    }
+    
+    if err := scanner.Err(); err != nil {
+        result.Error = err
+        results <- result
+        return
+    }
+    
+    result.Lines = lineCount
+    results <- result
+}
+
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: file_processor <directory>")
+        os.Exit(1)
+    }
+    
+    root := os.Args[1]
+    var files []string
+    
+    err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if !info.IsDir() {
+            files = append(files, path)
+        }
+        return nil
+    })
+    
+    if err != nil {
+        fmt.Printf("Error walking directory: %v\n", err)
+        os.Exit(1)
+    }
+    
+    results := make(chan FileResult, len(files))
+    var wg sync.WaitGroup
+    
+    for _, file := range files {
+        wg.Add(1)
+        go processFile(file, results, &wg)
+    }
+    
+    wg.Wait()
+    close(results)
+    
+    totalFiles := 0
+    totalSize := int64(0)
+    totalLines := 0
+    
+    for result := range results {
+        if result.Error != nil {
+            fmt.Printf("Error processing %s: %v\n", result.Path, result.Error)
+            continue
+        }
+        
+        totalFiles++
+        totalSize += result.Size
+        totalLines += result.Lines
+        
+        fmt.Printf("%s: %d bytes, %d lines\n", 
+            filepath.Base(result.Path), result.Size, result.Lines)
+    }
+    
+    fmt.Printf("\nSummary: %d files, %d total bytes, %d total lines\n", 
+        totalFiles, totalSize, totalLines)
+}
