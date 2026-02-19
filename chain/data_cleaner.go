@@ -614,4 +614,42 @@ func main() {
 	for _, record := range cleaned {
 		fmt.Printf("ID: %d, Email: %s, Valid: %t\n", record.ID, record.Email, record.Valid)
 	}
+}package utils
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+func SanitizeInput(input string) string {
+	trimmed := strings.TrimSpace(input)
+	trimmed = removeExcessiveSpaces(trimmed)
+	trimmed = removeNonPrintableChars(trimmed)
+	return escapeSpecialCharacters(trimmed)
+}
+
+func removeExcessiveSpaces(s string) string {
+	spaceRegex := regexp.MustCompile(`\s+`)
+	return spaceRegex.ReplaceAllString(s, " ")
+}
+
+func removeNonPrintableChars(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return -1
+	}, s)
+}
+
+func escapeSpecialCharacters(s string) string {
+	replacer := strings.NewReplacer(
+		"<", "&lt;",
+		">", "&gt;",
+		"\"", "&quot;",
+		"'", "&#39;",
+		"&", "&amp;",
+	)
+	return replacer.Replace(s)
 }
