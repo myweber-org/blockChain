@@ -2,270 +2,71 @@ package config
 
 import (
     "fmt"
-    "io/ioutil"
-    "gopkg.in/yaml.v2"
-)
-
-type AppConfig struct {
-    Server struct {
-        Host string `yaml:"host"`
-        Port int    `yaml:"port"`
-    } `yaml:"server"`
-    Database struct {
-        Host     string `yaml:"host"`
-        Username string `yaml:"username"`
-        Password string `yaml:"password"`
-        Name     string `yaml:"name"`
-    } `yaml:"database"`
-    LogLevel string `yaml:"log_level"`
-}
-
-func LoadConfig(path string) (*AppConfig, error) {
-    data, err := ioutil.ReadFile(path)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
-
-    var config AppConfig
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
-
-    return &config, nil
-}
-
-func (c *AppConfig) Validate() error {
-    if c.Server.Host == "" {
-        return fmt.Errorf("server host cannot be empty")
-    }
-    if c.Server.Port <= 0 || c.Server.Port > 65535 {
-        return fmt.Errorf("invalid server port: %d", c.Server.Port)
-    }
-    if c.Database.Host == "" {
-        return fmt.Errorf("database host cannot be empty")
-    }
-    return nil
-}package config
-
-import (
-	"os"
-	"path/filepath"
-
-	"gopkg.in/yaml.v3"
+    "os"
+    "strconv"
+    "strings"
 )
 
 type Config struct {
-	Server struct {
-		Host string `yaml:"host" env:"SERVER_HOST"`
-		Port int    `yaml:"port" env:"SERVER_PORT"`
-	} `yaml:"server"`
-	Database struct {
-		Host     string `yaml:"host" env:"DB_HOST"`
-		Port     int    `yaml:"port" env:"DB_PORT"`
-		Name     string `yaml:"name" env:"DB_NAME"`
-		User     string `yaml:"user" env:"DB_USER"`
-		Password string `yaml:"password" env:"DB_PASSWORD"`
-		SSLMode  string `yaml:"ssl_mode" env:"DB_SSL_MODE"`
-	} `yaml:"database"`
-	Logging struct {
-		Level  string `yaml:"level" env:"LOG_LEVEL"`
-		Output string `yaml:"output" env:"LOG_OUTPUT"`
-	} `yaml:"logging"`
+    ServerPort int
+    DatabaseURL string
+    EnableCache bool
+    MaxConnections int
+    AllowedOrigins []string
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	cfg := &Config{}
-
-	absPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	file, err := os.Open(absPath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(cfg); err != nil {
-		return nil, err
-	}
-
-	overrideFromEnv(cfg)
-
-	return cfg, nil
-}
-
-func overrideFromEnv(cfg *Config) {
-	overrideString(&cfg.Server.Host, "SERVER_HOST")
-	overrideInt(&cfg.Server.Port, "SERVER_PORT")
-	overrideString(&cfg.Database.Host, "DB_HOST")
-	overrideInt(&cfg.Database.Port, "DB_PORT")
-	overrideString(&cfg.Database.Name, "DB_NAME")
-	overrideString(&cfg.Database.User, "DB_USER")
-	overrideString(&cfg.Database.Password, "DB_PASSWORD")
-	overrideString(&cfg.Database.SSLMode, "DB_SSL_MODE")
-	overrideString(&cfg.Logging.Level, "LOG_LEVEL")
-	overrideString(&cfg.Logging.Output, "LOG_OUTPUT")
-}
-
-func overrideString(field *string, envVar string) {
-	if val := os.Getenv(envVar); val != "" {
-		*field = val
-	}
-}
-
-func overrideInt(field *int, envVar string) {
-	if val := os.Getenv(envVar); val != "" {
-		var intVal int
-		if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
-			*field = intVal
-		}
-	}
-}package config
-
-import (
-    "fmt"
-    "io/ioutil"
-    "os"
-
-    "gopkg.in/yaml.v2"
-)
-
-type DatabaseConfig struct {
-    Host     string `yaml:"host"`
-    Port     int    `yaml:"port"`
-    Username string `yaml:"username"`
-    Password string `yaml:"password"`
-    Name     string `yaml:"name"`
-}
-
-type ServerConfig struct {
-    Port         int            `yaml:"port"`
-    ReadTimeout  int            `yaml:"read_timeout"`
-    WriteTimeout int            `yaml:"write_timeout"`
-    Database     DatabaseConfig `yaml:"database"`
-}
-
-func LoadConfig(path string) (*ServerConfig, error) {
-    if _, err := os.Stat(path); os.IsNotExist(err) {
-        return nil, fmt.Errorf("config file not found: %s", path)
-    }
-
-    data, err := ioutil.ReadFile(path)
+func Load() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnv("SERVER_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
     if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %v", err)
+        return nil, fmt.Errorf("invalid SERVER_PORT: %v", err)
     }
-
-    var config ServerConfig
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %v", err)
+    cfg.ServerPort = port
+    
+    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    enableCache := getEnv("ENABLE_CACHE", "true")
+    cfg.EnableCache = strings.ToLower(enableCache) == "true"
+    
+    maxConnStr := getEnv("MAX_CONNECTIONS", "100")
+    maxConn, err := strconv.Atoi(maxConnStr)
+    if err != nil {
+        return nil, fmt.Errorf("invalid MAX_CONNECTIONS: %v", err)
     }
-
-    if err := validateConfig(&config); err != nil {
-        return nil, fmt.Errorf("config validation failed: %v", err)
+    cfg.MaxConnections = maxConn
+    
+    origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000")
+    cfg.AllowedOrigins = strings.Split(origins, ",")
+    
+    if err := validateConfig(cfg); err != nil {
+        return nil, err
     }
-
-    return &config, nil
+    
+    return cfg, nil
 }
 
-func validateConfig(config *ServerConfig) error {
-    if config.Port <= 0 || config.Port > 65535 {
-        return fmt.Errorf("invalid server port: %d", config.Port)
+func getEnv(key, defaultValue string) string {
+    value := os.Getenv(key)
+    if value == "" {
+        return defaultValue
     }
+    return value
+}
 
-    if config.Database.Host == "" {
-        return fmt.Errorf("database host cannot be empty")
+func validateConfig(cfg *Config) error {
+    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+        return fmt.Errorf("server port must be between 1 and 65535")
     }
-
-    if config.Database.Port <= 0 || config.Database.Port > 65535 {
-        return fmt.Errorf("invalid database port: %d", config.Database.Port)
+    
+    if cfg.MaxConnections < 1 {
+        return fmt.Errorf("max connections must be positive")
     }
-
+    
+    if cfg.DatabaseURL == "" {
+        return fmt.Errorf("database URL cannot be empty")
+    }
+    
     return nil
-}package config
-
-import (
-    "fmt"
-    "os"
-    "path/filepath"
-
-    "gopkg.in/yaml.v2"
-)
-
-type DatabaseConfig struct {
-    Host     string `yaml:"host" env:"DB_HOST"`
-    Port     int    `yaml:"port" env:"DB_PORT"`
-    Username string `yaml:"username" env:"DB_USER"`
-    Password string `yaml:"password" env:"DB_PASS"`
-    Name     string `yaml:"name" env:"DB_NAME"`
-}
-
-type ServerConfig struct {
-    Port         int    `yaml:"port" env:"SERVER_PORT"`
-    ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
-    WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
-    DebugMode    bool   `yaml:"debug_mode" env:"DEBUG_MODE"`
-}
-
-type AppConfig struct {
-    Database DatabaseConfig `yaml:"database"`
-    Server   ServerConfig   `yaml:"server"`
-    LogLevel string         `yaml:"log_level" env:"LOG_LEVEL"`
-}
-
-func LoadConfig(configPath string) (*AppConfig, error) {
-    var config AppConfig
-
-    absPath, err := filepath.Abs(configPath)
-    if err != nil {
-        return nil, fmt.Errorf("invalid config path: %w", err)
-    }
-
-    data, err := os.ReadFile(absPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
-
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
-
-    overrideFromEnv(&config)
-
-    return &config, nil
-}
-
-func overrideFromEnv(config *AppConfig) {
-    if val := os.Getenv("DB_HOST"); val != "" {
-        config.Database.Host = val
-    }
-    if val := os.Getenv("DB_PORT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Database.Port)
-    }
-    if val := os.Getenv("DB_USER"); val != "" {
-        config.Database.Username = val
-    }
-    if val := os.Getenv("DB_PASS"); val != "" {
-        config.Database.Password = val
-    }
-    if val := os.Getenv("DB_NAME"); val != "" {
-        config.Database.Name = val
-    }
-    if val := os.Getenv("SERVER_PORT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Server.Port)
-    }
-    if val := os.Getenv("READ_TIMEOUT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Server.ReadTimeout)
-    }
-    if val := os.Getenv("WRITE_TIMEOUT"); val != "" {
-        fmt.Sscanf(val, "%d", &config.Server.WriteTimeout)
-    }
-    if val := os.Getenv("DEBUG_MODE"); val != "" {
-        config.Server.DebugMode = val == "true" || val == "1"
-    }
-    if val := os.Getenv("LOG_LEVEL"); val != "" {
-        config.LogLevel = val
-    }
 }
