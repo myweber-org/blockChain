@@ -1,114 +1,99 @@
-
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 )
 
-type DataProcessor struct {
-	whitespaceRegex *regexp.Regexp
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Active    bool   `json:"active"`
+	Tags      []string `json:"tags"`
 }
 
-func NewDataProcessor() *DataProcessor {
-	return &DataProcessor{
-		whitespaceRegex: regexp.MustCompile(`\s+`),
-	}
-}
-
-func (dp *DataProcessor) CleanString(input string) string {
-	trimmed := strings.TrimSpace(input)
-	cleaned := dp.whitespaceRegex.ReplaceAllString(trimmed, " ")
-	return cleaned
-}
-
-func (dp *DataProcessor) ValidateEmail(email string) bool {
+func ValidateEmail(email string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(email)
 }
 
-func (dp *DataProcessor) ExtractDomain(email string) (string, bool) {
-	if !dp.ValidateEmail(email) {
-		return "", false
-	}
-	parts := strings.Split(email, "@")
-	if len(parts) != 2 {
-		return "", false
-	}
-	return parts[1], true
-}
-package main
-
-import (
-	"errors"
-	"fmt"
-	"strings"
-)
-
-type DataRecord struct {
-	ID    int
-	Name  string
-	Value float64
-	Valid bool
+func NormalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
 }
 
-func ProcessRecord(record DataRecord) (string, error) {
-	if !record.Valid {
-		return "", errors.New("invalid record")
-	}
-
-	if record.ID <= 0 {
-		return "", errors.New("invalid ID")
-	}
-
-	if strings.TrimSpace(record.Name) == "" {
-		return "", errors.New("name cannot be empty")
-	}
-
-	if record.Value < 0 {
-		return "", errors.New("value cannot be negative")
-	}
-
-	processedName := strings.ToUpper(record.Name)
-	result := fmt.Sprintf("ID:%d|NAME:%s|VALUE:%.2f", record.ID, processedName, record.Value)
-
-	return result, nil
-}
-
-func ValidateAndProcess(records []DataRecord) ([]string, []error) {
-	var results []string
-	var errs []error
-
-	for _, record := range records {
-		result, err := ProcessRecord(record)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("record %d: %w", record.ID, err))
-			continue
+func FilterInactiveUsers(users []UserProfile) []UserProfile {
+	var activeUsers []UserProfile
+	for _, user := range users {
+		if user.Active {
+			activeUsers = append(activeUsers, user)
 		}
-		results = append(results, result)
 	}
+	return activeUsers
+}
 
-	return results, errs
+func TransformUserData(users []UserProfile) ([]map[string]interface{}, error) {
+	var transformed []map[string]interface{}
+	
+	for _, user := range users {
+		if !ValidateEmail(user.Email) {
+			return nil, fmt.Errorf("invalid email for user %d: %s", user.ID, user.Email)
+		}
+		
+		transformedUser := map[string]interface{}{
+			"user_id":   user.ID,
+			"username":  NormalizeUsername(user.Username),
+			"email":     strings.ToLower(user.Email),
+			"age_group": categorizeAge(user.Age),
+			"status":    user.Active,
+			"tag_count": len(user.Tags),
+		}
+		transformed = append(transformed, transformedUser)
+	}
+	
+	return transformed, nil
+}
+
+func categorizeAge(age int) string {
+	switch {
+	case age < 18:
+		return "minor"
+	case age >= 18 && age < 30:
+		return "young_adult"
+	case age >= 30 && age < 50:
+		return "adult"
+	default:
+		return "senior"
+	}
+}
+
+func ProcessUserJSON(jsonData []byte) ([]map[string]interface{}, error) {
+	var users []UserProfile
+	
+	if err := json.Unmarshal(jsonData, &users); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %v", err)
+	}
+	
+	activeUsers := FilterInactiveUsers(users)
+	return TransformUserData(activeUsers)
 }
 
 func main() {
-	records := []DataRecord{
-		{ID: 1, Name: "record_one", Value: 100.5, Valid: true},
-		{ID: 2, Name: "", Value: 50.0, Valid: true},
-		{ID: 3, Name: "record_three", Value: -10.0, Valid: true},
-		{ID: 0, Name: "record_four", Value: 75.3, Valid: true},
-		{ID: 5, Name: "record_five", Value: 200.8, Valid: false},
+	jsonData := []byte(`[
+		{"id":1,"username":"JohnDoe","email":"john@example.com","age":25,"active":true,"tags":["golang","backend"]},
+		{"id":2,"username":"JaneSmith","email":"jane@test.org","age":32,"active":false,"tags":["frontend"]},
+		{"id":3,"username":"BobWilson","email":"bob@domain.co","age":17,"active":true,"tags":[]}
+	]`)
+	
+	result, err := ProcessUserJSON(jsonData)
+	if err != nil {
+		fmt.Printf("Error processing data: %v\n", err)
+		return
 	}
-
-	results, errs := ValidateAndProcess(records)
-
-	fmt.Println("Processing Results:")
-	for _, result := range results {
-		fmt.Println(result)
-	}
-
-	fmt.Println("\nErrors:")
-	for _, err := range errs {
-		fmt.Println(err)
-	}
+	
+	output, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(output))
 }
