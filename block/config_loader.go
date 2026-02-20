@@ -60,4 +60,46 @@ func getEnvAsSlice(key string, defaultValue []string) []string {
         return defaultValue
     }
     return strings.Split(strValue, ",")
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort int
+    DatabaseURL string
+    EnableDebug bool
+    AllowedOrigins []string
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnvWithDefault("SERVER_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
+    if err != nil {
+        return nil, err
+    }
+    cfg.ServerPort = port
+    
+    cfg.DatabaseURL = getEnvWithDefault("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    debugStr := getEnvWithDefault("ENABLE_DEBUG", "false")
+    cfg.EnableDebug = strings.ToLower(debugStr) == "true"
+    
+    originsStr := getEnvWithDefault("ALLOWED_ORIGINS", "http://localhost:3000")
+    cfg.AllowedOrigins = strings.Split(originsStr, ",")
+    
+    return cfg, nil
+}
+
+func getEnvWithDefault(key, defaultValue string) string {
+    value := os.Getenv(key)
+    if value == "" {
+        return defaultValue
+    }
+    return value
 }
