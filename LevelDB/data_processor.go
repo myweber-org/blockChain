@@ -764,3 +764,116 @@ func main() {
 
 	fmt.Println("Data processing completed successfully")
 }
+package main
+
+import (
+    "encoding/csv"
+    "encoding/json"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+)
+
+type Record struct {
+    ID        int     `json:"id"`
+    Name      string  `json:"name"`
+    Value     float64 `json:"value"`
+    Processed bool    `json:"processed"`
+}
+
+func processCSVFile(inputPath string) ([]Record, error) {
+    file, err := os.Open(inputPath)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    var records []Record
+    lineNumber := 0
+
+    for {
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
+
+        lineNumber++
+        if lineNumber == 1 {
+            continue
+        }
+
+        if len(row) < 3 {
+            continue
+        }
+
+        id, err := strconv.Atoi(row[0])
+        if err != nil {
+            continue
+        }
+
+        name := row[1]
+
+        value, err := strconv.ParseFloat(row[2], 64)
+        if err != nil {
+            continue
+        }
+
+        processed := value > 50.0
+
+        record := Record{
+            ID:        id,
+            Name:      name,
+            Value:     value,
+            Processed: processed,
+        }
+
+        records = append(records, record)
+    }
+
+    return records, nil
+}
+
+func generateJSONOutput(records []Record, outputPath string) error {
+    file, err := os.Create(outputPath)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+
+    if err := encoder.Encode(records); err != nil {
+        return err
+    }
+
+    return nil
+}
+
+func main() {
+    if len(os.Args) < 3 {
+        fmt.Println("Usage: data_processor <input.csv> <output.json>")
+        os.Exit(1)
+    }
+
+    inputFile := os.Args[1]
+    outputFile := os.Args[2]
+
+    records, err := processCSVFile(inputFile)
+    if err != nil {
+        fmt.Printf("Error processing CSV: %v\n", err)
+        os.Exit(1)
+    }
+
+    if err := generateJSONOutput(records, outputFile); err != nil {
+        fmt.Printf("Error generating JSON: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Successfully processed %d records to %s\n", len(records), outputFile)
+}
