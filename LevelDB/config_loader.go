@@ -111,4 +111,77 @@ type ConfigError struct {
 
 func (e *ConfigError) Error() string {
     return "config error: " + e.Field + " - " + e.Message
+}package config
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Config struct {
+	Server struct {
+		Host string `yaml:"host" env:"SERVER_HOST"`
+		Port int    `yaml:"port" env:"SERVER_PORT"`
+	} `yaml:"server"`
+	Database struct {
+		URL      string `yaml:"url" env:"DB_URL"`
+		PoolSize int    `yaml:"pool_size" env:"DB_POOL_SIZE"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level" env:"LOG_LEVEL"`
+		Format string `yaml:"format" env:"LOG_FORMAT"`
+	} `yaml:"logging"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Open(absPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	overrideFromEnv(&cfg)
+	return &cfg, nil
+}
+
+func overrideFromEnv(cfg *Config) {
+	overrideString(&cfg.Server.Host, "SERVER_HOST")
+	overrideInt(&cfg.Server.Port, "SERVER_PORT")
+	overrideString(&cfg.Database.URL, "DB_URL")
+	overrideInt(&cfg.Database.PoolSize, "DB_POOL_SIZE")
+	overrideString(&cfg.Logging.Level, "LOG_LEVEL")
+	overrideString(&cfg.Logging.Format, "LOG_FORMAT")
+}
+
+func overrideString(field *string, envVar string) {
+	if val := os.Getenv(envVar); val != "" {
+		*field = val
+	}
+}
+
+func overrideInt(field *int, envVar string) {
+	if val := os.Getenv(envVar); val != "" {
+		var intVal int
+		if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
+			*field = intVal
+		}
+	}
 }
