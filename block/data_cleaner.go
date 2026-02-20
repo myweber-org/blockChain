@@ -188,4 +188,160 @@ func main() {
 	uniqueStrings := RemoveDuplicates(strings)
 	fmt.Println("Original:", strings)
 	fmt.Println("Unique:", uniqueStrings)
+}package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Record struct {
+    ID      int
+    Name    string
+    Email   string
+    Active  bool
+    Score   float64
+}
+
+func cleanEmail(email string) string {
+    return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validateRecord(rec Record) error {
+    if rec.ID <= 0 {
+        return fmt.Errorf("invalid ID: %d", rec.ID)
+    }
+    if len(rec.Name) == 0 {
+        return fmt.Errorf("empty name")
+    }
+    if !strings.Contains(rec.Email, "@") {
+        return fmt.Errorf("invalid email: %s", rec.Email)
+    }
+    if rec.Score < 0 || rec.Score > 100 {
+        return fmt.Errorf("score out of range: %.2f", rec.Score)
+    }
+    return nil
+}
+
+func processCSVFile(inputPath string) ([]Record, []error) {
+    file, err := os.Open(inputPath)
+    if err != nil {
+        return nil, []error{err}
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    reader.TrimLeadingSpace = true
+    records := []Record{}
+    errors := []error{}
+    lineNum := 0
+
+    for {
+        lineNum++
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            errors = append(errors, fmt.Errorf("line %d: read error: %v", lineNum, err))
+            continue
+        }
+        if len(row) != 5 {
+            errors = append(errors, fmt.Errorf("line %d: expected 5 columns, got %d", lineNum, len(row)))
+            continue
+        }
+
+        id, err := strconv.Atoi(row[0])
+        if err != nil {
+            errors = append(errors, fmt.Errorf("line %d: invalid ID: %v", lineNum, err))
+            continue
+        }
+
+        active, err := strconv.ParseBool(row[3])
+        if err != nil {
+            errors = append(errors, fmt.Errorf("line %d: invalid active flag: %v", lineNum, err))
+            continue
+        }
+
+        score, err := strconv.ParseFloat(row[4], 64)
+        if err != nil {
+            errors = append(errors, fmt.Errorf("line %d: invalid score: %v", lineNum, err))
+            continue
+        }
+
+        record := Record{
+            ID:     id,
+            Name:   strings.TrimSpace(row[1]),
+            Email:  cleanEmail(row[2]),
+            Active: active,
+            Score:  score,
+        }
+
+        if valErr := validateRecord(record); valErr != nil {
+            errors = append(errors, fmt.Errorf("line %d: validation failed: %v", lineNum, valErr))
+            continue
+        }
+
+        records = append(records, record)
+    }
+
+    return records, errors
+}
+
+func writeCleanData(records []Record, outputPath string) error {
+    file, err := os.Create(outputPath)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    writer := csv.NewWriter(file)
+    defer writer.Flush()
+
+    header := []string{"ID", "Name", "Email", "Active", "Score"}
+    if err := writer.Write(header); err != nil {
+        return err
+    }
+
+    for _, rec := range records {
+        row := []string{
+            strconv.Itoa(rec.ID),
+            rec.Name,
+            rec.Email,
+            strconv.FormatBool(rec.Active),
+            fmt.Sprintf("%.2f", rec.Score),
+        }
+        if err := writer.Write(row); err != nil {
+            return err
+        }
+    }
+
+    return nil
+}
+
+func main() {
+    inputFile := "raw_data.csv"
+    outputFile := "cleaned_data.csv"
+
+    records, errs := processCSVFile(inputFile)
+    if len(errs) > 0 {
+        fmt.Printf("Encountered %d errors during processing:\n", len(errs))
+        for _, e := range errs {
+            fmt.Printf("  - %v\n", e)
+        }
+    }
+
+    fmt.Printf("Successfully processed %d valid records\n", len(records))
+
+    if len(records) > 0 {
+        if err := writeCleanData(records, outputFile); err != nil {
+            fmt.Printf("Error writing output file: %v\n", err)
+            return
+        }
+        fmt.Printf("Cleaned data written to %s\n", outputFile)
+    }
 }
