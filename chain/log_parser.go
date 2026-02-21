@@ -1,7 +1,10 @@
+
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -12,43 +15,74 @@ type LogEntry struct {
 	Message   string
 }
 
-var logPatterns = map[string]*regexp.Regexp{
-	"timestamp": regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`),
-	"level":     regexp.MustCompile(`(INFO|WARN|ERROR|DEBUG)`),
-}
+func parseLogLine(line string) (*LogEntry, error) {
+	pattern := `^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.+)$`
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(line)
 
-func ParseLogLine(line string) (*LogEntry, error) {
-	tsMatch := logPatterns["timestamp"].FindString(line)
-	if tsMatch == "" {
-		return nil, fmt.Errorf("no timestamp found")
+	if matches == nil {
+		return nil, fmt.Errorf("invalid log format")
 	}
-
-	levelMatch := logPatterns["level"].FindString(line)
-	if levelMatch == "" {
-		levelMatch = "UNKNOWN"
-	}
-
-	message := strings.TrimSpace(line)
-	for _, pattern := range []string{tsMatch, levelMatch} {
-		message = strings.Replace(message, pattern, "", 1)
-	}
-	message = strings.TrimSpace(message)
 
 	return &LogEntry{
-		Timestamp: tsMatch,
-		Level:     levelMatch,
-		Message:   message,
+		Timestamp: matches[1],
+		Level:     matches[2],
+		Message:   matches[3],
 	}, nil
 }
 
-func main() {
-	sampleLog := "2023-10-05 14:30:25 INFO User login successful from 192.168.1.10"
-	entry, err := ParseLogLine(sampleLog)
+func filterErrors(entries []LogEntry) []LogEntry {
+	var errorEntries []LogEntry
+	for _, entry := range entries {
+		if strings.ToUpper(entry.Level) == "ERROR" {
+			errorEntries = append(errorEntries, entry)
+		}
+	}
+	return errorEntries
+}
+
+func readLogFile(filename string) ([]LogEntry, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Printf("Parse error: %v\n", err)
-		return
+		return nil, err
+	}
+	defer file.Close()
+
+	var entries []LogEntry
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		entry, err := parseLogLine(scanner.Text())
+		if err == nil {
+			entries = append(entries, *entry)
+		}
 	}
 
-	fmt.Printf("Time: %s\nLevel: %s\nMessage: %s\n",
-		entry.Timestamp, entry.Level, entry.Message)
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: log_parser <logfile>")
+		os.Exit(1)
+	}
+
+	entries, err := readLogFile(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error reading log file: %v\n", err)
+		os.Exit(1)
+	}
+
+	errorEntries := filterErrors(entries)
+
+	fmt.Printf("Total log entries: %d\n", len(entries))
+	fmt.Printf("Error entries: %d\n\n", len(errorEntries))
+
+	for _, entry := range errorEntries {
+		fmt.Printf("[%s] %s: %s\n", entry.Timestamp, entry.Level, entry.Message)
+	}
 }
