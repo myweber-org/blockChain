@@ -315,4 +315,70 @@ func (a *Aggregator) Count() int {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return len(a.measurements)
+}package main
+
+import (
+	"log"
+	"math/rand"
+	"sync"
+	"time"
+)
+
+type Metrics struct {
+	mu          sync.RWMutex
+	latencySum  time.Duration
+	requestCount int64
+	errorCount  int64
+}
+
+func (m *Metrics) RecordRequest(latency time.Duration, isError bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.latencySum += latency
+	m.requestCount++
+	if isError {
+		m.errorCount++
+	}
+}
+
+func (m *Metrics) GetAverageLatency() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.requestCount == 0 {
+		return 0
+	}
+	return m.latencySum / time.Duration(m.requestCount)
+}
+
+func (m *Metrics) GetErrorRate() float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.requestCount == 0 {
+		return 0.0
+	}
+	return float64(m.errorCount) / float64(m.requestCount)
+}
+
+func simulateRequest(metrics *Metrics, wg *sync.WaitGroup) {
+	defer wg.Done()
+	latency := time.Duration(rand.Intn(200)+50) * time.Millisecond
+	isError := rand.Float32() < 0.05
+	time.Sleep(latency)
+	metrics.RecordRequest(latency, isError)
+}
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	metrics := &Metrics{}
+	var wg sync.WaitGroup
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go simulateRequest(metrics, &wg)
+	}
+
+	wg.Wait()
+
+	log.Printf("Average latency: %v", metrics.GetAverageLatency())
+	log.Printf("Error rate: %.2f%%", metrics.GetErrorRate()*100)
 }
