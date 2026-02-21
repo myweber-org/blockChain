@@ -149,4 +149,78 @@ func validateConfig(config *AppConfig) error {
 	}
 
 	return nil
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort int
+    DatabaseURL string
+    EnableDebug bool
+    AllowedOrigins []string
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnvOrDefault("SERVER_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
+    if err != nil {
+        return nil, err
+    }
+    cfg.ServerPort = port
+    
+    cfg.DatabaseURL = getEnvOrDefault("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    debugStr := getEnvOrDefault("ENABLE_DEBUG", "false")
+    cfg.EnableDebug = strings.ToLower(debugStr) == "true"
+    
+    originsStr := getEnvOrDefault("ALLOWED_ORIGINS", "http://localhost:3000")
+    cfg.AllowedOrigins = strings.Split(originsStr, ",")
+    
+    if err := validateConfig(cfg); err != nil {
+        return nil, err
+    }
+    
+    return cfg, nil
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+
+func validateConfig(cfg *Config) error {
+    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+        return ErrInvalidPort
+    }
+    
+    if cfg.DatabaseURL == "" {
+        return ErrMissingDatabaseURL
+    }
+    
+    return nil
+}
+
+var (
+    ErrInvalidPort = newConfigError("invalid server port")
+    ErrMissingDatabaseURL = newConfigError("database URL is required")
+)
+
+type ConfigError struct {
+    message string
+}
+
+func newConfigError(msg string) *ConfigError {
+    return &ConfigError{message: msg}
+}
+
+func (e *ConfigError) Error() string {
+    return "config error: " + e.message
 }
