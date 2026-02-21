@@ -537,3 +537,134 @@ func main() {
 		fmt.Println(result)
 	}
 }
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+type FileInfo struct {
+	Path string
+	Size int64
+	Hash string
+}
+
+func calculateFileHash(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func processFile(path string, info os.FileInfo, results chan<- FileInfo, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	if info.IsDir() {
+		return
+	}
+
+	hash, err := calculateFileHash(path)
+	if err != nil {
+		fmt.Printf("Error processing %s: %v\n", path, err)
+		return
+	}
+
+	results <- FileInfo{
+		Path: path,
+		Size: info.Size(),
+		Hash: hash,
+	}
+}
+
+func scanDirectory(root string) ([]FileInfo, error) {
+	var files []FileInfo
+	results := make(chan FileInfo, 100)
+	var wg sync.WaitGroup
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() {
+			wg.Add(1)
+			go processFile(path, info, results, &wg)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for file := range results {
+		files = append(files, file)
+	}
+
+	return files, nil
+}
+
+func findDuplicates(files []FileInfo) map[string][]string {
+	hashMap := make(map[string][]string)
+
+	for _, file := range files {
+		hashMap[file.Hash] = append(hashMap[file.Hash], file.Path)
+	}
+
+	duplicates := make(map[string][]string)
+	for hash, paths := range hashMap {
+		if len(paths) > 1 {
+			duplicates[hash] = paths
+		}
+	}
+
+	return duplicates
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_processor <directory>")
+		os.Exit(1)
+	}
+
+	directory := os.Args[1]
+	files, err := scanDirectory(directory)
+	if err != nil {
+		fmt.Printf("Error scanning directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Processed %d files\n", len(files))
+
+	duplicates := findDuplicates(files)
+	if len(duplicates) > 0 {
+		fmt.Println("\nDuplicate files found:")
+		for hash, paths := range duplicates {
+			fmt.Printf("\nHash: %s\n", hash)
+			for _, path := range paths {
+				fmt.Printf("  - %s\n", path)
+			}
+		}
+	} else {
+		fmt.Println("No duplicate files found")
+	}
+}
