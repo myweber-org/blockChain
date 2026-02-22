@@ -95,3 +95,48 @@ func validateConfig(cfg *AppConfig) error {
 
 	return nil
 }
+package config
+
+import (
+	"os"
+	"strconv"
+)
+
+type AppConfig struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+}
+
+func LoadConfig() (*AppConfig, error) {
+	port, err := strconv.Atoi(getEnv("SERVER_PORT", "8080"))
+	if err != nil {
+		return nil, err
+	}
+
+	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
+	if err != nil {
+		return nil, err
+	}
+
+	debugMode, err := strconv.ParseBool(getEnv("DEBUG_MODE", "false"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &AppConfig{
+		ServerPort: port,
+		DBHost:     getEnv("DB_HOST", "localhost"),
+		DBPort:     dbPort,
+		DebugMode:  debugMode,
+	}, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
