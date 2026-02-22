@@ -1,63 +1,66 @@
 
 package main
 
-import "fmt"
-
-func RemoveDuplicates(nums []int) []int {
-	seen := make(map[int]bool)
-	result := []int{}
-
-	for _, num := range nums {
-		if !seen[num] {
-			seen[num] = true
-			result = append(result, num)
-		}
-	}
-	return result
-}
-
-func main() {
-	input := []int{1, 2, 2, 3, 4, 4, 5, 1, 6}
-	cleaned := RemoveDuplicates(input)
-	fmt.Printf("Original: %v\n", input)
-	fmt.Printf("Cleaned: %v\n", cleaned)
-}
-package main
-
 import (
 	"fmt"
 	"strings"
 )
 
-type DataCleaner struct{}
-
-func (dc DataCleaner) RemoveDuplicates(items []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
-	for _, item := range items {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
-		}
-	}
-	return result
+type DataCleaner struct {
+	processedRecords map[string]bool
 }
 
-func (dc DataCleaner) TrimWhitespace(items []string) []string {
-	result := make([]string, len(items))
-	for i, item := range items {
-		result[i] = strings.TrimSpace(item)
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		processedRecords: make(map[string]bool),
 	}
-	return result
+}
+
+func (dc *DataCleaner) RemoveDuplicates(records []string) []string {
+	var unique []string
+	for _, record := range records {
+		normalized := strings.ToLower(strings.TrimSpace(record))
+		if !dc.processedRecords[normalized] {
+			dc.processedRecords[normalized] = true
+			unique = append(unique, record)
+		}
+	}
+	return unique
+}
+
+func (dc *DataCleaner) ValidateEmail(email string) bool {
+	if len(email) < 3 || !strings.Contains(email, "@") {
+		return false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 || len(parts[0]) == 0 || len(parts[1]) == 0 {
+		return false
+	}
+	return strings.Contains(parts[1], ".")
+}
+
+func (dc *DataCleaner) SanitizeInput(input string) string {
+	dangerous := []string{"<", ">", "'", "\"", "&"}
+	sanitized := input
+	for _, char := range dangerous {
+		sanitized = strings.ReplaceAll(sanitized, char, "")
+	}
+	return strings.TrimSpace(sanitized)
 }
 
 func main() {
-	cleaner := DataCleaner{}
-	data := []string{" apple ", "banana", " apple ", "  cherry  ", "banana"}
-
-	fmt.Println("Original:", data)
-	trimmed := cleaner.TrimWhitespace(data)
-	fmt.Println("Trimmed:", trimmed)
-	unique := cleaner.RemoveDuplicates(trimmed)
-	fmt.Println("Unique:", unique)
+	cleaner := NewDataCleaner()
+	
+	records := []string{"user@example.com", "USER@EXAMPLE.COM", "test@domain", "  user@example.com  "}
+	unique := cleaner.RemoveDuplicates(records)
+	fmt.Println("Unique records:", unique)
+	
+	emails := []string{"valid@email.com", "invalid", "user@com", "another@valid.org"}
+	for _, email := range emails {
+		fmt.Printf("%s validation: %v\n", email, cleaner.ValidateEmail(email))
+	}
+	
+	input := "<script>alert('test')</script>   "
+	sanitized := cleaner.SanitizeInput(input)
+	fmt.Printf("Sanitized input: '%s'\n", sanitized)
 }
