@@ -198,4 +198,61 @@ func main() {
 	for i, record := range activeRecords {
 		fmt.Printf("%d. %s <%s>\n", i+1, record.Name, record.Email)
 	}
+}package main
+
+import (
+	"errors"
+	"strings"
+	"unicode"
+)
+
+func ValidateUsername(username string) error {
+	if len(username) < 3 || len(username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
+	}
+
+	for _, r := range username {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+			return errors.New("username can only contain letters, digits, underscores, and hyphens")
+		}
+	}
+	return nil
+}
+
+func NormalizeEmail(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	email = strings.ToLower(email)
+
+	if !strings.Contains(email, "@") {
+		return "", errors.New("invalid email format")
+	}
+
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return "", errors.New("invalid email format")
+	}
+
+	localPart := parts[0]
+	domain := parts[1]
+
+	localPart = strings.ReplaceAll(localPart, ".", "")
+	if strings.Contains(localPart, "+") {
+		localPart = strings.Split(localPart, "+")[0]
+	}
+
+	return localPart + "@" + domain, nil
+}
+
+func TransformUserData(rawUsername, rawEmail string) (string, string, error) {
+	if err := ValidateUsername(rawUsername); err != nil {
+		return "", "", err
+	}
+
+	normalizedEmail, err := NormalizeEmail(rawEmail)
+	if err != nil {
+		return "", "", err
+	}
+
+	processedUsername := strings.ToLower(rawUsername)
+	return processedUsername, normalizedEmail, nil
 }
