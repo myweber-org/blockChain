@@ -667,4 +667,170 @@ func main() {
 	} else {
 		fmt.Println("No duplicate files found")
 	}
+}package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileProcessor struct {
+	Workers    int
+	BatchSize  int
+	ResultChan chan ProcessResult
+	ErrorChan  chan error
+}
+
+type ProcessResult struct {
+	Filename string
+	Lines    int
+	Duration time.Duration
+}
+
+func NewFileProcessor(workers, batchSize int) *FileProcessor {
+	return &FileProcessor{
+		Workers:    workers,
+		BatchSize:  batchSize,
+		ResultChan: make(chan ProcessResult, workers*2),
+		ErrorChan:  make(chan error, workers*2),
+	}
+}
+
+func (fp *FileProcessor) ProcessFiles(paths []string) ([]ProcessResult, []error) {
+	var wg sync.WaitGroup
+	results := make([]ProcessResult, 0)
+	errors := make([]error, 0)
+
+	batches := fp.createBatches(paths)
+
+	for _, batch := range batches {
+		wg.Add(1)
+		go func(files []string) {
+			defer wg.Done()
+			fp.processBatch(files)
+		}(batch)
+	}
+
+	go func() {
+		wg.Wait()
+		close(fp.ResultChan)
+		close(fp.ErrorChan)
+	}()
+
+	for result := range fp.ResultChan {
+		results = append(results, result)
+	}
+
+	for err := range fp.ErrorChan {
+		errors = append(errors, err)
+	}
+
+	return results, errors
+}
+
+func (fp *FileProcessor) createBatches(paths []string) [][]string {
+	batches := make([][]string, 0)
+	for i := 0; i < len(paths); i += fp.BatchSize {
+		end := i + fp.BatchSize
+		if end > len(paths) {
+			end = len(paths)
+		}
+		batches = append(batches, paths[i:end])
+	}
+	return batches
+}
+
+func (fp *FileProcessor) processBatch(files []string) {
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, fp.Workers)
+
+	for _, file := range files {
+		wg.Add(1)
+		semaphore <- struct{}{}
+
+		go func(filename string) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			result, err := fp.processSingleFile(filename)
+			if err != nil {
+				fp.ErrorChan <- fmt.Errorf("file %s: %w", filename, err)
+				return
+			}
+			fp.ResultChan <- result
+		}(file)
+	}
+
+	wg.Wait()
+}
+
+func (fp *FileProcessor) processSingleFile(filename string) (ProcessResult, error) {
+	start := time.Now()
+
+	if !fileExists(filename) {
+		return ProcessResult{}, errors.New("file not found")
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		return ProcessResult{}, err
+	}
+	defer file.Close()
+
+	lineCount, err := countLines(file)
+	if err != nil {
+		return ProcessResult{}, err
+	}
+
+	duration := time.Since(start)
+	return ProcessResult{
+		Filename: filepath.Base(filename),
+		Lines:    lineCount,
+		Duration: duration,
+	}, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return !os.IsNotExist(err)
+}
+
+func countLines(r io.Reader) (int, error) {
+	scanner := bufio.NewScanner(r)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+	return lineCount, scanner.Err()
+}
+
+func main() {
+	processor := NewFileProcessor(4, 10)
+
+	files := []string{
+		"test1.txt",
+		"test2.txt",
+		"test3.txt",
+	}
+
+	results, errs := processor.ProcessFiles(files)
+
+	fmt.Println("Processing Results:")
+	for _, result := range results {
+		fmt.Printf("File: %s, Lines: %d, Time: %v\n",
+			result.Filename, result.Lines, result.Duration)
+	}
+
+	if len(errs) > 0 {
+		fmt.Println("\nErrors:")
+		for _, err := range errs {
+			fmt.Printf("Error: %v\n", err)
+		}
+	}
 }
