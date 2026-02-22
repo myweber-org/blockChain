@@ -1,88 +1,79 @@
-
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"os"
-	"regexp"
-	"strings"
+    "encoding/json"
+    "fmt"
+    "regexp"
+    "strings"
 )
 
 type LogEntry struct {
-	Timestamp string
-	Level     string
-	Message   string
+    Timestamp string `json:"timestamp"`
+    Level     string `json:"level"`
+    Message   string `json:"message"`
+    Source    string `json:"source"`
 }
 
-func parseLogLine(line string) (*LogEntry, error) {
-	pattern := `^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.+)$`
-	re := regexp.MustCompile(pattern)
-	matches := re.FindStringSubmatch(line)
-
-	if matches == nil {
-		return nil, fmt.Errorf("invalid log format")
-	}
-
-	return &LogEntry{
-		Timestamp: matches[1],
-		Level:     matches[2],
-		Message:   matches[3],
-	}, nil
+type LogParser struct {
+    pattern *regexp.Regexp
 }
 
-func filterErrors(entries []LogEntry) []LogEntry {
-	var errorEntries []LogEntry
-	for _, entry := range entries {
-		if strings.ToUpper(entry.Level) == "ERROR" {
-			errorEntries = append(errorEntries, entry)
-		}
-	}
-	return errorEntries
+func NewLogParser() *LogParser {
+    pattern := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.+) - (.+)$`)
+    return &LogParser{pattern: pattern}
 }
 
-func readLogFile(filename string) ([]LogEntry, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+func (p *LogParser) ParseLine(line string) (*LogEntry, error) {
+    matches := p.pattern.FindStringSubmatch(strings.TrimSpace(line))
+    if matches == nil {
+        return nil, fmt.Errorf("invalid log format")
+    }
+    
+    return &LogEntry{
+        Timestamp: matches[1],
+        Level:     matches[2],
+        Source:    matches[3],
+        Message:   matches[4],
+    }, nil
+}
 
-	var entries []LogEntry
-	scanner := bufio.NewScanner(file)
+func (p *LogParser) ParseLines(lines []string) []LogEntry {
+    var entries []LogEntry
+    for _, line := range lines {
+        entry, err := p.ParseLine(line)
+        if err != nil {
+            continue
+        }
+        entries = append(entries, *entry)
+    }
+    return entries
+}
 
-	for scanner.Scan() {
-		entry, err := parseLogLine(scanner.Text())
-		if err == nil {
-			entries = append(entries, *entry)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return entries, nil
+func (p *LogParser) ToJSON(entries []LogEntry) (string, error) {
+    data, err := json.MarshalIndent(entries, "", "  ")
+    if err != nil {
+        return "", err
+    }
+    return string(data), nil
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: log_parser <logfile>")
-		os.Exit(1)
-	}
-
-	entries, err := readLogFile(os.Args[1])
-	if err != nil {
-		fmt.Printf("Error reading log file: %v\n", err)
-		os.Exit(1)
-	}
-
-	errorEntries := filterErrors(entries)
-
-	fmt.Printf("Total log entries: %d\n", len(entries))
-	fmt.Printf("Error entries: %d\n\n", len(errorEntries))
-
-	for _, entry := range errorEntries {
-		fmt.Printf("[%s] %s: %s\n", entry.Timestamp, entry.Level, entry.Message)
-	}
+    parser := NewLogParser()
+    
+    sampleLogs := []string{
+        "2024-01-15 10:30:45 [INFO] auth-service - User login successful",
+        "2024-01-15 10:31:22 [ERROR] payment-service - Transaction timeout",
+        "2024-01-15 10:32:01 [WARN] api-gateway - High latency detected",
+    }
+    
+    entries := parser.ParseLines(sampleLogs)
+    
+    jsonOutput, err := parser.ToJSON(entries)
+    if err != nil {
+        fmt.Printf("Error converting to JSON: %v\n", err)
+        return
+    }
+    
+    fmt.Println("Parsed log entries:")
+    fmt.Println(jsonOutput)
 }
