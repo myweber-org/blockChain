@@ -1,99 +1,132 @@
 package config
 
 import (
-	"encoding/json"
+	"errors"
 	"os"
-	"strings"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
 type DatabaseConfig struct {
-	Host     string `json:"host" env:"DB_HOST"`
-	Port     int    `json:"port" env:"DB_PORT"`
-	Username string `json:"username" env:"DB_USER"`
-	Password string `json:"password" env:"DB_PASS"`
-	SSLMode  bool   `json:"ssl_mode" env:"DB_SSL"`
+	Host     string `yaml:"host" env:"DB_HOST"`
+	Port     int    `yaml:"port" env:"DB_PORT"`
+	Username string `yaml:"username" env:"DB_USER"`
+	Password string `yaml:"password" env:"DB_PASS"`
+	Database string `yaml:"database" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+	Port         int    `yaml:"port" env:"SERVER_PORT"`
+	ReadTimeout  int    `yaml:"read_timeout" env:"READ_TIMEOUT"`
+	WriteTimeout int    `yaml:"write_timeout" env:"WRITE_TIMEOUT"`
+	DebugMode    bool   `yaml:"debug_mode" env:"DEBUG_MODE"`
+	LogLevel     string `yaml:"log_level" env:"LOG_LEVEL"`
 }
 
 type AppConfig struct {
-	Debug    bool           `json:"debug" env:"APP_DEBUG"`
-	LogLevel string         `json:"log_level" env:"LOG_LEVEL"`
-	Database DatabaseConfig `json:"database"`
+	Database DatabaseConfig `yaml:"database"`
+	Server   ServerConfig   `yaml:"server"`
+	Features struct {
+		Caching    bool `yaml:"caching" env:"ENABLE_CACHE"`
+		Monitoring bool `yaml:"monitoring" env:"ENABLE_MONITORING"`
+	} `yaml:"features"`
 }
 
-func LoadConfig(path string) (*AppConfig, error) {
-	config := &AppConfig{}
-	
-	file, err := os.Open(path)
+func LoadConfig(configPath string) (*AppConfig, error) {
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
+
+	absPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(config); err != nil {
+	fileData, err := os.ReadFile(absPath)
+	if err != nil {
 		return nil, err
 	}
 
-	overrideFromEnv(config)
-	
-	if err := validateConfig(config); err != nil {
+	var config AppConfig
+	if err := yaml.Unmarshal(fileData, &config); err != nil {
 		return nil, err
 	}
-	
-	return config, nil
+
+	if err := overrideFromEnv(&config); err != nil {
+		return nil, err
+	}
+
+	if err := validateConfig(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
-func overrideFromEnv(cfg *AppConfig) {
-	overrideStruct(cfg)
-}
-
-func overrideStruct(s interface{}) {
-	v := reflect.ValueOf(s).Elem()
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
-		if field.Kind() == reflect.Struct {
-			overrideStruct(field.Addr().Interface())
-			continue
-		}
-
-		envTag := fieldType.Tag.Get("env")
-		if envTag == "" {
-			continue
-		}
-
-		if envValue := os.Getenv(envTag); envValue != "" {
-			setFieldValue(field, envValue)
+func overrideFromEnv(config *AppConfig) error {
+	overrideString := func(field *string, envVar string) {
+		if val := os.Getenv(envVar); val != "" {
+			*field = val
 		}
 	}
-}
 
-func setFieldValue(field reflect.Value, value string) {
-	switch field.Kind() {
-	case reflect.String:
-		field.SetString(value)
-	case reflect.Int:
-		if intVal, err := strconv.Atoi(value); err == nil {
-			field.SetInt(int64(intVal))
+	overrideInt := func(field *int, envVar string) {
+		if val := os.Getenv(envVar); val != "" {
+			var intVal int
+			if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
+				*field = intVal
+			}
 		}
-	case reflect.Bool:
-		boolVal := strings.ToLower(value) == "true" || value == "1"
-		field.SetBool(boolVal)
 	}
+
+	overrideBool := func(field *bool, envVar string) {
+		if val := os.Getenv(envVar); val != "" {
+			*field = val == "true" || val == "1" || val == "yes"
+		}
+	}
+
+	overrideString(&config.Database.Host, "DB_HOST")
+	overrideInt(&config.Database.Port, "DB_PORT")
+	overrideString(&config.Database.Username, "DB_USER")
+	overrideString(&config.Database.Password, "DB_PASS")
+	overrideString(&config.Database.Database, "DB_NAME")
+
+	overrideInt(&config.Server.Port, "SERVER_PORT")
+	overrideInt(&config.Server.ReadTimeout, "READ_TIMEOUT")
+	overrideInt(&config.Server.WriteTimeout, "WRITE_TIMEOUT")
+	overrideBool(&config.Server.DebugMode, "DEBUG_MODE")
+	overrideString(&config.Server.LogLevel, "LOG_LEVEL")
+
+	overrideBool(&config.Features.Caching, "ENABLE_CACHE")
+	overrideBool(&config.Features.Monitoring, "ENABLE_MONITORING")
+
+	return nil
 }
 
-func validateConfig(cfg *AppConfig) error {
-	if cfg.Database.Host == "" {
+func validateConfig(config *AppConfig) error {
+	if config.Database.Host == "" {
 		return errors.New("database host is required")
 	}
-	if cfg.Database.Port <= 0 || cfg.Database.Port > 65535 {
+	if config.Database.Port <= 0 || config.Database.Port > 65535 {
 		return errors.New("invalid database port")
 	}
-	if cfg.LogLevel == "" {
-		cfg.LogLevel = "info"
+	if config.Server.Port <= 0 || config.Server.Port > 65535 {
+		return errors.New("invalid server port")
 	}
+	if config.Server.ReadTimeout < 0 {
+		return errors.New("read timeout cannot be negative")
+	}
+	if config.Server.WriteTimeout < 0 {
+		return errors.New("write timeout cannot be negative")
+	}
+
+	validLogLevels := map[string]bool{
+		"debug": true, "info": true, "warn": true, "error": true, "fatal": true,
+	}
+	if !validLogLevels[config.Server.LogLevel] {
+		return errors.New("invalid log level")
+	}
+
 	return nil
 }
