@@ -2,8 +2,6 @@ package main
 
 import (
     "net/http"
-    "time"
-
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -16,11 +14,10 @@ var (
         },
         []string{"method", "endpoint", "status"},
     )
-
     httpRequestDuration = prometheus.NewHistogramVec(
         prometheus.HistogramOpts{
             Name:    "http_request_duration_seconds",
-            Help:    "Duration of HTTP requests in seconds",
+            Help:    "Duration of HTTP requests",
             Buckets: prometheus.DefBuckets,
         },
         []string{"method", "endpoint"},
@@ -32,18 +29,15 @@ func init() {
     prometheus.MustRegister(httpRequestDuration)
 }
 
-func metricsMiddleware(next http.Handler) http.Handler {
+func instrumentedHandler(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        start := time.Now()
-        rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-        
-        defer func() {
-            duration := time.Since(start).Seconds()
-            httpRequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(duration)
-            httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, http.StatusText(rw.statusCode)).Inc()
-        }()
+        timer := prometheus.NewTimer(httpRequestDuration.WithLabelValues(r.Method, r.URL.Path))
+        defer timer.ObserveDuration()
 
+        rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
         next.ServeHTTP(rw, r)
+
+        httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, http.StatusText(rw.statusCode)).Inc()
     })
 }
 
@@ -57,15 +51,13 @@ func (rw *responseWriter) WriteHeader(code int) {
     rw.ResponseWriter.WriteHeader(code)
 }
 
-func mainHandler(w http.ResponseWriter, r *http.Request) {
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Hello, metrics!"))
-}
-
 func main() {
     mux := http.NewServeMux()
+    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        w.Write([]byte("Hello, World!"))
+    })
     mux.Handle("/metrics", promhttp.Handler())
-    mux.Handle("/", metricsMiddleware(http.HandlerFunc(mainHandler)))
 
-    http.ListenAndServe(":8080", mux)
+    instrumentedMux := instrumentedHandler(mux)
+    http.ListenAndServe(":8080", instrumentedMux)
 }
