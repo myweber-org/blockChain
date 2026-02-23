@@ -4,79 +4,75 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"sync"
 	"time"
 )
 
 type Session struct {
-	ID        string
-	UserID    int
+	UserID    string
+	Token     string
 	ExpiresAt time.Time
-	Data      map[string]interface{}
 }
 
 type Manager struct {
-	sessions map[string]*Session
-	duration time.Duration
+	sessions map[string]Session
+	mu       sync.RWMutex
+	ttl      time.Duration
 }
 
-func NewManager(sessionDuration time.Duration) *Manager {
+func NewManager(ttl time.Duration) *Manager {
 	return &Manager{
-		sessions: make(map[string]*Session),
-		duration: sessionDuration,
+		sessions: make(map[string]Session),
+		ttl:      ttl,
 	}
 }
 
-func (m *Manager) CreateSession(userID int, initialData map[string]interface{}) (string, error) {
+func (m *Manager) Create(userID string) (string, error) {
 	token, err := generateToken()
 	if err != nil {
 		return "", err
 	}
 
-	session := &Session{
-		ID:        token,
+	session := Session{
 		UserID:    userID,
-		ExpiresAt: time.Now().Add(m.duration),
-		Data:      initialData,
+		Token:     token,
+		ExpiresAt: time.Now().Add(m.ttl),
 	}
 
+	m.mu.Lock()
 	m.sessions[token] = session
+	m.mu.Unlock()
+
 	return token, nil
 }
 
-func (m *Manager) ValidateSession(token string) (*Session, error) {
+func (m *Manager) Validate(token string) (string, error) {
+	m.mu.RLock()
 	session, exists := m.sessions[token]
+	m.mu.RUnlock()
+
 	if !exists {
-		return nil, errors.New("session not found")
+		return "", errors.New("session not found")
 	}
 
 	if time.Now().After(session.ExpiresAt) {
-		delete(m.sessions, token)
-		return nil, errors.New("session expired")
+		m.Delete(token)
+		return "", errors.New("session expired")
 	}
 
-	session.ExpiresAt = time.Now().Add(m.duration)
-	return session, nil
+	return session.UserID, nil
 }
 
-func (m *Manager) DeleteSession(token string) {
+func (m *Manager) Delete(token string) {
+	m.mu.Lock()
 	delete(m.sessions, token)
+	m.mu.Unlock()
 }
 
-func (m *Manager) UpdateSessionData(token string, key string, value interface{}) error {
-	session, err := m.ValidateSession(token)
-	if err != nil {
-		return err
-	}
+func (m *Manager) Cleanup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if session.Data == nil {
-		session.Data = make(map[string]interface{})
-	}
-
-	session.Data[key] = value
-	return nil
-}
-
-func (m *Manager) CleanupExpiredSessions() {
 	now := time.Now()
 	for token, session := range m.sessions {
 		if now.After(session.ExpiresAt) {
@@ -86,9 +82,10 @@ func (m *Manager) CleanupExpiredSessions() {
 }
 
 func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+	return base64.URLEncoding.EncodeToString(b), nil
 }
