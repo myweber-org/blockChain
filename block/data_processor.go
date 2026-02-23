@@ -1,58 +1,102 @@
 package main
 
 import (
-	"errors"
-	"regexp"
-	"strings"
-	"time"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
 )
 
-type UserProfile struct {
-	ID        int
-	Email     string
-	Username  string
-	BirthDate string
-	CreatedAt time.Time
+type Record struct {
+	ID    int
+	Name  string
+	Value float64
 }
 
-var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
-func ValidateEmail(email string) error {
-	if !emailRegex.MatchString(email) {
-		return errors.New("invalid email format")
-	}
-	return nil
-}
-
-func NormalizeUsername(username string) string {
-	return strings.TrimSpace(strings.ToLower(username))
-}
-
-func CalculateAge(birthDate string) (int, error) {
-	parsedDate, err := time.Parse("2006-01-02", birthDate)
+func ProcessCSV(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		return 0, errors.New("invalid date format, expected YYYY-MM-DD")
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	var records []Record
+
+	// Skip header
+	if _, err := reader.Read(); err != nil {
+		return nil, err
 	}
 
-	age := time.Since(parsedDate).Hours() / 24 / 365.25
-	return int(age), nil
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if len(row) < 3 {
+			continue
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			continue
+		}
+
+		name := row[1]
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			continue
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return records, nil
 }
 
-func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
-	if err := ValidateEmail(profile.Email); err != nil {
-		return profile, err
+func ValidateRecords(records []Record) []Record {
+	var valid []Record
+	for _, r := range records {
+		if r.ID > 0 && r.Name != "" && r.Value >= 0 {
+			valid = append(valid, r)
+		}
+	}
+	return valid
+}
+
+func CalculateTotal(records []Record) float64 {
+	var total float64
+	for _, r := range records {
+		total += r.Value
+	}
+	return total
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: data_processor <csv_file>")
+		return
 	}
 
-	profile.Username = NormalizeUsername(profile.Username)
-
-	age, err := CalculateAge(profile.BirthDate)
+	records, err := ProcessCSV(os.Args[1])
 	if err != nil {
-		return profile, err
+		fmt.Printf("Error processing file: %v\n", err)
+		return
 	}
 
-	if age < 13 {
-		return profile, errors.New("user must be at least 13 years old")
-	}
+	validRecords := ValidateRecords(records)
+	total := CalculateTotal(validRecords)
 
-	return profile, nil
+	fmt.Printf("Processed %d records, %d valid\n", len(records), len(validRecords))
+	fmt.Printf("Total value: %.2f\n", total)
 }
