@@ -100,3 +100,42 @@ func main() {
 	fmt.Printf("Processed %d records, %d valid\n", len(records), len(validRecords))
 	fmt.Printf("Total value: %.2f\n", total)
 }
+package main
+
+import (
+	"fmt"
+	"math"
+)
+
+func processData(values []float64) (float64, float64, error) {
+	if len(values) == 0 {
+		return 0, 0, fmt.Errorf("empty data set")
+	}
+
+	var sum float64
+	for _, v := range values {
+		sum += v
+	}
+	mean := sum / float64(len(values))
+
+	var varianceSum float64
+	for _, v := range values {
+		diff := v - mean
+		varianceSum += diff * diff
+	}
+	variance := varianceSum / float64(len(values))
+	stdDev := math.Sqrt(variance)
+
+	return mean, stdDev, nil
+}
+
+func main() {
+	data := []float64{2.5, 3.7, 1.8, 4.2, 3.1}
+	avg, dev, err := processData(data)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	fmt.Printf("Average: %.2f\n", avg)
+	fmt.Printf("Standard Deviation: %.2f\n", dev)
+}
