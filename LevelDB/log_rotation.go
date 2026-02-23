@@ -292,3 +292,114 @@ func main() {
 
 	fmt.Println("Log rotation completed. Check app.log.*.gz files")
 }
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "strconv"
+    "time"
+)
+
+const (
+    maxFileSize = 1024 * 1024 // 1MB
+    maxBackups  = 5
+)
+
+type RotatingLogger struct {
+    filename   string
+    current    *os.File
+    size       int64
+}
+
+func NewRotatingLogger(filename string) (*RotatingLogger, error) {
+    file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &RotatingLogger{
+        filename: filename,
+        current:  file,
+        size:     info.Size(),
+    }, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+    if rl.size+int64(len(p)) > maxFileSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := rl.current.Write(p)
+    if err == nil {
+        rl.size += int64(n)
+    }
+    return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+    rl.current.Close()
+
+    // Move existing backups
+    for i := maxBackups - 1; i >= 0; i-- {
+        oldName := rl.backupName(i)
+        newName := rl.backupName(i + 1)
+
+        if _, err := os.Stat(oldName); err == nil {
+            os.Rename(oldName, newName)
+        }
+    }
+
+    // Rename current file to backup.0
+    os.Rename(rl.filename, rl.backupName(0))
+
+    // Create new log file
+    file, err := os.OpenFile(rl.filename, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    rl.current = file
+    rl.size = 0
+
+    return nil
+}
+
+func (rl *RotatingLogger) backupName(index int) string {
+    if index == 0 {
+        return rl.filename + ".0"
+    }
+    return rl.filename + "." + strconv.Itoa(index)
+}
+
+func (rl *RotatingLogger) Close() error {
+    return rl.current.Close()
+}
+
+func main() {
+    logger, err := NewRotatingLogger("app.log")
+    if err != nil {
+        fmt.Printf("Failed to create logger: %v\n", err)
+        return
+    }
+    defer logger.Close()
+
+    for i := 0; i < 1000; i++ {
+        logEntry := fmt.Sprintf("[%s] Log entry %d: This is a test log message\n",
+            time.Now().Format(time.RFC3339), i)
+        logger.Write([]byte(logEntry))
+        time.Sleep(10 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed")
+}
