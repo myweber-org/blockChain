@@ -151,4 +151,54 @@ func overrideInt(field *int, envVar string) {
 			*field = intVal
 		}
 	}
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type AppConfig struct {
+    ServerPort   int
+    DatabaseURL  string
+    CacheEnabled bool
+    LogLevel     string
+}
+
+func LoadConfig() (*AppConfig, error) {
+    cfg := &AppConfig{
+        ServerPort:   8080,
+        DatabaseURL:  "localhost:5432",
+        CacheEnabled: true,
+        LogLevel:     "info",
+    }
+
+    if portStr := os.Getenv("APP_PORT"); portStr != "" {
+        if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+            cfg.ServerPort = port
+        }
+    }
+
+    if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+        cfg.DatabaseURL = dbURL
+    }
+
+    if cacheFlag := os.Getenv("ENABLE_CACHE"); cacheFlag != "" {
+        cfg.CacheEnabled = strings.ToLower(cacheFlag) == "true"
+    }
+
+    if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
+        validLevels := map[string]bool{
+            "debug": true,
+            "info":  true,
+            "warn":  true,
+            "error": true,
+        }
+        if validLevels[strings.ToLower(logLevel)] {
+            cfg.LogLevel = strings.ToLower(logLevel)
+        }
+    }
+
+    return cfg, nil
 }
