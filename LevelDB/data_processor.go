@@ -293,3 +293,56 @@ func main() {
 	fmt.Printf("Average value: %.2f\n", avg)
 	fmt.Printf("Maximum value: %.2f\n", max)
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+func NormalizeUsername(input string) (string, error) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", fmt.Errorf("username cannot be empty")
+	}
+	if len(trimmed) < 3 {
+		return "", fmt.Errorf("username must be at least 3 characters")
+	}
+	if len(trimmed) > 50 {
+		return "", fmt.Errorf("username must be less than 50 characters")
+	}
+	for _, r := range trimmed {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+			return "", fmt.Errorf("username contains invalid character: %c", r)
+		}
+	}
+	return strings.ToLower(trimmed), nil
+}
+
+func ValidateEmail(email string) bool {
+	if !strings.Contains(email, "@") {
+		return false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	if parts[0] == "" || parts[1] == "" {
+		return false
+	}
+	if !strings.Contains(parts[1], ".") {
+		return false
+	}
+	return true
+}
+
+func SanitizeInput(input string) string {
+	replacer := strings.NewReplacer(
+		"<", "&lt;",
+		">", "&gt;",
+		"\"", "&quot;",
+		"'", "&#39;",
+	)
+	return replacer.Replace(input)
+}
