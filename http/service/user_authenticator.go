@@ -1,15 +1,15 @@
-package middleware
+package auth
 
 import (
     "net/http"
     "strings"
-    "github.com/dgrijalva/jwt-go"
+    "github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {
     Username string `json:"username"`
     Role     string `json:"role"`
-    jwt.StandardClaims
+    jwt.RegisteredClaims
 }
 
 func Authenticate(next http.Handler) http.Handler {
@@ -26,10 +26,9 @@ func Authenticate(next http.Handler) http.Handler {
             return
         }
 
-        tokenString := parts[1]
+        tokenStr := parts[1]
         claims := &Claims{}
-
-        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+        token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
             return []byte("your-secret-key"), nil
         })
 
