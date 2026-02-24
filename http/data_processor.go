@@ -671,3 +671,47 @@ func main() {
 	fmt.Printf("Parsed %d records, %d valid\n", len(records), len(validRecords))
 	fmt.Printf("Total value: %.2f\n", total)
 }
+package main
+
+import (
+	"errors"
+	"strings"
+	"time"
+)
+
+type DataRecord struct {
+	ID        string
+	Value     string
+	Timestamp time.Time
+	Processed bool
+}
+
+func ValidateRecord(record DataRecord) error {
+	if record.ID == "" {
+		return errors.New("record ID cannot be empty")
+	}
+	if len(record.Value) > 1000 {
+		return errors.New("record value exceeds maximum length")
+	}
+	if record.Timestamp.IsZero() {
+		return errors.New("record timestamp must be set")
+	}
+	return nil
+}
+
+func TransformRecord(record DataRecord) DataRecord {
+	record.Value = strings.ToUpper(strings.TrimSpace(record.Value))
+	record.Processed = true
+	return record
+}
+
+func ProcessRecords(records []DataRecord) ([]DataRecord, error) {
+	var processed []DataRecord
+	for _, record := range records {
+		if err := ValidateRecord(record); err != nil {
+			return nil, err
+		}
+		processed = append(processed, TransformRecord(record))
+	}
+	return processed, nil
+}
