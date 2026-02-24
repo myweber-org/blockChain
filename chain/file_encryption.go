@@ -1,130 +1,136 @@
+
 package main
-
-import (
-    "crypto/aes"
-    "crypto/cipher"
-    "crypto/rand"
-    "encoding/base64"
-    "errors"
-    "io"
-)
-
-func encryptData(key []byte, plaintext string) (string, error) {
-    block, err := aes.NewCipher(key)
-    if err != nil {
-        return "", err
-    }
-
-    ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-    iv := ciphertext[:aes.BlockSize]
-    if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-        return "", err
-    }
-
-    stream := cipher.NewCFBEncrypter(block, iv)
-    stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(plaintext))
-
-    return base64.StdEncoding.EncodeToString(ciphertext), nil
-}
-
-func decryptData(key []byte, encrypted string) (string, error) {
-    ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
-    if err != nil {
-        return "", err
-    }
-
-    block, err := aes.NewCipher(key)
-    if err != nil {
-        return "", err
-    }
-
-    if len(ciphertext) < aes.BlockSize {
-        return "", errors.New("ciphertext too short")
-    }
-
-    iv := ciphertext[:aes.BlockSize]
-    ciphertext = ciphertext[aes.BlockSize:]
-
-    stream := cipher.NewCFBDecrypter(block, iv)
-    stream.XORKeyStream(ciphertext, ciphertext)
-
-    return string(ciphertext), nil
-}
-
-func generateKey() ([]byte, error) {
-    key := make([]byte, 32)
-    if _, err := io.ReadFull(rand.Reader, key); err != nil {
-        return nil, err
-    }
-    return key, nil
-}package main
 
 import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 )
 
-func encrypt(plaintext []byte, key []byte) (string, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
+const saltSize = 16
 
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", err
-	}
-
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+func deriveKey(passphrase string, salt []byte) []byte {
+	hash := sha256.New()
+	hash.Write([]byte(passphrase))
+	hash.Write(salt)
+	return hash.Sum(nil)
 }
 
-func decrypt(ciphertext string, key []byte) (string, error) {
-	decoded, err := base64.StdEncoding.DecodeString(ciphertext)
+func encryptFile(inputPath, outputPath, passphrase string) error {
+	salt := make([]byte, saltSize)
+	if _, err := rand.Read(salt); err != nil {
+		return fmt.Errorf("salt generation failed: %w", err)
+	}
+
+	key := deriveKey(passphrase, salt)
+
+	plaintext, err := os.ReadFile(inputPath)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("read file failed: %w", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("cipher creation failed: %w", err)
 	}
 
-	if len(decoded) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("GCM mode failed: %w", err)
 	}
 
-	iv := decoded[:aes.BlockSize]
-	decoded = decoded[aes.BlockSize:]
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("nonce generation failed: %w", err)
+	}
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(decoded, decoded)
+	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
 
-	return string(decoded), nil
+	outputData := append(salt, nonce...)
+	outputData = append(outputData, ciphertext...)
+
+	if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
+		return fmt.Errorf("write file failed: %w", err)
+	}
+
+	return nil
+}
+
+func decryptFile(inputPath, outputPath, passphrase string) error {
+	ciphertext, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("read file failed: %w", err)
+	}
+
+	if len(ciphertext) < saltSize {
+		return fmt.Errorf("file too short")
+	}
+
+	salt := ciphertext[:saltSize]
+	key := deriveKey(passphrase, salt)
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return fmt.Errorf("cipher creation failed: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("GCM mode failed: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < saltSize+nonceSize {
+		return fmt.Errorf("file too short for nonce")
+	}
+
+	nonce := ciphertext[saltSize : saltSize+nonceSize]
+	actualCiphertext := ciphertext[saltSize+nonceSize:]
+
+	plaintext, err := gcm.Open(nil, nonce, actualCiphertext, nil)
+	if err != nil {
+		return fmt.Errorf("decryption failed: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
+		return fmt.Errorf("write file failed: %w", err)
+	}
+
+	return nil
 }
 
 func main() {
-	key := []byte("examplekey123456")
-	plaintext := "Sensitive data requiring protection"
-
-	encrypted, err := encrypt([]byte(plaintext), key)
-	if err != nil {
-		fmt.Println("Encryption error:", err)
-		return
+	if len(os.Args) < 5 {
+		fmt.Printf("Usage: %s <encrypt|decrypt> <input> <output> <passphrase>\n", filepath.Base(os.Args[0]))
+		os.Exit(1)
 	}
-	fmt.Println("Encrypted:", encrypted)
 
-	decrypted, err := decrypt(encrypted, key)
-	if err != nil {
-		fmt.Println("Decryption error:", err)
-		return
+	operation := os.Args[1]
+	inputPath := os.Args[2]
+	outputPath := os.Args[3]
+	passphrase := os.Args[4]
+
+	var err error
+	switch operation {
+	case "encrypt":
+		err = encryptFile(inputPath, outputPath, passphrase)
+	case "decrypt":
+		err = decryptFile(inputPath, outputPath, passphrase)
+	default:
+		fmt.Printf("Invalid operation: %s\n", operation)
+		os.Exit(1)
 	}
-	fmt.Println("Decrypted:", decrypted)
+
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Operation completed successfully\n")
 }
