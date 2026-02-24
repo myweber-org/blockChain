@@ -185,4 +185,115 @@ func (a *Aggregator) TimeSinceReset() time.Duration {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return time.Since(a.lastResetTime)
+}package metrics
+
+import (
+	"sync"
+	"time"
+)
+
+type Aggregator struct {
+	mu          sync.RWMutex
+	windowSize  time.Duration
+	metrics     []float64
+	timestamps  []time.Time
+	maxSamples  int
+}
+
+func NewAggregator(windowSize time.Duration, maxSamples int) *Aggregator {
+	return &Aggregator{
+		windowSize: windowSize,
+		maxSamples: maxSamples,
+		metrics:    make([]float64, 0, maxSamples),
+		timestamps: make([]time.Time, 0, maxSamples),
+	}
+}
+
+func (a *Aggregator) Add(value float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	now := time.Now()
+	a.cleanup(now)
+
+	if len(a.metrics) < a.maxSamples {
+		a.metrics = append(a.metrics, value)
+		a.timestamps = append(a.timestamps, now)
+	}
+}
+
+func (a *Aggregator) cleanup(currentTime time.Time) {
+	cutoff := currentTime.Add(-a.windowSize)
+	validStart := 0
+
+	for i, ts := range a.timestamps {
+		if ts.After(cutoff) {
+			validStart = i
+			break
+		}
+	}
+
+	if validStart > 0 {
+		a.metrics = a.metrics[validStart:]
+		a.timestamps = a.timestamps[validStart:]
+	}
+}
+
+func (a *Aggregator) Average() float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	a.cleanup(time.Now())
+
+	if len(a.metrics) == 0 {
+		return 0
+	}
+
+	var sum float64
+	for _, v := range a.metrics {
+		sum += v
+	}
+	return sum / float64(len(a.metrics))
+}
+
+func (a *Aggregator) Count() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	a.cleanup(time.Now())
+	return len(a.metrics)
+}
+
+func (a *Aggregator) Percentile(p float64) float64 {
+	if p < 0 || p > 100 {
+		return 0
+	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	a.cleanup(time.Now())
+
+	if len(a.metrics) == 0 {
+		return 0
+	}
+
+	values := make([]float64, len(a.metrics))
+	copy(values, a.metrics)
+
+	sorted := sortSlice(values)
+	index := int(float64(len(sorted)-1) * p / 100)
+	return sorted[index]
+}
+
+func sortSlice(s []float64) []float64 {
+	sorted := make([]float64, len(s))
+	copy(sorted, s)
+
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j] < sorted[i] {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+	return sorted
 }
