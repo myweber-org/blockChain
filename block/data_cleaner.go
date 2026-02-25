@@ -1,107 +1,34 @@
-
-package main
+package utils
 
 import (
-	"fmt"
+	"regexp"
 	"strings"
 )
 
-type DataCleaner struct{}
-
-func (dc *DataCleaner) RemoveDuplicates(items []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
-	for _, item := range items {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func (dc *DataCleaner) NormalizeString(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
-func main() {
-	cleaner := &DataCleaner{}
+// SanitizeInput removes potentially harmful characters and trims whitespace
+func SanitizeInput(input string) string {
+	// Trim leading and trailing whitespace
+	cleaned := strings.TrimSpace(input)
 	
-	data := []string{"Apple", "apple", " Banana ", "banana", "Apple"}
-	fmt.Println("Original:", data)
+	// Remove any HTML/XML tags
+	re := regexp.MustCompile(`<[^>]*>`)
+	cleaned = re.ReplaceAllString(cleaned, "")
 	
-	cleaned := cleaner.RemoveDuplicates(data)
-	fmt.Println("After deduplication:", cleaned)
+	// Remove control characters except newline and tab
+	re = regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
+	cleaned = re.ReplaceAllString(cleaned, "")
 	
-	normalized := make([]string, len(cleaned))
-	for i, item := range cleaned {
-		normalized[i] = cleaner.NormalizeString(item)
+	// Limit length to prevent excessive input
+	maxLength := 1000
+	if len(cleaned) > maxLength {
+		cleaned = cleaned[:maxLength]
 	}
-	fmt.Println("After normalization:", normalized)
-}
-package main
-
-import (
-	"fmt"
-	"strings"
-)
-
-type DataCleaner struct{}
-
-func (dc DataCleaner) RemoveDuplicates(items []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
-	for _, item := range items {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
-		}
-	}
-	return result
+	
+	return cleaned
 }
 
-func (dc DataCleaner) TrimWhitespace(items []string) []string {
-	result := make([]string, len(items))
-	for i, item := range items {
-		result[i] = strings.TrimSpace(item)
-	}
-	return result
-}
-
-func main() {
-	cleaner := DataCleaner{}
-	data := []string{"  apple ", "banana", "  apple ", " cherry", "banana "}
-
-	trimmed := cleaner.TrimWhitespace(data)
-	unique := cleaner.RemoveDuplicates(trimmed)
-
-	fmt.Println("Original:", data)
-	fmt.Println("Cleaned:", unique)
-}package main
-
-import "fmt"
-
-func RemoveDuplicates[T comparable](slice []T) []T {
-	seen := make(map[T]bool)
-	result := []T{}
-
-	for _, item := range slice {
-		if !seen[item] {
-			seen[item] = true
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-func main() {
-	numbers := []int{1, 2, 2, 3, 4, 4, 5, 5}
-	uniqueNumbers := RemoveDuplicates(numbers)
-	fmt.Println("Original:", numbers)
-	fmt.Println("Unique:", uniqueNumbers)
-
-	strings := []string{"apple", "banana", "apple", "orange", "banana"}
-	uniqueStrings := RemoveDuplicates(strings)
-	fmt.Println("Original:", strings)
-	fmt.Println("Unique:", uniqueStrings)
+// NormalizeWhitespace converts multiple whitespace characters to single spaces
+func NormalizeWhitespace(input string) string {
+	re := regexp.MustCompile(`\s+`)
+	return re.ReplaceAllString(input, " ")
 }
