@@ -130,3 +130,26 @@ func main() {
 		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", r.ID, r.Email, r.Valid)
 	}
 }
+package main
+
+import "fmt"
+
+func removeDuplicates(input []int) []int {
+	seen := make(map[int]bool)
+	var result []int
+
+	for _, value := range input {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func main() {
+	slice := []int{1, 2, 2, 3, 4, 4, 5, 1, 6}
+	uniqueSlice := removeDuplicates(slice)
+	fmt.Println("Original:", slice)
+	fmt.Println("Unique:", uniqueSlice)
+}
