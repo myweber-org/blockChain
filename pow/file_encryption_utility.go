@@ -363,4 +363,130 @@ func main() {
     default:
         fmt.Println("Unknown command")
     }
+}package main
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+)
+
+func deriveKey(passphrase string) []byte {
+	hash := sha256.Sum256([]byte(passphrase))
+	return hash[:]
+}
+
+func encryptData(plaintext []byte, passphrase string) ([]byte, error) {
+	key := deriveKey(passphrase)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+func decryptData(ciphertext []byte, passphrase string) ([]byte, error) {
+	key := deriveKey(passphrase)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return plaintext, nil
+}
+
+func main() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: go run file_encryption_utility.go <encrypt|decrypt> <input_file> <output_file>")
+		fmt.Println("Set environment variable ENCRYPTION_KEY for passphrase")
+		return
+	}
+
+	operation := os.Args[1]
+	inputFile := os.Args[2]
+	outputFile := os.Args[3]
+
+	passphrase := os.Getenv("ENCRYPTION_KEY")
+	if passphrase == "" {
+		fmt.Println("Error: ENCRYPTION_KEY environment variable not set")
+		return
+	}
+
+	inputData, err := os.ReadFile(inputFile)
+	if err != nil {
+		fmt.Printf("Error reading input file: %v\n", err)
+		return
+	}
+
+	var result []byte
+	switch operation {
+	case "encrypt":
+		result, err = encryptData(inputData, passphrase)
+		if err != nil {
+			fmt.Printf("Encryption failed: %v\n", err)
+			return
+		}
+		fmt.Printf("Encrypted %d bytes to %s\n", len(result), outputFile)
+
+	case "decrypt":
+		result, err = decryptData(inputData, passphrase)
+		if err != nil {
+			fmt.Printf("Decryption failed: %v\n", err)
+			return
+		}
+		fmt.Printf("Decrypted %d bytes to %s\n", len(result), outputFile)
+
+	default:
+		fmt.Println("Invalid operation. Use 'encrypt' or 'decrypt'")
+		return
+	}
+
+	if err := os.WriteFile(outputFile, result, 0644); err != nil {
+		fmt.Printf("Error writing output file: %v\n", err)
+		return
+	}
+
+	if operation == "decrypt" {
+		fmt.Printf("Decrypted content preview (first 100 chars):\n%s\n", hex.Dump(result[:min(100, len(result))]))
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
