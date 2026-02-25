@@ -69,3 +69,90 @@ func main() {
 	fmt.Println("Original:", strings)
 	fmt.Println("Unique:", uniqueStrings)
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataCleaner struct {
+	processedRecords int
+	duplicatesFound  int
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		processedRecords: 0,
+		duplicatesFound:  0,
+	}
+}
+
+func (dc *DataCleaner) RemoveDuplicates(records []string) []string {
+	seen := make(map[string]bool)
+	var unique []string
+
+	for _, record := range records {
+		trimmed := strings.TrimSpace(record)
+		if trimmed == "" {
+			continue
+		}
+
+		if !seen[trimmed] {
+			seen[trimmed] = true
+			unique = append(unique, trimmed)
+		} else {
+			dc.duplicatesFound++
+		}
+		dc.processedRecords++
+	}
+
+	return unique
+}
+
+func (dc *DataCleaner) ValidateEmail(email string) bool {
+	if !strings.Contains(email, "@") {
+		return false
+	}
+
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	if parts[0] == "" || parts[1] == "" {
+		return false
+	}
+
+	return strings.Contains(parts[1], ".")
+}
+
+func (dc *DataCleaner) Stats() string {
+	return fmt.Sprintf("Processed: %d, Duplicates: %d", 
+		dc.processedRecords, dc.duplicatesFound)
+}
+
+func main() {
+	cleaner := NewDataCleaner()
+	
+	data := []string{
+		"user@example.com",
+		"user@example.com",
+		"invalid-email",
+		"another@test.org",
+		"",
+		"  user@example.com  ",
+	}
+
+	unique := cleaner.RemoveDuplicates(data)
+	fmt.Println("Unique records:", unique)
+	fmt.Println(cleaner.Stats())
+
+	for _, email := range unique {
+		if cleaner.ValidateEmail(email) {
+			fmt.Printf("Valid email: %s\n", email)
+		} else {
+			fmt.Printf("Invalid email: %s\n", email)
+		}
+	}
+}
