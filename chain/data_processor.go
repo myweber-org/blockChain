@@ -2,47 +2,46 @@
 package main
 
 import (
-    "encoding/json"
-    "fmt"
-    "strings"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 )
 
-// DataPayload represents a simple JSON structure
-type DataPayload struct {
-    ID    int    `json:"id"`
-    Value string `json:"value"`
-    Valid bool   `json:"valid"`
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
 }
 
-// ParseAndValidateJSON parses a JSON string into DataPayload and performs basic validation
-func ParseAndValidateJSON(input string) (*DataPayload, error) {
-    if strings.TrimSpace(input) == "" {
-        return nil, fmt.Errorf("input string is empty")
-    }
+func TransformToTitleCase(input string) string {
+	if len(input) == 0 {
+		return input
+	}
+	return strings.ToUpper(input[:1]) + strings.ToLower(input[1:])
+}
 
-    var payload DataPayload
-    err := json.Unmarshal([]byte(input), &payload)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse JSON: %w", err)
-    }
-
-    if payload.ID <= 0 {
-        return nil, fmt.Errorf("invalid ID: must be positive integer")
-    }
-
-    if payload.Value == "" {
-        return nil, fmt.Errorf("value field cannot be empty")
-    }
-
-    return &payload, nil
+func PrettyPrintJSON(data interface{}) (string, error) {
+	bytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 func main() {
-    testJSON := `{"id": 123, "value": "test data", "valid": true}`
-    result, err := ParseAndValidateJSON(testJSON)
-    if err != nil {
-        fmt.Printf("Error: %v\n", err)
-        return
-    }
-    fmt.Printf("Parsed payload: %+v\n", result)
+	email := "test@example.com"
+	fmt.Printf("Email %s valid: %v\n", email, ValidateEmail(email))
+
+	name := "john doe"
+	fmt.Printf("Original: %s, Title Case: %s\n", name, TransformToTitleCase(name))
+
+	sample := map[string]interface{}{
+		"name":  "Alice",
+		"age":   30,
+		"email": "alice@example.com",
+	}
+	pretty, _ := PrettyPrintJSON(sample)
+	fmt.Println("Pretty JSON:")
+	fmt.Println(pretty)
 }
