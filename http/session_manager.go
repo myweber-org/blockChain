@@ -247,3 +247,104 @@ func randomString(length int) string {
     }
     return string(b)
 }
+package main
+
+import (
+    "crypto/rand"
+    "encoding/base64"
+    "errors"
+    "sync"
+    "time"
+)
+
+type Session struct {
+    Token     string
+    UserID    string
+    ExpiresAt time.Time
+    Data      map[string]interface{}
+}
+
+type SessionManager struct {
+    sessions map[string]Session
+    mu       sync.RWMutex
+    duration time.Duration
+}
+
+func NewSessionManager(duration time.Duration) *SessionManager {
+    return &SessionManager{
+        sessions: make(map[string]Session),
+        duration: duration,
+    }
+}
+
+func generateToken() (string, error) {
+    bytes := make([]byte, 32)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+    return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func (sm *SessionManager) CreateSession(userID string, data map[string]interface{}) (string, error) {
+    token, err := generateToken()
+    if err != nil {
+        return "", err
+    }
+
+    session := Session{
+        Token:     token,
+        UserID:    userID,
+        ExpiresAt: time.Now().Add(sm.duration),
+        Data:      data,
+    }
+
+    sm.mu.Lock()
+    sm.sessions[token] = session
+    sm.mu.Unlock()
+
+    return token, nil
+}
+
+func (sm *SessionManager) GetSession(token string) (Session, error) {
+    sm.mu.RLock()
+    session, exists := sm.sessions[token]
+    sm.mu.RUnlock()
+
+    if !exists {
+        return Session{}, errors.New("session not found")
+    }
+
+    if time.Now().After(session.ExpiresAt) {
+        sm.DeleteSession(token)
+        return Session{}, errors.New("session expired")
+    }
+
+    return session, nil
+}
+
+func (sm *SessionManager) DeleteSession(token string) {
+    sm.mu.Lock()
+    delete(sm.sessions, token)
+    sm.mu.Unlock()
+}
+
+func (sm *SessionManager) CleanupExpired() {
+    sm.mu.Lock()
+    defer sm.mu.Unlock()
+
+    now := time.Now()
+    for token, session := range sm.sessions {
+        if now.After(session.ExpiresAt) {
+            delete(sm.sessions, token)
+        }
+    }
+}
+
+func (sm *SessionManager) StartCleanupRoutine(interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    go func() {
+        for range ticker.C {
+            sm.CleanupExpired()
+        }
+    }()
+}
