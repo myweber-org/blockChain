@@ -424,3 +424,150 @@ func main() {
         time.Sleep(100 * time.Millisecond)
     }
 }
+package main
+
+import (
+    "compress/gzip"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "sync"
+    "time"
+)
+
+const (
+    maxFileSize = 10 * 1024 * 1024 // 10MB
+    maxBackups  = 5
+)
+
+type RotatingWriter struct {
+    filename   string
+    current    *os.File
+    size       int64
+    mu         sync.Mutex
+}
+
+func NewRotatingWriter(filename string) (*RotatingWriter, error) {
+    w := &RotatingWriter{filename: filename}
+    if err := w.openFile(); err != nil {
+        return nil, err
+    }
+    return w, nil
+}
+
+func (w *RotatingWriter) Write(p []byte) (int, error) {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+
+    if w.size+int64(len(p)) > maxFileSize {
+        if err := w.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := w.current.Write(p)
+    w.size += int64(n)
+    return n, err
+}
+
+func (w *RotatingWriter) openFile() error {
+    file, err := os.OpenFile(w.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+    if err != nil {
+        return err
+    }
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return err
+    }
+    w.current = file
+    w.size = info.Size()
+    return nil
+}
+
+func (w *RotatingWriter) rotate() error {
+    if w.current != nil {
+        w.current.Close()
+    }
+
+    timestamp := time.Now().Format("20060102-150405")
+    backupName := fmt.Sprintf("%s.%s.gz", w.filename, timestamp)
+    
+    if err := compressFile(w.filename, backupName); err != nil {
+        return err
+    }
+
+    os.Remove(w.filename)
+    
+    if err := w.cleanOldBackups(); err != nil {
+        return err
+    }
+    
+    return w.openFile()
+}
+
+func compressFile(src, dst string) error {
+    in, err := os.Open(src)
+    if err != nil {
+        return err
+    }
+    defer in.Close()
+
+    out, err := os.Create(dst)
+    if err != nil {
+        return err
+    }
+    defer out.Close()
+
+    gz := gzip.NewWriter(out)
+    defer gz.Close()
+
+    _, err = io.Copy(gz, in)
+    return err
+}
+
+func (w *RotatingWriter) cleanOldBackups() error {
+    pattern := w.filename + ".*.gz"
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return err
+    }
+
+    if len(matches) <= maxBackups {
+        return nil
+    }
+
+    for i := 0; i < len(matches)-maxBackups; i++ {
+        os.Remove(matches[i])
+    }
+    return nil
+}
+
+func (w *RotatingWriter) Close() error {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+    
+    if w.current != nil {
+        return w.current.Close()
+    }
+    return nil
+}
+
+func main() {
+    writer, err := NewRotatingWriter("app.log")
+    if err != nil {
+        fmt.Printf("Failed to create writer: %v\n", err)
+        return
+    }
+    defer writer.Close()
+
+    for i := 0; i < 1000; i++ {
+        logEntry := fmt.Sprintf("[%s] Log entry %d: This is a sample log message\n", 
+            time.Now().Format(time.RFC3339), i)
+        writer.Write([]byte(logEntry))
+        time.Sleep(10 * time.Millisecond)
+    }
+    
+    fmt.Println("Log rotation test completed")
+}
