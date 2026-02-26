@@ -2,159 +2,124 @@
 package metrics
 
 import (
-	"container/list"
 	"sort"
 	"sync"
 	"time"
 )
 
-type MetricPoint struct {
-	Value     float64
-	Timestamp time.Time
+type Aggregator struct {
+	windowSize   time.Duration
+	percentiles  []float64
+	measurements []measurement
+	mu           sync.RWMutex
 }
 
-type SlidingWindowAggregator struct {
-	windowSize  time.Duration
-	maxPoints   int
-	points      *list.List
-	mu          sync.RWMutex
-	totalSum    float64
-	totalCount  int64
+type measurement struct {
+	timestamp time.Time
+	value     float64
 }
 
-func NewSlidingWindowAggregator(windowSize time.Duration, maxPoints int) *SlidingWindowAggregator {
-	return &SlidingWindowAggregator{
-		windowSize: windowSize,
-		maxPoints:  maxPoints,
-		points:     list.New(),
+func NewAggregator(windowSize time.Duration, percentiles []float64) *Aggregator {
+	for _, p := range percentiles {
+		if p < 0 || p > 100 {
+			panic("percentile must be between 0 and 100")
+		}
+	}
+	sort.Float64s(percentiles)
+	
+	return &Aggregator{
+		windowSize:  windowSize,
+		percentiles: percentiles,
+		measurements: make([]measurement, 0),
 	}
 }
 
-func (swa *SlidingWindowAggregator) Add(value float64) {
-	swa.mu.Lock()
-	defer swa.mu.Unlock()
-
+func (a *Aggregator) Record(value float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	
 	now := time.Now()
-	swa.points.PushBack(MetricPoint{
-		Value:     value,
-		Timestamp: now,
+	a.measurements = append(a.measurements, measurement{
+		timestamp: now,
+		value:     value,
 	})
-
-	swa.totalSum += value
-	swa.totalCount++
-
-	swa.evictExpired(now)
-	swa.trimToMaxPoints()
+	a.cleanup(now)
 }
 
-func (swa *SlidingWindowAggregator) evictExpired(now time.Time) {
-	cutoff := now.Add(-swa.windowSize)
-	for {
-		front := swa.points.Front()
-		if front == nil {
-			break
-		}
-		point := front.Value.(MetricPoint)
-		if point.Timestamp.After(cutoff) {
-			break
-		}
-		swa.points.Remove(front)
-		swa.totalSum -= point.Value
-		swa.totalCount--
+func (a *Aggregator) cleanup(now time.Time) {
+	cutoff := now.Add(-a.windowSize)
+	i := 0
+	for i < len(a.measurements) && a.measurements[i].timestamp.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		a.measurements = a.measurements[i:]
 	}
 }
 
-func (swa *SlidingWindowAggregator) trimToMaxPoints() {
-	for swa.points.Len() > swa.maxPoints {
-		front := swa.points.Front()
-		point := front.Value.(MetricPoint)
-		swa.points.Remove(front)
-		swa.totalSum -= point.Value
-		swa.totalCount--
+func (a *Aggregator) GetStats() map[string]float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	
+	now := time.Now()
+	a.cleanup(now)
+	
+	if len(a.measurements) == 0 {
+		return make(map[string]float64)
 	}
-}
-
-func (swa *SlidingWindowAggregator) GetStats() (float64, float64, float64) {
-	swa.mu.RLock()
-	defer swa.mu.RUnlock()
-
-	if swa.totalCount == 0 {
-		return 0, 0, 0
-	}
-
-	values := make([]float64, 0, swa.points.Len())
-	for e := swa.points.Front(); e != nil; e = e.Next() {
-		values = append(values, e.Value.(MetricPoint).Value)
+	
+	values := make([]float64, len(a.measurements))
+	for i, m := range a.measurements {
+		values[i] = m.value
 	}
 	sort.Float64s(values)
-
-	mean := swa.totalSum / float64(swa.totalCount)
-	median := calculatePercentile(values, 50)
-	p95 := calculatePercentile(values, 95)
-
-	return mean, median, p95
+	
+	stats := make(map[string]float64)
+	stats["count"] = float64(len(values))
+	stats["min"] = values[0]
+	stats["max"] = values[len(values)-1]
+	
+	var sum float64
+	for _, v := range values {
+		sum += v
+	}
+	stats["mean"] = sum / float64(len(values))
+	
+	for _, p := range a.percentiles {
+		key := formatPercentileKey(p)
+		stats[key] = calculatePercentile(values, p)
+	}
+	
+	return stats
 }
 
-func calculatePercentile(sortedValues []float64, percentile float64) float64 {
-	if len(sortedValues) == 0 {
-		return 0
+func formatPercentileKey(p float64) string {
+	if p == 50 {
+		return "median"
 	}
-	index := (percentile / 100) * float64(len(sortedValues)-1)
+	return formatFloat(p) + "th"
+}
+
+func formatFloat(f float64) string {
+	if f == float64(int(f)) {
+		return string(rune(int(f)))
+	}
+	return string(rune(f))
+}
+
+func calculatePercentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+	
+	index := (p / 100) * float64(len(sorted)-1)
 	lower := int(index)
 	upper := lower + 1
+	
+	if upper >= len(sorted) {
+		return sorted[lower]
+	}
+	
 	weight := index - float64(lower)
-
-	if upper >= len(sortedValues) {
-		return sortedValues[lower]
-	}
-	return sortedValues[lower]*(1-weight) + sortedValues[upper]*weight
-}package main
-
-import (
-	"log"
-	"sync"
-	"time"
-)
-
-type Metrics struct {
-	mu            sync.RWMutex
-	requestCount  int64
-	errorCount    int64
-	totalLatency  time.Duration
-}
-
-func NewMetrics() *Metrics {
-	return &Metrics{}
-}
-
-func (m *Metrics) RecordRequest(latency time.Duration, isError bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.requestCount++
-	m.totalLatency += latency
-	if isError {
-		m.errorCount++
-	}
-}
-
-func (m *Metrics) GetStats() (int64, int64, time.Duration) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if m.requestCount == 0 {
-		return 0, 0, 0
-	}
-	return m.requestCount, m.errorCount, m.totalLatency / time.Duration(m.requestCount)
-}
-
-func main() {
-	metrics := NewMetrics()
-
-	metrics.RecordRequest(150*time.Millisecond, false)
-	metrics.RecordRequest(200*time.Millisecond, true)
-	metrics.RecordRequest(100*time.Millisecond, false)
-
-	total, errors, avgLatency := metrics.GetStats()
-	log.Printf("Total requests: %d, Errors: %d, Average latency: %v", total, errors, avgLatency)
+	return sorted[lower]*(1-weight) + sorted[upper]*weight
 }
