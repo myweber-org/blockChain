@@ -196,4 +196,94 @@ func validateConfig(config *AppConfig) error {
 		config.LogLevel = "info"
 	}
 	return nil
+}package config
+
+import (
+	"io/ioutil"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Config struct {
+	Server struct {
+		Port    string `yaml:"port" env:"SERVER_PORT"`
+		Timeout int    `yaml:"timeout" env:"SERVER_TIMEOUT"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host" env:"DB_HOST"`
+		Port     string `yaml:"port" env:"DB_PORT"`
+		Name     string `yaml:"name" env:"DB_NAME"`
+		User     string `yaml:"user" env:"DB_USER"`
+		Password string `yaml:"password" env:"DB_PASSWORD"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level" env:"LOG_LEVEL"`
+		Output string `yaml:"output" env:"LOG_OUTPUT"`
+	} `yaml:"logging"`
+}
+
+func LoadConfig(filePath string) (*Config, error) {
+	config := &Config{}
+
+	if filePath != "" {
+		data, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		if err := yaml.Unmarshal(data, config); err != nil {
+			return nil, err
+		}
+	}
+
+	overrideWithEnvVars(config)
+	return config, nil
+}
+
+func overrideWithEnvVars(config *Config) {
+	overrideStruct(config, "")
+}
+
+func overrideStruct(s interface{}, prefix string) {
+	v := reflect.ValueOf(s).Elem()
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		if field.Kind() == reflect.Struct {
+			newPrefix := prefix
+			if tag := fieldType.Tag.Get("yaml"); tag != "" {
+				if newPrefix != "" {
+					newPrefix = newPrefix + "_" + strings.ToUpper(tag)
+				} else {
+					newPrefix = strings.ToUpper(tag)
+				}
+			}
+			overrideStruct(field.Addr().Interface(), newPrefix)
+			continue
+		}
+
+		envTag := fieldType.Tag.Get("env")
+		if envTag == "" {
+			continue
+		}
+
+		if prefix != "" {
+			envTag = prefix + "_" + envTag
+		}
+
+		if envValue := os.Getenv(envTag); envValue != "" {
+			switch field.Kind() {
+			case reflect.String:
+				field.SetString(envValue)
+			case reflect.Int:
+				if intValue, err := strconv.Atoi(envValue); err == nil {
+					field.SetInt(int64(intValue))
+				}
+			}
+		}
+	}
 }
