@@ -261,3 +261,99 @@ func main() {
 
 	fmt.Printf("Operation %s completed successfully\n", operation)
 }
+package main
+
+import (
+    "crypto/aes"
+    "crypto/cipher"
+    "crypto/rand"
+    "encoding/base64"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+)
+
+func encryptData(plaintext []byte, key []byte) (string, error) {
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return "", err
+    }
+
+    gcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return "", err
+    }
+
+    nonce := make([]byte, gcm.NonceSize())
+    if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+        return "", err
+    }
+
+    ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+    return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func decryptData(encryptedText string, key []byte) ([]byte, error) {
+    ciphertext, err := base64.StdEncoding.DecodeString(encryptedText)
+    if err != nil {
+        return nil, err
+    }
+
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, err
+    }
+
+    gcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return nil, err
+    }
+
+    nonceSize := gcm.NonceSize()
+    if len(ciphertext) < nonceSize {
+        return nil, errors.New("ciphertext too short")
+    }
+
+    nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+    return gcm.Open(nil, nonce, ciphertext, nil)
+}
+
+func generateKey() ([]byte, error) {
+    key := make([]byte, 32)
+    if _, err := io.ReadFull(rand.Reader, key); err != nil {
+        return nil, err
+    }
+    return key, nil
+}
+
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: go run file_encryptor.go <text_to_encrypt>")
+        os.Exit(1)
+    }
+
+    plaintext := os.Args[1]
+    key, err := generateKey()
+    if err != nil {
+        fmt.Printf("Key generation error: %v\n", err)
+        os.Exit(1)
+    }
+
+    encrypted, err := encryptData([]byte(plaintext), key)
+    if err != nil {
+        fmt.Printf("Encryption error: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Generated Key (hex): %x\n", key)
+    fmt.Printf("Encrypted Text: %s\n", encrypted)
+
+    decrypted, err := decryptData(encrypted, key)
+    if err != nil {
+        fmt.Printf("Decryption error: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Decrypted Text: %s\n", decrypted)
+}
