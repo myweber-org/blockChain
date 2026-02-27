@@ -1,138 +1,92 @@
 package config
 
 import (
-    "os"
-    "strconv"
-    "strings"
-)
-
-type Config struct {
-    ServerPort int
-    DebugMode  bool
-    DatabaseURL string
-    AllowedHosts []string
-}
-
-func Load() (*Config, error) {
-    cfg := &Config{
-        ServerPort:  getEnvAsInt("SERVER_PORT", 8080),
-        DebugMode:   getEnvAsBool("DEBUG_MODE", false),
-        DatabaseURL: getEnv("DATABASE_URL", "postgres://localhost:5432/app"),
-        AllowedHosts: getEnvAsSlice("ALLOWED_HOSTS", []string{"localhost"}, ","),
-    }
-    return cfg, nil
-}
-
-func getEnv(key, defaultValue string) string {
-    if value, exists := os.LookupEnv(key); exists {
-        return value
-    }
-    return defaultValue
-}
-
-func getEnvAsInt(key string, defaultValue int) int {
-    valueStr := getEnv(key, "")
-    if value, err := strconv.Atoi(valueStr); err == nil {
-        return value
-    }
-    return defaultValue
-}
-
-func getEnvAsBool(key string, defaultValue bool) bool {
-    valueStr := getEnv(key, "")
-    if value, err := strconv.ParseBool(valueStr); err == nil {
-        return value
-    }
-    return defaultValue
-}
-
-func getEnvAsSlice(key string, defaultValue []string, sep string) []string {
-    valueStr := getEnv(key, "")
-    if valueStr == "" {
-        return defaultValue
-    }
-    return strings.Split(valueStr, sep)
-}package config
-
-import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
-
-	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	Server struct {
-		Port    string `yaml:"port" env:"SERVER_PORT"`
-		Timeout int    `yaml:"timeout" env:"SERVER_TIMEOUT"`
-	} `yaml:"server"`
-	Database struct {
-		Host     string `yaml:"host" env:"DB_HOST"`
-		Port     string `yaml:"port" env:"DB_PORT"`
-		Name     string `yaml:"name" env:"DB_NAME"`
-		User     string `yaml:"user" env:"DB_USER"`
-		Password string `yaml:"password" env:"DB_PASSWORD"`
-	} `yaml:"database"`
-	Logging struct {
-		Level  string `yaml:"level" env:"LOG_LEVEL"`
-		Output string `yaml:"output" env:"LOG_OUTPUT"`
-	} `yaml:"logging"`
+	ServerPort int    `env:"SERVER_PORT" default:"8080"`
+	DBHost     string `env:"DB_HOST" default:"localhost"`
+	DBPort     int    `env:"DB_PORT" default:"5432"`
+	DBName     string `env:"DB_NAME" default:"appdb"`
+	DebugMode  bool   `env:"DEBUG_MODE" default:"false"`
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	config := &Config{}
+func LoadConfig() (*Config, error) {
+	cfg := &Config{}
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
 
-	file, err := os.Open(configPath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		structField := t.Field(i)
 
-	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(config); err != nil {
-		return nil, err
-	}
-
-	overrideWithEnvVars(config)
-
-	return config, nil
-}
-
-func overrideWithEnvVars(config *Config) {
-	overrideStruct(config.Server)
-	overrideStruct(config.Database)
-	overrideStruct(config.Logging)
-}
-
-func overrideStruct(s interface{}) {
-	val := reflect.ValueOf(s).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := typ.Field(i)
-
-		envTag := fieldType.Tag.Get("env")
-		if envTag == "" {
-			continue
-		}
+		envTag := structField.Tag.Get("env")
+		defaultTag := structField.Tag.Get("default")
 
 		envValue := os.Getenv(envTag)
 		if envValue == "" {
-			continue
+			envValue = defaultTag
 		}
 
-		switch field.Kind() {
-		case reflect.String:
-			field.SetString(envValue)
-		case reflect.Int:
-			if intValue, err := strconv.Atoi(envValue); err == nil {
-				field.SetInt(int64(intValue))
-			}
-		case reflect.Bool:
-			if boolValue, err := strconv.ParseBool(strings.ToLower(envValue)); err == nil {
-				field.SetBool(boolValue)
-			}
+		if err := setFieldValue(field, envValue); err != nil {
+			return nil, fmt.Errorf("failed to set field %s: %w", structField.Name, err)
 		}
 	}
+
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func setFieldValue(field reflect.Value, value string) error {
+	if value == "" {
+		return nil
+	}
+
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int:
+		intVal, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		field.SetInt(int64(intVal))
+	case reflect.Bool:
+		boolVal, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		field.SetBool(boolVal)
+	default:
+		return errors.New("unsupported field type")
+	}
+	return nil
+}
+
+func validateConfig(cfg *Config) error {
+	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
+	if cfg.DBPort < 1 || cfg.DBPort > 65535 {
+		return errors.New("database port must be between 1 and 65535")
+	}
+	if strings.TrimSpace(cfg.DBHost) == "" {
+		return errors.New("database host cannot be empty")
+	}
+	return nil
+}
+
+func (c *Config) String() string {
+	data, _ := json.MarshalIndent(c, "", "  ")
+	return string(data)
 }
