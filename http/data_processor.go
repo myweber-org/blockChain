@@ -86,4 +86,32 @@ func GenerateSummary(records []DataRecord) {
 	fmt.Printf("Total records: %d\n", len(records))
 	fmt.Printf("Valid records: %d\n", validCount)
 	fmt.Printf("Invalid records: %d\n", len(records)-validCount)
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+)
+
+func ValidateJSONStructure(rawData []byte, target interface{}) error {
+	if !json.Valid(rawData) {
+		return fmt.Errorf("invalid JSON format")
+	}
+	err := json.Unmarshal(rawData, target)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+	return nil
+}
+
+func main() {
+	sampleJSON := []byte(`{"name":"test","value":42}`)
+	var result map[string]interface{}
+
+	err := ValidateJSONStructure(sampleJSON, &result)
+	if err != nil {
+		log.Fatal("Validation failed:", err)
+	}
+	fmt.Println("Parsed data:", result)
 }
