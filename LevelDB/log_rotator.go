@@ -571,3 +571,118 @@ func main() {
     
     fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+    "compress/gzip"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+type RotatingLog struct {
+    currentFile   *os.File
+    currentSize   int64
+    maxSize       int64
+    basePath      string
+    rotationCount int
+}
+
+func NewRotatingLog(basePath string, maxSize int64) (*RotatingLog, error) {
+    file, err := os.OpenFile(basePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &RotatingLog{
+        currentFile: file,
+        currentSize: info.Size(),
+        maxSize:     maxSize,
+        basePath:    basePath,
+    }, nil
+}
+
+func (r *RotatingLog) Write(p []byte) (int, error) {
+    if r.currentSize+int64(len(p)) > r.maxSize {
+        if err := r.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := r.currentFile.Write(p)
+    if err == nil {
+        r.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (r *RotatingLog) rotate() error {
+    if err := r.currentFile.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    rotatedPath := fmt.Sprintf("%s.%s.gz", r.basePath, timestamp)
+
+    source, err := os.Open(r.basePath)
+    if err != nil {
+        return err
+    }
+    defer source.Close()
+
+    dest, err := os.Create(rotatedPath)
+    if err != nil {
+        return err
+    }
+    defer dest.Close()
+
+    gzWriter := gzip.NewWriter(dest)
+    defer gzWriter.Close()
+
+    if _, err := io.Copy(gzWriter, source); err != nil {
+        return err
+    }
+
+    if err := os.Remove(r.basePath); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(r.basePath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    r.currentFile = file
+    r.currentSize = 0
+    r.rotationCount++
+
+    return nil
+}
+
+func (r *RotatingLog) Close() error {
+    return r.currentFile.Close()
+}
+
+func main() {
+    log, err := NewRotatingLog("app.log", 1024*1024)
+    if err != nil {
+        panic(err)
+    }
+    defer log.Close()
+
+    for i := 0; i < 10000; i++ {
+        message := fmt.Sprintf("Log entry %d: %s\n", i, time.Now().Format(time.RFC3339))
+        if _, err := log.Write([]byte(message)); err != nil {
+            fmt.Printf("Write error: %v\n", err)
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
+}
