@@ -1,77 +1,94 @@
 
 package main
 
-import "fmt"
-
-func calculateMovingAverage(data []float64, windowSize int) []float64 {
-    if len(data) == 0 || windowSize <= 0 || windowSize > len(data) {
-        return []float64{}
-    }
-
-    result := make([]float64, len(data)-windowSize+1)
-    for i := 0; i <= len(data)-windowSize; i++ {
-        sum := 0.0
-        for j := i; j < i+windowSize; j++ {
-            sum += data[j]
-        }
-        result[i] = sum / float64(windowSize)
-    }
-    return result
-}
-
-func main() {
-    sampleData := []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0}
-    window := 3
-    averages := calculateMovingAverage(sampleData, window)
-    
-    fmt.Printf("Data: %v\n", sampleData)
-    fmt.Printf("Moving average (window=%d): %v\n", window, averages)
-}package main
-
 import (
+	"encoding/csv"
 	"errors"
-	"regexp"
-	"strings"
+	"io"
+	"os"
+	"strconv"
 )
 
-type UserData struct {
-	Email    string
-	Username string
-	Age      int
+type DataRecord struct {
+	ID    int
+	Name  string
+	Value float64
+	Valid bool
 }
 
-var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
-func ValidateUserData(data UserData) error {
-	if strings.TrimSpace(data.Email) == "" {
-		return errors.New("email cannot be empty")
-	}
-	if !emailRegex.MatchString(data.Email) {
-		return errors.New("invalid email format")
-	}
-	if len(data.Username) < 3 || len(data.Username) > 20 {
-		return errors.New("username must be between 3 and 20 characters")
-	}
-	if data.Age < 18 || data.Age > 120 {
-		return errors.New("age must be between 18 and 120")
-	}
-	return nil
-}
-
-func TransformUsername(username string) string {
-	return strings.ToLower(strings.TrimSpace(username))
-}
-
-func ProcessUserInput(email, username string, age int) (UserData, error) {
-	transformedUsername := TransformUsername(username)
-	userData := UserData{
-		Email:    strings.TrimSpace(email),
-		Username: transformedUsername,
-		Age:      age,
-	}
-	err := ValidateUserData(userData)
+func ParseCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		return UserData{}, err
+		return nil, err
 	}
-	return userData, nil
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := []DataRecord{}
+	lineNum := 0
+
+	for {
+		line, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		lineNum++
+		if lineNum == 1 {
+			continue
+		}
+
+		if len(line) != 4 {
+			return nil, errors.New("invalid column count on line " + strconv.Itoa(lineNum))
+		}
+
+		id, err := strconv.Atoi(line[0])
+		if err != nil {
+			return nil, errors.New("invalid ID on line " + strconv.Itoa(lineNum))
+		}
+
+		name := line[1]
+
+		value, err := strconv.ParseFloat(line[2], 64)
+		if err != nil {
+			return nil, errors.New("invalid value on line " + strconv.Itoa(lineNum))
+		}
+
+		valid := line[3] == "true"
+
+		record := DataRecord{
+			ID:    id,
+			Name:  name,
+			Value: value,
+			Valid: valid,
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func ValidateRecords(records []DataRecord) []DataRecord {
+	validRecords := []DataRecord{}
+	for _, record := range records {
+		if record.Valid && record.Value > 0 && record.Name != "" {
+			validRecords = append(validRecords, record)
+		}
+	}
+	return validRecords
+}
+
+func CalculateAverage(records []DataRecord) float64 {
+	if len(records) == 0 {
+		return 0
+	}
+
+	total := 0.0
+	for _, record := range records {
+		total += record.Value
+	}
+	return total / float64(len(records))
 }
