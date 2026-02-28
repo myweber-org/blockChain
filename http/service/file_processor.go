@@ -296,4 +296,127 @@ func main() {
     
     fmt.Printf("\nSummary: %d files, %d total bytes, %d total lines\n", 
         totalFiles, totalSize, totalLines)
+}package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileResult struct {
+	Path     string
+	Size     int64
+	Lines    int
+	Error    error
+}
+
+func processFile(path string, results chan<- FileResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	file, err := os.Open(path)
+	if err != nil {
+		results <- FileResult{Path: path, Error: err}
+		return
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		results <- FileResult{Path: path, Error: err}
+		return
+	}
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		results <- FileResult{Path: path, Error: err}
+		return
+	}
+
+	results <- FileResult{
+		Path:  path,
+		Size:  info.Size(),
+		Lines: lineCount,
+	}
+}
+
+func findFiles(root string, extensions []string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		for _, ext := range extensions {
+			if filepath.Ext(path) == ext {
+				files = append(files, path)
+				break
+			}
+		}
+		return nil
+	})
+	return files, err
+}
+
+func main() {
+	start := time.Now()
+	rootDir := "."
+	extensions := []string{".txt", ".go", ".md"}
+
+	files, err := findFiles(rootDir, extensions)
+	if err != nil {
+		fmt.Printf("Error finding files: %v\n", err)
+		return
+	}
+
+	if len(files) == 0 {
+		fmt.Println("No matching files found")
+		return
+	}
+
+	results := make(chan FileResult, len(files))
+	var wg sync.WaitGroup
+
+	for _, file := range files {
+		wg.Add(1)
+		go processFile(file, results, &wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	totalFiles := 0
+	totalSize := int64(0)
+	totalLines := 0
+
+	for result := range results {
+		if result.Error != nil {
+			fmt.Printf("Error processing %s: %v\n", result.Path, result.Error)
+			continue
+		}
+		fmt.Printf("File: %s, Size: %d bytes, Lines: %d\n",
+			result.Path, result.Size, result.Lines)
+		totalFiles++
+		totalSize += result.Size
+		totalLines += result.Lines
+	}
+
+	duration := time.Since(start)
+	fmt.Printf("\nSummary:\n")
+	fmt.Printf("Total files processed: %d\n", totalFiles)
+	fmt.Printf("Total size: %d bytes\n", totalSize)
+	fmt.Printf("Total lines: %d\n", totalLines)
+	fmt.Printf("Processing time: %v\n", duration)
 }
