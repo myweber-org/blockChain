@@ -179,4 +179,165 @@ func main() {
 	for file, lines := range processor.GetResults() {
 		fmt.Printf("%s: %d lines\n", filepath.Base(file), lines)
 	}
+}package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileProcessor struct {
+	BatchSize   int
+	Workers     int
+	mu          sync.Mutex
+	processed   int
+	errors      []error
+}
+
+func NewFileProcessor(batchSize, workers int) *FileProcessor {
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+	if workers <= 0 {
+		workers = 4
+	}
+	return &FileProcessor{
+		BatchSize: batchSize,
+		Workers:   workers,
+	}
+}
+
+func (fp *FileProcessor) ProcessFiles(paths []string, processor func(string) error) error {
+	if len(paths) == 0 {
+		return errors.New("no files to process")
+	}
+
+	var wg sync.WaitGroup
+	fileChan := make(chan string, len(paths))
+	resultChan := make(chan error, len(paths))
+
+	for i := 0; i < fp.Workers; i++ {
+		wg.Add(1)
+		go fp.worker(&wg, fileChan, resultChan, processor)
+	}
+
+	for _, path := range paths {
+		fileChan <- path
+	}
+	close(fileChan)
+
+	wg.Wait()
+	close(resultChan)
+
+	for err := range resultChan {
+		if err != nil {
+			fp.mu.Lock()
+			fp.errors = append(fp.errors, err)
+			fp.mu.Unlock()
+		}
+	}
+
+	if len(fp.errors) > 0 {
+		return fmt.Errorf("encountered %d errors during processing", len(fp.errors))
+	}
+	return nil
+}
+
+func (fp *FileProcessor) worker(wg *sync.WaitGroup, files <-chan string, results chan<- error, processor func(string) error) {
+	defer wg.Done()
+	for file := range files {
+		err := processor(file)
+		results <- err
+		fp.mu.Lock()
+		fp.processed++
+		fp.mu.Unlock()
+	}
+}
+
+func (fp *FileProcessor) CountLines(filePath string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+	return lineCount, scanner.Err()
+}
+
+func (fp *FileProcessor) CopyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
+}
+
+func (fp *FileProcessor) FindFilesByPattern(dir, pattern string) ([]string, error) {
+	var matches []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			matched, err := filepath.Match(pattern, filepath.Base(path))
+			if err != nil {
+				return err
+			}
+			if matched {
+				matches = append(matches, path)
+			}
+		}
+		return nil
+	})
+	return matches, err
+}
+
+func (fp *FileProcessor) Stats() (processed int, errorCount int) {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	return fp.processed, len(fp.errors)
+}
+
+func main() {
+	processor := NewFileProcessor(50, 8)
+	
+	files := []string{"data1.txt", "data2.txt", "data3.txt"}
+	
+	err := processor.ProcessFiles(files, func(path string) error {
+		lines, err := processor.CountLines(path)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("File %s has %d lines\n", path, lines)
+		return nil
+	})
+	
+	if err != nil {
+		fmt.Printf("Processing failed: %v\n", err)
+	}
+	
+	processed, errors := processor.Stats()
+	fmt.Printf("Processed %d files with %d errors\n", processed, errors)
+	
+	time.Sleep(100 * time.Millisecond)
 }
