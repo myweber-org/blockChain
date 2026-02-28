@@ -335,3 +335,112 @@ func main() {
 		fmt.Printf("ID: %d, Name: %s, Status: %s\n", record.ID, record.Name, status)
 	}
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type Record struct {
+	ID    int
+	Name  string
+	Email string
+	Score float64
+}
+
+func cleanData(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []Record
+	lineNum := 0
+
+	for {
+		lineNum++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %v", lineNum, err)
+		}
+
+		if len(row) != 4 {
+			continue
+		}
+
+		id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+		if err != nil {
+			continue
+		}
+
+		name := strings.TrimSpace(row[1])
+		if name == "" {
+			continue
+		}
+
+		email := strings.TrimSpace(row[2])
+		if !strings.Contains(email, "@") {
+			continue
+		}
+
+		score, err := strconv.ParseFloat(strings.TrimSpace(row[3]), 64)
+		if err != nil {
+			continue
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Email: email,
+			Score: score,
+		})
+	}
+
+	return records, nil
+}
+
+func calculateAverage(records []Record) float64 {
+	if len(records) == 0 {
+		return 0.0
+	}
+
+	total := 0.0
+	for _, r := range records {
+		total += r.Score
+	}
+	return total / float64(len(records))
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: data_cleaner <csv_file>")
+		return
+	}
+
+	records, err := cleanData(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error cleaning data: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Processed %d valid records\n", len(records))
+	fmt.Printf("Average score: %.2f\n", calculateAverage(records))
+
+	for i, r := range records {
+		if i < 3 {
+			fmt.Printf("Sample record: %+v\n", r)
+		}
+	}
+}
