@@ -92,3 +92,40 @@ func CalculateAverage(records []DataRecord) float64 {
 	}
 	return total / float64(len(records))
 }
+package main
+
+import (
+	"errors"
+	"strings"
+)
+
+type UserData struct {
+	ID    int
+	Name  string
+	Email string
+}
+
+func ValidateUserData(data UserData) error {
+	if data.ID <= 0 {
+		return errors.New("invalid user ID")
+	}
+	if strings.TrimSpace(data.Name) == "" {
+		return errors.New("name cannot be empty")
+	}
+	if !strings.Contains(data.Email, "@") {
+		return errors.New("invalid email format")
+	}
+	return nil
+}
+
+func TransformUserName(data UserData) UserData {
+	data.Name = strings.ToUpper(strings.TrimSpace(data.Name))
+	return data
+}
+
+func ProcessUserInput(input UserData) (UserData, error) {
+	if err := ValidateUserData(input); err != nil {
+		return UserData{}, err
+	}
+	return TransformUserName(input), nil
+}
