@@ -131,3 +131,82 @@ func main() {
 
     fmt.Println("Log rotation completed")
 }
+package main
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+    "strconv"
+)
+
+const maxFileSize = 1024 * 1024
+const backupPrefix = "backup_"
+
+func rotateLogIfNeeded(filePath string) error {
+    fileInfo, err := os.Stat(filePath)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return nil
+        }
+        return err
+    }
+
+    if fileInfo.Size() < maxFileSize {
+        return nil
+    }
+
+    dir := filepath.Dir(filePath)
+    baseName := filepath.Base(filePath)
+
+    backupNumber := 1
+    for {
+        backupName := backupPrefix + baseName + "." + strconv.Itoa(backupNumber)
+        backupPath := filepath.Join(dir, backupName)
+        if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+            err := os.Rename(filePath, backupPath)
+            if err != nil {
+                return err
+            }
+            fmt.Printf("Rotated log file to: %s\n", backupPath)
+            break
+        }
+        backupNumber++
+    }
+
+    newFile, err := os.Create(filePath)
+    if err != nil {
+        return err
+    }
+    newFile.Close()
+    return nil
+}
+
+func writeLogEntry(filePath, entry string) error {
+    err := rotateLogIfNeeded(filePath)
+    if err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    _, err = file.WriteString(entry + "\n")
+    return err
+}
+
+func main() {
+    logFile := "application.log"
+    for i := 1; i <= 1500; i++ {
+        entry := fmt.Sprintf("Log entry number %d: Sample log data for testing rotation mechanism.", i)
+        err := writeLogEntry(logFile, entry)
+        if err != nil {
+            fmt.Printf("Error writing log: %v\n", err)
+            break
+        }
+    }
+    fmt.Println("Log rotation test completed.")
+}
