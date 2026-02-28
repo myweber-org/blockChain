@@ -1,93 +1,87 @@
 package config
 
 import (
-	"os"
-	"strconv"
-	"strings"
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
 )
 
+type DatabaseConfig struct {
+    Host     string
+    Port     int
+    Username string
+    Password string
+    Database string
+}
+
+type ServerConfig struct {
+    Port         int
+    ReadTimeout  int
+    WriteTimeout int
+}
+
 type Config struct {
-	ServerPort int
-	DBHost     string
-	DBPort     int
-	DebugMode  bool
-	FeatureFlags map[string]bool
+    Database DatabaseConfig
+    Server   ServerConfig
+    Debug    bool
 }
 
 func LoadConfig() (*Config, error) {
-	cfg := &Config{
-		ServerPort: getEnvAsInt("SERVER_PORT", 8080),
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnvAsInt("DB_PORT", 5432),
-		DebugMode:  getEnvAsBool("DEBUG_MODE", false),
-		FeatureFlags: parseFeatureFlags(getEnv("FEATURE_FLAGS", "")),
-	}
+    cfg := &Config{}
 
-	if err := validateConfig(cfg); err != nil {
-		return nil, err
-	}
+    dbHost := getEnv("DB_HOST", "localhost")
+    dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
+    if err != nil {
+        return nil, fmt.Errorf("invalid DB_PORT: %v", err)
+    }
 
-	return cfg, nil
+    cfg.Database = DatabaseConfig{
+        Host:     dbHost,
+        Port:     dbPort,
+        Username: getEnv("DB_USER", "postgres"),
+        Password: getEnv("DB_PASS", ""),
+        Database: getEnv("DB_NAME", "appdb"),
+    }
+
+    serverPort, err := strconv.Atoi(getEnv("SERVER_PORT", "8080"))
+    if err != nil {
+        return nil, fmt.Errorf("invalid SERVER_PORT: %v", err)
+    }
+
+    readTimeout, err := strconv.Atoi(getEnv("READ_TIMEOUT", "30"))
+    if err != nil {
+        return nil, fmt.Errorf("invalid READ_TIMEOUT: %v", err)
+    }
+
+    writeTimeout, err := strconv.Atoi(getEnv("WRITE_TIMEOUT", "30"))
+    if err != nil {
+        return nil, fmt.Errorf("invalid WRITE_TIMEOUT: %v", err)
+    }
+
+    cfg.Server = ServerConfig{
+        Port:         serverPort,
+        ReadTimeout:  readTimeout,
+        WriteTimeout: writeTimeout,
+    }
+
+    debugStr := strings.ToLower(getEnv("DEBUG", "false"))
+    cfg.Debug = debugStr == "true" || debugStr == "1"
+
+    if cfg.Database.Password == "" {
+        return nil, fmt.Errorf("database password is required")
+    }
+
+    if cfg.Server.Port < 1 || cfg.Server.Port > 65535 {
+        return nil, fmt.Errorf("server port must be between 1 and 65535")
+    }
+
+    return cfg, nil
 }
 
 func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsInt(key string, defaultValue int) int {
-	strValue := getEnv(key, "")
-	if value, err := strconv.Atoi(strValue); err == nil {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsBool(key string, defaultValue bool) bool {
-	strValue := getEnv(key, "")
-	if value, err := strconv.ParseBool(strValue); err == nil {
-		return value
-	}
-	return defaultValue
-}
-
-func parseFeatureFlags(flagsStr string) map[string]bool {
-	flags := make(map[string]bool)
-	if flagsStr == "" {
-		return flags
-	}
-
-	items := strings.Split(flagsStr, ",")
-	for _, item := range items {
-		parts := strings.Split(item, "=")
-		if len(parts) == 2 {
-			flagName := strings.TrimSpace(parts[0])
-			flagValue, err := strconv.ParseBool(strings.TrimSpace(parts[1]))
-			if err == nil {
-				flags[flagName] = flagValue
-			}
-		}
-	}
-	return flags
-}
-
-func validateConfig(cfg *Config) error {
-	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
-		return &ConfigError{Field: "SERVER_PORT", Message: "port must be between 1 and 65535"}
-	}
-	if cfg.DBPort < 1 || cfg.DBPort > 65535 {
-		return &ConfigError{Field: "DB_PORT", Message: "port must be between 1 and 65535"}
-	}
-	return nil
-}
-
-type ConfigError struct {
-	Field   string
-	Message string
-}
-
-func (e *ConfigError) Error() string {
-	return "config error: " + e.Field + " - " + e.Message
+    if value, exists := os.LookupEnv(key); exists {
+        return value
+    }
+    return defaultValue
 }
