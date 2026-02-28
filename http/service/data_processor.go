@@ -205,3 +205,32 @@ func FilterByTag(records []DataRecord, tag string) []DataRecord {
 	}
 	return filtered
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+func CleanInput(input string) string {
+	trimmed := strings.TrimSpace(input)
+	re := regexp.MustCompile(`\s+`)
+	cleaned := re.ReplaceAllString(trimmed, " ")
+	return cleaned
+}
+
+func NormalizeCase(input string) string {
+	return strings.ToLower(input)
+}
+
+func RemoveSpecialChars(input string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9\s]`)
+	return re.ReplaceAllString(input, "")
+}
+
+func ProcessUserInput(input string) string {
+	cleaned := CleanInput(input)
+	normalized := NormalizeCase(cleaned)
+	final := RemoveSpecialChars(normalized)
+	return final
+}
