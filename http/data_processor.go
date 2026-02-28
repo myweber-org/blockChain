@@ -134,3 +134,42 @@ func main() {
     output := FilterAndDouble(input, 9)
     fmt.Println("Processed slice:", output)
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataProcessor struct {
+	whitespaceRegex *regexp.Regexp
+	emailRegex      *regexp.Regexp
+}
+
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+		emailRegex:      regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`),
+	}
+}
+
+func (dp *DataProcessor) CleanString(input string) string {
+	trimmed := strings.TrimSpace(input)
+	return dp.whitespaceRegex.ReplaceAllString(trimmed, " ")
+}
+
+func (dp *DataProcessor) ValidateEmail(email string) bool {
+	return dp.emailRegex.MatchString(email)
+}
+
+func (dp *DataProcessor) NormalizeEmail(email string) string {
+	cleaned := dp.CleanString(email)
+	return strings.ToLower(cleaned)
+}
+
+func (dp *DataProcessor) ProcessUserInput(name, email string) (string, string, bool) {
+	cleanName := dp.CleanString(name)
+	normalizedEmail := dp.NormalizeEmail(email)
+	isValid := dp.ValidateEmail(normalizedEmail)
+	return cleanName, normalizedEmail, isValid
+}
