@@ -442,3 +442,34 @@ func main() {
 
 	generateSummary(records)
 }
+package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+func SanitizeUsername(input string) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", false
+	}
+
+	pattern := `^[a-zA-Z0-9_\-\.]+$`
+	matched, err := regexp.MatchString(pattern, trimmed)
+	if err != nil || !matched {
+		return "", false
+	}
+
+	if len(trimmed) > 50 {
+		return "", false
+	}
+
+	return trimmed, true
+}
+
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`
+	matched, err := regexp.MatchString(pattern, email)
+	return err == nil && matched
+}
