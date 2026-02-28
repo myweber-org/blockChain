@@ -1,60 +1,79 @@
+
 package config
 
 import (
-    "fmt"
-    "io/ioutil"
-    "os"
-
-    "gopkg.in/yaml.v2"
+	"errors"
+	"os"
+	"strconv"
+	"strings"
 )
 
-type DatabaseConfig struct {
-    Host     string `yaml:"host"`
-    Port     int    `yaml:"port"`
-    Username string `yaml:"username"`
-    Password string `yaml:"password"`
-    Name     string `yaml:"name"`
+type AppConfig struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+	APIKeys    []string
 }
 
-type ServerConfig struct {
-    Port         int            `yaml:"port"`
-    Debug        bool           `yaml:"debug"`
-    ReadTimeout  int            `yaml:"read_timeout"`
-    WriteTimeout int            `yaml:"write_timeout"`
-    Database     DatabaseConfig `yaml:"database"`
+func LoadConfig() (*AppConfig, error) {
+	cfg := &AppConfig{}
+
+	portStr := os.Getenv("SERVER_PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, errors.New("invalid SERVER_PORT value")
+	}
+	cfg.ServerPort = port
+
+	cfg.DBHost = os.Getenv("DB_HOST")
+	if cfg.DBHost == "" {
+		cfg.DBHost = "localhost"
+	}
+
+	dbPortStr := os.Getenv("DB_PORT")
+	if dbPortStr == "" {
+		dbPortStr = "5432"
+	}
+	dbPort, err := strconv.Atoi(dbPortStr)
+	if err != nil {
+		return nil, errors.New("invalid DB_PORT value")
+	}
+	cfg.DBPort = dbPort
+
+	debugStr := os.Getenv("DEBUG_MODE")
+	cfg.DebugMode = strings.ToLower(debugStr) == "true"
+
+	apiKeysStr := os.Getenv("API_KEYS")
+	if apiKeysStr != "" {
+		cfg.APIKeys = strings.Split(apiKeysStr, ",")
+		for i, key := range cfg.APIKeys {
+			cfg.APIKeys[i] = strings.TrimSpace(key)
+		}
+	}
+
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
-func LoadConfig(path string) (*ServerConfig, error) {
-    if _, err := os.Stat(path); os.IsNotExist(err) {
-        return nil, fmt.Errorf("config file not found: %s", path)
-    }
+func validateConfig(cfg *AppConfig) error {
+	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
 
-    data, err := ioutil.ReadFile(path)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %v", err)
-    }
+	if cfg.DBPort < 1 || cfg.DBPort > 65535 {
+		return errors.New("database port must be between 1 and 65535")
+	}
 
-    var config ServerConfig
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML config: %v", err)
-    }
+	if cfg.DBHost == "" {
+		return errors.New("database host cannot be empty")
+	}
 
-    if config.Server.Port == 0 {
-        config.Server.Port = 8080
-    }
-
-    return &config, nil
-}
-
-func ValidateConfig(config *ServerConfig) error {
-    if config.Database.Host == "" {
-        return fmt.Errorf("database host is required")
-    }
-    if config.Database.Port <= 0 || config.Database.Port > 65535 {
-        return fmt.Errorf("invalid database port: %d", config.Database.Port)
-    }
-    if config.Server.Port <= 0 || config.Server.Port > 65535 {
-        return fmt.Errorf("invalid server port: %d", config.Server.Port)
-    }
-    return nil
+	return nil
 }
