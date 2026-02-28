@@ -276,4 +276,61 @@ func ActivityLogger(next http.Handler) http.Handler {
 			r.RemoteAddr,
 		)
 	})
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type ActivityType string
+
+const (
+    Login    ActivityType = "LOGIN"
+    Logout   ActivityType = "LOGOUT"
+    Purchase ActivityType = "PURCHASE"
+    View     ActivityType = "VIEW"
+)
+
+type UserActivity struct {
+    UserID    string       `json:"user_id"`
+    Action    ActivityType `json:"action"`
+    Timestamp time.Time    `json:"timestamp"`
+    Details   string       `json:"details,omitempty"`
+}
+
+func logActivity(activity UserActivity) error {
+    file, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    activityJSON, err := json.Marshal(activity)
+    if err != nil {
+        return err
+    }
+
+    _, err = file.Write(append(activityJSON, '\n'))
+    return err
+}
+
+func main() {
+    activities := []UserActivity{
+        {UserID: "user123", Action: Login, Timestamp: time.Now(), Details: "Successful login"},
+        {UserID: "user456", Action: View, Timestamp: time.Now().Add(-5 * time.Minute), Details: "Viewed product catalog"},
+        {UserID: "user123", Action: Purchase, Timestamp: time.Now().Add(-2 * time.Minute), Details: "Purchased item ID: 789"},
+        {UserID: "user456", Action: Logout, Timestamp: time.Now().Add(-1 * time.Minute)},
+    }
+
+    for _, activity := range activities {
+        if err := logActivity(activity); err != nil {
+            log.Printf("Failed to log activity: %v", err)
+        } else {
+            fmt.Printf("Logged: %s - %s\n", activity.UserID, activity.Action)
+        }
+    }
 }
