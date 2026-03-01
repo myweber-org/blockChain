@@ -2,141 +2,6 @@
 package main
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
-	"os"
-	"strings"
-)
-
-type DataRecord struct {
-	ID      string
-	Name    string
-	Value   string
-	IsValid bool
-}
-
-func ProcessCSVFile(filePath string) ([]DataRecord, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	reader.TrimLeadingSpace = true
-
-	var records []DataRecord
-	lineNumber := 0
-
-	for {
-		lineNumber++
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
-		}
-
-		if len(row) < 3 {
-			continue
-		}
-
-		record := DataRecord{
-			ID:    strings.TrimSpace(row[0]),
-			Name:  strings.TrimSpace(row[1]),
-			Value: strings.TrimSpace(row[2]),
-		}
-		record.IsValid = validateRecord(record)
-
-		records = append(records, record)
-	}
-
-	return records, nil
-}
-
-func validateRecord(record DataRecord) bool {
-	if record.ID == "" || record.Name == "" {
-		return false
-	}
-	if len(record.Value) > 100 {
-		return false
-	}
-	return true
-}
-
-func FilterValidRecords(records []DataRecord) []DataRecord {
-	var valid []DataRecord
-	for _, record := range records {
-		if record.IsValid {
-			valid = append(valid, record)
-		}
-	}
-	return valid
-}
-
-func GenerateSummary(records []DataRecord) {
-	validCount := 0
-	for _, record := range records {
-		if record.IsValid {
-			validCount++
-		}
-	}
-	fmt.Printf("Total records: %d\n", len(records))
-	fmt.Printf("Valid records: %d\n", validCount)
-	fmt.Printf("Invalid records: %d\n", len(records)-validCount)
-}package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"log"
-)
-
-func ValidateJSONStructure(rawData []byte, target interface{}) error {
-	if !json.Valid(rawData) {
-		return fmt.Errorf("invalid JSON format")
-	}
-	err := json.Unmarshal(rawData, target)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-	return nil
-}
-
-func main() {
-	sampleJSON := []byte(`{"name":"test","value":42}`)
-	var result map[string]interface{}
-
-	err := ValidateJSONStructure(sampleJSON, &result)
-	if err != nil {
-		log.Fatal("Validation failed:", err)
-	}
-	fmt.Println("Parsed data:", result)
-}
-package main
-
-import "fmt"
-
-func FilterAndDouble(numbers []int, threshold int) []int {
-    var result []int
-    for _, num := range numbers {
-        if num > threshold {
-            result = append(result, num*2)
-        }
-    }
-    return result
-}
-
-func main() {
-    input := []int{1, 5, 10, 15, 20}
-    output := FilterAndDouble(input, 9)
-    fmt.Println("Processed slice:", output)
-}
-package main
-
-import (
 	"regexp"
 	"strings"
 )
@@ -162,14 +27,13 @@ func (dp *DataProcessor) ValidateEmail(email string) bool {
 	return dp.emailRegex.MatchString(email)
 }
 
-func (dp *DataProcessor) NormalizeEmail(email string) string {
-	cleaned := dp.CleanString(email)
-	return strings.ToLower(cleaned)
-}
-
-func (dp *DataProcessor) ProcessUserInput(name, email string) (string, string, bool) {
-	cleanName := dp.CleanString(name)
-	normalizedEmail := dp.NormalizeEmail(email)
-	isValid := dp.ValidateEmail(normalizedEmail)
-	return cleanName, normalizedEmail, isValid
+func (dp *DataProcessor) ExtractDomain(email string) (string, bool) {
+	if !dp.ValidateEmail(email) {
+		return "", false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return "", false
+	}
+	return parts[1], true
 }
