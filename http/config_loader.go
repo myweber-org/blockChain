@@ -158,4 +158,42 @@ func LoadConfig() (*AppConfig, error) {
 	}
 
 	return cfg, nil
+}package config
+
+import (
+    "os"
+    "strings"
+)
+
+type Config struct {
+    DatabaseURL string
+    APIKey      string
+    LogLevel    string
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{
+        DatabaseURL: getEnvWithDefault("DB_URL", "postgres://localhost:5432/app"),
+        APIKey:      getEnvWithDefault("API_KEY", ""),
+        LogLevel:    getEnvWithDefault("LOG_LEVEL", "info"),
+    }
+    return cfg, nil
+}
+
+func getEnvWithDefault(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+
+func ParseTemplate(s string) string {
+    for _, env := range os.Environ() {
+        pair := strings.SplitN(env, "=", 2)
+        if len(pair) == 2 {
+            placeholder := "${" + pair[0] + "}"
+            s = strings.ReplaceAll(s, placeholder, pair[1])
+        }
+    }
+    return s
 }
