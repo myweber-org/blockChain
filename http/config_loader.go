@@ -85,3 +85,77 @@ func getEnv(key, defaultValue string) string {
     }
     return defaultValue
 }
+package config
+
+import (
+	"errors"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type AppConfig struct {
+	ServerPort int
+	DebugMode  bool
+	DatabaseURL string
+	CacheTTL   int
+	AllowedHosts []string
+}
+
+func LoadConfig() (*AppConfig, error) {
+	cfg := &AppConfig{}
+	var errs []string
+
+	portStr := os.Getenv("SERVER_PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		errs = append(errs, "invalid SERVER_PORT: "+err.Error())
+	} else if port < 1 || port > 65535 {
+		errs = append(errs, "SERVER_PORT out of range")
+	} else {
+		cfg.ServerPort = port
+	}
+
+	debugStr := os.Getenv("DEBUG_MODE")
+	if debugStr == "" {
+		debugStr = "false"
+	}
+	cfg.DebugMode = strings.ToLower(debugStr) == "true"
+
+	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
+	if cfg.DatabaseURL == "" {
+		errs = append(errs, "DATABASE_URL is required")
+	}
+
+	ttlStr := os.Getenv("CACHE_TTL")
+	if ttlStr == "" {
+		ttlStr = "300"
+	}
+	ttl, err := strconv.Atoi(ttlStr)
+	if err != nil {
+		errs = append(errs, "invalid CACHE_TTL: "+err.Error())
+	} else if ttl < 0 {
+		errs = append(errs, "CACHE_TTL cannot be negative")
+	} else {
+		cfg.CacheTTL = ttl
+	}
+
+	hostsStr := os.Getenv("ALLOWED_HOSTS")
+	if hostsStr == "" {
+		cfg.AllowedHosts = []string{"localhost", "127.0.0.1"}
+	} else {
+		cfg.AllowedHosts = strings.Split(hostsStr, ",")
+		for i, host := range cfg.AllowedHosts {
+			cfg.AllowedHosts[i] = strings.TrimSpace(host)
+		}
+	}
+
+	if len(errs) > 0 {
+		return nil, errors.New("configuration errors: " + strings.Join(errs, "; "))
+	}
+
+	return cfg, nil
+}
