@@ -477,3 +477,134 @@ func main() {
 
 	fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+const (
+	maxFileSize   = 10 * 1024 * 1024 // 10MB
+	backupCount   = 5
+	logDir        = "./logs"
+	currentLog    = "app.log"
+)
+
+type LogRotator struct {
+	file     *os.File
+	size     int64
+	basePath string
+}
+
+func NewLogRotator() (*LogRotator, error) {
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(logDir, currentLog)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	return &LogRotator{
+		file:     file,
+		size:     info.Size(),
+		basePath: path,
+	}, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if lr.size+int64(len(p)) > maxFileSize {
+		if err := lr.rotate(); err != nil {
+			log.Printf("Rotation failed: %v", err)
+		}
+	}
+
+	n, err := lr.file.Write(p)
+	if err == nil {
+		lr.size += int64(n)
+	}
+	return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+	if err := lr.file.Close(); err != nil {
+		return err
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	backupPath := filepath.Join(logDir, fmt.Sprintf("app_%s.log", timestamp))
+
+	if err := os.Rename(lr.basePath, backupPath); err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(lr.basePath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	lr.file = file
+	lr.size = 0
+
+	go lr.cleanupOldBackups()
+	go lr.compressBackup(backupPath)
+
+	return nil
+}
+
+func (lr *LogRotator) compressBackup(path string) {
+	compressed := path + ".gz"
+	// Simulated compression - in real implementation use compress/gzip
+	fmt.Printf("Compressing %s to %s\n", path, compressed)
+	// Actual compression logic would go here
+}
+
+func (lr *LogRotator) cleanupOldBackups() {
+	pattern := filepath.Join(logDir, "app_*.log*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return
+	}
+
+	if len(matches) > backupCount {
+		toDelete := matches[:len(matches)-backupCount]
+		for _, f := range toDelete {
+			if !strings.Contains(f, currentLog) {
+				os.Remove(f)
+			}
+		}
+	}
+}
+
+func (lr *LogRotator) Close() error {
+	return lr.file.Close()
+}
+
+func main() {
+	rotator, err := NewLogRotator()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rotator.Close()
+
+	log.SetOutput(io.MultiWriter(os.Stdout, rotator))
+
+	for i := 0; i < 1000; i++ {
+		log.Printf("Log entry %d: %s", i, strings.Repeat("X", 10240))
+		time.Sleep(10 * time.Millisecond)
+	}
+}
