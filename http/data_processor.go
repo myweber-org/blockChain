@@ -241,4 +241,85 @@ func main() {
 		fmt.Printf("Error processing data: %v\n", err)
 		os.Exit(1)
 	}
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+func processCSVFile(filePath string) ([]map[string]interface{}, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	headers, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read headers: %w", err)
+	}
+
+	var records []map[string]interface{}
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read row: %w", err)
+		}
+
+		record := make(map[string]interface{})
+		for i, header := range headers {
+			if i < len(row) {
+				if num, err := strconv.ParseFloat(row[i], 64); err == nil {
+					record[header] = num
+				} else {
+					record[header] = row[i]
+				}
+			}
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func calculateColumnAverage(records []map[string]interface{}, columnName string) (float64, error) {
+	var sum float64
+	var count int
+
+	for _, record := range records {
+		if val, exists := record[columnName]; exists {
+			switch v := val.(type) {
+			case float64:
+				sum += v
+				count++
+			case int:
+				sum += float64(v)
+				count++
+			}
+		}
+	}
+
+	if count == 0 {
+		return 0, fmt.Errorf("no numeric data found in column: %s", columnName)
+	}
+
+	return sum / float64(count), nil
+}
+
+func filterRecords(records []map[string]interface{}, filterFunc func(map[string]interface{}) bool) []map[string]interface{} {
+	var filtered []map[string]interface{}
+	for _, record := range records {
+		if filterFunc(record) {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
 }
