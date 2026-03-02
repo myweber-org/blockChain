@@ -282,4 +282,32 @@ func main() {
 	data := []string{" apple", "banana ", "  apple  ", "banana", "", "cherry"}
 	cleaned := CleanData(data)
 	fmt.Println("Cleaned data:", cleaned)
+}package main
+
+import "fmt"
+
+func RemoveDuplicates(nums []int) []int {
+    if len(nums) == 0 {
+        return nums
+    }
+
+    seen := make(map[int]bool)
+    result := []int{}
+
+    for _, num := range nums {
+        if !seen[num] {
+            seen[num] = true
+            result = append(result, num)
+        }
+    }
+
+    return result
+}
+
+func main() {
+    sampleData := []int{1, 2, 2, 3, 4, 4, 5, 6, 6, 7}
+    cleanedData := RemoveDuplicates(sampleData)
+    
+    fmt.Println("Original:", sampleData)
+    fmt.Println("Cleaned:", cleanedData)
 }
