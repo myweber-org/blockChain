@@ -259,4 +259,76 @@ func main() {
 	go startCleanupJob(store)
 
 	select {}
+}package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/go-redis/redis/v8"
+)
+
+type SessionCleaner struct {
+	client *redis.Client
+	prefix string
+}
+
+func NewSessionCleaner(addr string, prefix string) *SessionCleaner {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: addr,
+	})
+	return &SessionCleaner{
+		client: rdb,
+		prefix: prefix,
+	}
+}
+
+func (sc *SessionCleaner) CleanExpiredSessions(ctx context.Context) error {
+	iter := sc.client.Scan(ctx, 0, sc.prefix+"*", 0).Iterator()
+	for iter.Next(ctx) {
+		key := iter.Val()
+		ttl, err := sc.client.TTL(ctx, key).Result()
+		if err != nil {
+			log.Printf("Failed to get TTL for key %s: %v", key, err)
+			continue
+		}
+		if ttl < 0 {
+			if err := sc.client.Del(ctx, key).Err(); err != nil {
+				log.Printf("Failed to delete expired session %s: %v", key, err)
+			} else {
+				log.Printf("Removed expired session: %s", key)
+			}
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("iteration error: %w", err)
+	}
+	return nil
+}
+
+func (sc *SessionCleaner) RunCleanupJob(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := sc.CleanExpiredSessions(ctx); err != nil {
+				log.Printf("Session cleanup failed: %v", err)
+			}
+		}
+	}
+}
+
+func main() {
+	cleaner := NewSessionCleaner("localhost:6379", "session:")
+	ctx := context.Background()
+
+	go cleaner.RunCleanupJob(ctx, 5*time.Minute)
+
+	<-ctx.Done()
 }
