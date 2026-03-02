@@ -402,4 +402,106 @@ func main() {
     }
 
     fmt.Println("Log rotation test completed")
+}package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "time"
+)
+
+const (
+    maxLogSize    = 1024 * 1024 // 1MB
+    maxBackupFiles = 5
+    logFileName   = "app.log"
+)
+
+type RotatingLogger struct {
+    currentFile *os.File
+    currentSize int64
+    basePath    string
+}
+
+func NewRotatingLogger(path string) (*RotatingLogger, error) {
+    fullPath := filepath.Join(path, logFileName)
+    file, err := os.OpenFile(fullPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &RotatingLogger{
+        currentFile: file,
+        currentSize: info.Size(),
+        basePath:    path,
+    }, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (int, error) {
+    if rl.currentSize+int64(len(p)) > maxLogSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err := rl.currentFile.Write(p)
+    if err == nil {
+        rl.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+    rl.currentFile.Close()
+
+    for i := maxBackupFiles - 1; i >= 0; i-- {
+        oldName := filepath.Join(rl.basePath, fmt.Sprintf("%s.%d", logFileName, i))
+        newName := filepath.Join(rl.basePath, fmt.Sprintf("%s.%d", logFileName, i+1))
+
+        if i == maxBackupFiles-1 {
+            os.Remove(oldName)
+        } else {
+            os.Rename(oldName, newName)
+        }
+    }
+
+    originalPath := filepath.Join(rl.basePath, logFileName)
+    backupPath := filepath.Join(rl.basePath, fmt.Sprintf("%s.0", logFileName))
+    os.Rename(originalPath, backupPath)
+
+    file, err := os.OpenFile(originalPath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    rl.currentFile = file
+    rl.currentSize = 0
+    return nil
+}
+
+func (rl *RotatingLogger) Close() error {
+    return rl.currentFile.Close()
+}
+
+func main() {
+    logger, err := NewRotatingLogger(".")
+    if err != nil {
+        panic(err)
+    }
+    defer logger.Close()
+
+    for i := 0; i < 100; i++ {
+        msg := fmt.Sprintf("[%s] Log entry %d\n", time.Now().Format(time.RFC3339), i)
+        logger.Write([]byte(msg))
+        time.Sleep(10 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed")
 }
