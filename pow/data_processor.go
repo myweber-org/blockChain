@@ -167,3 +167,103 @@ func main() {
 	fmt.Printf("Input: %v\n", input)
 	fmt.Printf("Output: %v\n", output)
 }
+package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strings"
+)
+
+type DataProcessor struct {
+    InputPath  string
+    OutputPath string
+    Delimiter  rune
+}
+
+func NewDataProcessor(input, output string) *DataProcessor {
+    return &DataProcessor{
+        InputPath:  input,
+        OutputPath: output,
+        Delimiter:  ',',
+    }
+}
+
+func (dp *DataProcessor) ValidateAndClean() error {
+    inputFile, err := os.Open(dp.InputPath)
+    if err != nil {
+        return fmt.Errorf("failed to open input file: %w", err)
+    }
+    defer inputFile.Close()
+
+    outputFile, err := os.Create(dp.OutputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
+
+    reader := csv.NewReader(inputFile)
+    reader.Comma = dp.Delimiter
+    writer := csv.NewWriter(outputFile)
+    writer.Comma = dp.Delimiter
+
+    lineNumber := 0
+    for {
+        record, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return fmt.Errorf("error reading CSV at line %d: %w", lineNumber, err)
+        }
+
+        cleanedRecord := dp.cleanRecord(record)
+        if len(cleanedRecord) > 0 {
+            if err := writer.Write(cleanedRecord); err != nil {
+                return fmt.Errorf("error writing record at line %d: %w", lineNumber, err)
+            }
+        }
+
+        lineNumber++
+    }
+
+    writer.Flush()
+    if err := writer.Error(); err != nil {
+        return fmt.Errorf("error flushing writer: %w", err)
+    }
+
+    return nil
+}
+
+func (dp *DataProcessor) cleanRecord(record []string) []string {
+    cleaned := make([]string, 0, len(record))
+    for _, field := range record {
+        cleanedField := strings.TrimSpace(field)
+        cleanedField = strings.ToValidUTF8(cleanedField, "")
+        if cleanedField != "" {
+            cleaned = append(cleaned, cleanedField)
+        }
+    }
+    return cleaned
+}
+
+func (dp *DataProcessor) SetDelimiter(delim rune) {
+    dp.Delimiter = delim
+}
+
+func main() {
+    if len(os.Args) < 3 {
+        fmt.Println("Usage: data_processor <input.csv> <output.csv>")
+        os.Exit(1)
+    }
+
+    processor := NewDataProcessor(os.Args[1], os.Args[2])
+    if err := processor.ValidateAndClean(); err != nil {
+        fmt.Printf("Processing failed: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Println("Data processing completed successfully")
+}
