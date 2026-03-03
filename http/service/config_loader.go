@@ -455,4 +455,120 @@ func validate(cfg *Config) error {
     }
     
     return nil
+}package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type DatabaseConfig struct {
+	Host     string `json:"host" env:"DB_HOST"`
+	Port     int    `json:"port" env:"DB_PORT"`
+	Username string `json:"username" env:"DB_USER"`
+	Password string `json:"password" env:"DB_PASS"`
+	Database string `json:"database" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+	Port         int    `json:"port" env:"SERVER_PORT"`
+	ReadTimeout  int    `json:"read_timeout" env:"READ_TIMEOUT"`
+	WriteTimeout int    `json:"write_timeout" env:"WRITE_TIMEOUT"`
+	DebugMode    bool   `json:"debug_mode" env:"DEBUG_MODE"`
+	LogLevel     string `json:"log_level" env:"LOG_LEVEL"`
+}
+
+type Config struct {
+	Database DatabaseConfig `json:"database"`
+	Server   ServerConfig   `json:"server"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	var config Config
+
+	if configPath == "" {
+		configPath = findConfigFile()
+	}
+
+	fileData, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := json.Unmarshal(fileData, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	overrideFromEnv(&config)
+
+	if err := validateConfig(&config); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return &config, nil
+}
+
+func findConfigFile() string {
+	possiblePaths := []string{
+		"config.json",
+		"config/config.json",
+		"/etc/app/config.json",
+	}
+
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return "config.json"
+}
+
+func overrideFromEnv(config *Config) {
+	overrideStruct(config.Database)
+	overrideStruct(config.Server)
+}
+
+func overrideStruct(s interface{}) {
+	// This would use reflection to read struct tags
+	// and override values from environment variables
+	// Simplified implementation for example
+}
+
+func validateConfig(config *Config) error {
+	if config.Database.Host == "" {
+		return fmt.Errorf("database host is required")
+	}
+	if config.Database.Port <= 0 || config.Database.Port > 65535 {
+		return fmt.Errorf("invalid database port: %d", config.Database.Port)
+	}
+	if config.Server.Port <= 0 || config.Server.Port > 65535 {
+		return fmt.Errorf("invalid server port: %d", config.Server.Port)
+	}
+	if !isValidLogLevel(config.Server.LogLevel) {
+		return fmt.Errorf("invalid log level: %s", config.Server.LogLevel)
+	}
+	return nil
+}
+
+func isValidLogLevel(level string) bool {
+	validLevels := []string{"debug", "info", "warn", "error", "fatal"}
+	for _, valid := range validLevels {
+		if strings.EqualFold(level, valid) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) GetDSN() string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+		c.Database.Username,
+		c.Database.Password,
+		c.Database.Host,
+		c.Database.Port,
+		c.Database.Database)
 }
