@@ -57,4 +57,47 @@ func main() {
         return
     }
     fmt.Printf("Valid token for user: %s (ID: %d)\n", claims.Username, claims.UserID)
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type UserAuthenticator struct {
+	secretKey []byte
+}
+
+func NewUserAuthenticator(secretKey string) *UserAuthenticator {
+	return &UserAuthenticator{
+		secretKey: []byte(secretKey),
+	}
+}
+
+func (ua *UserAuthenticator) Authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenString == authHeader {
+			http.Error(w, "Invalid authorization format", http.StatusUnauthorized)
+			return
+		}
+
+		claims, err := validateToken(tokenString, ua.secretKey)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "userID", claims.UserID)
+		ctx = context.WithValue(ctx, "userRole", claims.Role)
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
