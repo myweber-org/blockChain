@@ -109,4 +109,34 @@ func CalculateStatistics(records []DataRecord) (float64, float64, int) {
 
     average := sum / float64(validCount)
     return average, maxValue, validCount
+}package main
+
+import (
+	"errors"
+	"strings"
+	"unicode"
+)
+
+func ValidateUsername(username string) error {
+	if len(username) < 3 || len(username) > 20 {
+		return errors.New("username must be between 3 and 20 characters")
+	}
+	for _, r := range username {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+			return errors.New("username can only contain letters, digits, underscores, and hyphens")
+		}
+	}
+	return nil
+}
+
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func TransformUserData(rawUsername, rawEmail string) (string, string, error) {
+	if err := ValidateUsername(rawUsername); err != nil {
+		return "", "", err
+	}
+	normalizedEmail := NormalizeEmail(rawEmail)
+	return rawUsername, normalizedEmail, nil
 }
