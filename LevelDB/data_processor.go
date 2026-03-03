@@ -107,4 +107,24 @@ func main() {
 	fmt.Printf("Processed %d records\n", len(records))
 	fmt.Printf("Average value: %.2f\n", average)
 	fmt.Printf("Maximum value: %.2f\n", max)
+}package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+func ProcessInput(input string) (string, error) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	re := regexp.MustCompile(`[^a-zA-Z0-9\s]`)
+	cleaned := re.ReplaceAllString(trimmed, "")
+
+	reMultiSpace := regexp.MustCompile(`\s+`)
+	final := reMultiSpace.ReplaceAllString(cleaned, " ")
+
+	return strings.ToLower(final), nil
 }
