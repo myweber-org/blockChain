@@ -376,4 +376,84 @@ func CalculateStats(records []Record) (float64, float64, int) {
 
 	average := sum / float64(len(records))
 	return average, minValue, activeCount
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+type Record struct {
+	ID    int
+	Name  string
+	Value float64
+}
+
+func ProcessCSV(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	var records []Record
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if len(row) != 3 {
+			continue
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			continue
+		}
+
+		name := row[1]
+		if name == "" {
+			continue
+		}
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			continue
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return records, nil
+}
+
+func ValidateRecords(records []Record) []Record {
+	var validRecords []Record
+	for _, r := range records {
+		if r.ID > 0 && r.Value >= 0 {
+			validRecords = append(validRecords, r)
+		}
+	}
+	return validRecords
+}
+
+func CalculateTotal(records []Record) float64 {
+	var total float64
+	for _, r := range records {
+		total += r.Value
+	}
+	return total
 }
