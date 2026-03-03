@@ -157,4 +157,46 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type ActivityLogger struct {
+	limiter *RateLimiter
+}
+
+type RateLimiter struct {
+	interval time.Duration
+	last     time.Time
+}
+
+func NewActivityLogger(interval time.Duration) *ActivityLogger {
+	return &ActivityLogger{
+		limiter: &RateLimiter{
+			interval: interval,
+			last:     time.Now().Add(-interval),
+		},
+	}
+}
+
+func (rl *RateLimiter) Allow() bool {
+	now := time.Now()
+	if now.Sub(rl.last) >= rl.interval {
+		rl.last = now
+		return true
+	}
+	return false
+}
+
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if al.limiter.Allow() {
+			log.Printf("Activity: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
