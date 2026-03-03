@@ -62,4 +62,44 @@ func (c *ServerConfig) Validate() error {
         return fmt.Errorf("invalid server port: %d", c.Port)
     }
     return nil
+}package config
+
+import (
+    "os"
+    "strconv"
+)
+
+type Config struct {
+    ServerPort int
+    DebugMode  bool
+    MaxWorkers int
+    CacheTTL   int
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{
+        ServerPort: getEnvAsInt("SERVER_PORT", 8080),
+        DebugMode:  getEnvAsBool("DEBUG_MODE", false),
+        MaxWorkers: getEnvAsInt("MAX_WORKERS", 10),
+        CacheTTL:   getEnvAsInt("CACHE_TTL", 300),
+    }
+    return cfg, nil
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+    if value, exists := os.LookupEnv(key); exists {
+        if intValue, err := strconv.Atoi(value); err == nil {
+            return intValue
+        }
+    }
+    return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+    if value, exists := os.LookupEnv(key); exists {
+        if boolValue, err := strconv.ParseBool(value); err == nil {
+            return boolValue
+        }
+    }
+    return defaultValue
 }
