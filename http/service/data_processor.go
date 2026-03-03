@@ -1,95 +1,43 @@
-
 package main
 
 import (
-	"encoding/csv"
+	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"strings"
+	"log"
 )
 
-type DataProcessor struct {
-	InputPath  string
-	OutputPath string
+type User struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Active   bool   `json:"active"`
 }
 
-func NewDataProcessor(input, output string) *DataProcessor {
-	return &DataProcessor{
-		InputPath:  input,
-		OutputPath: output,
-	}
-}
-
-func (dp *DataProcessor) Process() error {
-	inputFile, err := os.Open(dp.InputPath)
+func ValidateJSON(data []byte) (*User, error) {
+	var user User
+	err := json.Unmarshal(data, &user)
 	if err != nil {
-		return fmt.Errorf("failed to open input file: %w", err)
-	}
-	defer inputFile.Close()
-
-	outputFile, err := os.Create(dp.OutputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outputFile.Close()
-
-	reader := csv.NewReader(inputFile)
-	writer := csv.NewWriter(outputFile)
-	defer writer.Flush()
-
-	headerProcessed := false
-
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("error reading CSV record: %w", err)
-		}
-
-		if !headerProcessed {
-			headerProcessed = true
-			if err := writer.Write(record); err != nil {
-				return fmt.Errorf("error writing header: %w", err)
-			}
-			continue
-		}
-
-		cleanedRecord := dp.cleanRecord(record)
-		if dp.isValidRecord(cleanedRecord) {
-			if err := writer.Write(cleanedRecord); err != nil {
-				return fmt.Errorf("error writing record: %w", err)
-			}
-		}
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
-	return nil
-}
-
-func (dp *DataProcessor) cleanRecord(record []string) []string {
-	cleaned := make([]string, len(record))
-	for i, field := range record {
-		cleaned[i] = strings.TrimSpace(field)
+	if user.Username == "" {
+		return nil, fmt.Errorf("username cannot be empty")
 	}
-	return cleaned
-}
-
-func (dp *DataProcessor) isValidRecord(record []string) bool {
-	for _, field := range record {
-		if field == "" {
-			return false
-		}
+	if user.Email == "" {
+		return nil, fmt.Errorf("email cannot be empty")
 	}
-	return true
+	if user.ID <= 0 {
+		return nil, fmt.Errorf("ID must be a positive integer")
+	}
+
+	return &user, nil
 }
 
 func main() {
-	processor := NewDataProcessor("input.csv", "output.csv")
-	if err := processor.Process(); err != nil {
-		fmt.Printf("Processing error: %v\n", err)
-		os.Exit(1)
+	jsonData := []byte(`{"id": 123, "username": "johndoe", "email": "john@example.com", "active": true}`)
+	user, err := ValidateJSON(jsonData)
+	if err != nil {
+		log.Fatalf("Validation error: %v", err)
 	}
-	fmt.Println("Data processing completed successfully")
+	fmt.Printf("Validated user: %+v\n", user)
 }
