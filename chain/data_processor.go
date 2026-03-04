@@ -340,3 +340,65 @@ func main() {
 
 	generateReport(records)
 }
+package main
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+	"time"
+)
+
+type UserProfile struct {
+	ID        int
+	Email     string
+	Username  string
+	BirthDate time.Time
+	Active    bool
+}
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+
+func ValidateUserProfile(profile UserProfile) error {
+	if profile.ID <= 0 {
+		return errors.New("invalid user ID")
+	}
+
+	if !emailRegex.MatchString(profile.Email) {
+		return errors.New("invalid email format")
+	}
+
+	if len(strings.TrimSpace(profile.Username)) < 3 {
+		return errors.New("username must be at least 3 characters")
+	}
+
+	if time.Since(profile.BirthDate).Hours()/24/365 < 13 {
+		return errors.New("user must be at least 13 years old")
+	}
+
+	return nil
+}
+
+func TransformUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func CalculateAge(birthDate time.Time) int {
+	now := time.Now()
+	years := now.Year() - birthDate.Year()
+
+	if now.YearDay() < birthDate.YearDay() {
+		years--
+	}
+
+	return years
+}
+
+func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
+	if err := ValidateUserProfile(profile); err != nil {
+		return UserProfile{}, err
+	}
+
+	profile.Username = TransformUsername(profile.Username)
+	return profile, nil
+}
