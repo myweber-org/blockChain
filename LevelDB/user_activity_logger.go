@@ -94,4 +94,53 @@ type responseRecorder struct {
 func (rr *responseRecorder) WriteHeader(code int) {
 	rr.statusCode = code
 	rr.ResponseWriter.WriteHeader(code)
+}package main
+
+import (
+    "encoding/json"
+    "log"
+    "os"
+    "time"
+)
+
+type UserActivity struct {
+    Timestamp time.Time `json:"timestamp"`
+    UserID    string    `json:"user_id"`
+    Action    string    `json:"action"`
+    Details   string    `json:"details"`
+}
+
+func logActivity(userID, action, details string) error {
+    activity := UserActivity{
+        Timestamp: time.Now().UTC(),
+        UserID:    userID,
+        Action:    action,
+        Details:   details,
+    }
+
+    file, err := os.OpenFile("user_activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    if err := encoder.Encode(activity); err != nil {
+        return err
+    }
+
+    return nil
+}
+
+func main() {
+    err := logActivity("user123", "login", "Successful authentication from IP 192.168.1.100")
+    if err != nil {
+        log.Printf("Failed to log activity: %v", err)
+    }
+
+    err = logActivity("user456", "file_upload", "Uploaded document 'report.pdf' (2.4 MB)")
+    if err != nil {
+        log.Printf("Failed to log activity: %v", err)
+    }
 }
