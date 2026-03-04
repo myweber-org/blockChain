@@ -147,3 +147,52 @@ func main() {
 	
 	fmt.Printf("Processed user: %+v\n", processed)
 }
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+func ValidateEmail(email string) bool {
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(pattern, email)
+	return matched
+}
+
+func TransformToTitleCase(input string) string {
+	if len(input) == 0 {
+		return input
+	}
+	return strings.ToUpper(input[:1]) + strings.ToLower(input[1:])
+}
+
+func PrettyPrintJSON(data interface{}) (string, error) {
+	bytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func main() {
+	email := "test@example.com"
+	fmt.Printf("Email validation result: %v\n", ValidateEmail(email))
+
+	name := "john doe"
+	fmt.Printf("Transformed name: %s\n", TransformToTitleCase(name))
+
+	sampleData := map[string]interface{}{
+		"id":    1,
+		"name":  "Sample Item",
+		"price": 29.99,
+	}
+	prettyJSON, err := PrettyPrintJSON(sampleData)
+	if err != nil {
+		fmt.Printf("Error formatting JSON: %v\n", err)
+	} else {
+		fmt.Printf("Formatted JSON:\n%s\n", prettyJSON)
+	}
+}
