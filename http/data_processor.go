@@ -195,4 +195,93 @@ func main() {
 	} else {
 		fmt.Printf("Formatted JSON:\n%s\n", prettyJSON)
 	}
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Active    bool   `json:"active"`
+	Timestamp string `json:"timestamp"`
+}
+
+func ValidateUsername(username string) bool {
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_]{3,20}$`, username)
+	return matched
+}
+
+func ValidateEmail(email string) bool {
+	emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, _ := regexp.MatchString(emailRegex, email)
+	return matched
+}
+
+func TransformProfile(profile *UserProfile) error {
+	profile.Username = strings.TrimSpace(profile.Username)
+	profile.Email = strings.ToLower(strings.TrimSpace(profile.Email))
+	
+	if profile.Age < 0 {
+		profile.Age = 0
+	}
+	
+	if !ValidateUsername(profile.Username) {
+		return fmt.Errorf("invalid username format")
+	}
+	
+	if !ValidateEmail(profile.Email) {
+		return fmt.Errorf("invalid email format")
+	}
+	
+	return nil
+}
+
+func ProcessUserData(inputJSON string) (string, error) {
+	var profile UserProfile
+	
+	err := json.Unmarshal([]byte(inputJSON), &profile)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse JSON: %v", err)
+	}
+	
+	err = TransformProfile(&profile)
+	if err != nil {
+		return "", fmt.Errorf("validation failed: %v", err)
+	}
+	
+	profile.Active = true
+	
+	outputJSON, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to generate JSON: %v", err)
+	}
+	
+	return string(outputJSON), nil
+}
+
+func main() {
+	sampleInput := `{
+		"id": 123,
+		"username": "  John_Doe  ",
+		"email": "  JOHN@EXAMPLE.COM  ",
+		"age": 25,
+		"active": false,
+		"timestamp": "2024-01-15T10:30:00Z"
+	}`
+	
+	result, err := ProcessUserData(sampleInput)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	
+	fmt.Println("Processed User Profile:")
+	fmt.Println(result)
 }
