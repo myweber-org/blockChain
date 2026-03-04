@@ -1,42 +1,97 @@
-package data_processor
+
+package main
 
 import (
-	"regexp"
-	"strings"
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strings"
 )
 
-type DataCleaner struct {
-	whitespaceRegex *regexp.Regexp
+type DataProcessor struct {
+    InputPath  string
+    OutputPath string
+    Delimiter  rune
 }
 
-func NewDataCleaner() *DataCleaner {
-	return &DataCleaner{
-		whitespaceRegex: regexp.MustCompile(`\s+`),
-	}
+func NewDataProcessor(input, output string) *DataProcessor {
+    return &DataProcessor{
+        InputPath:  input,
+        OutputPath: output,
+        Delimiter:  ',',
+    }
 }
 
-func (dc *DataCleaner) NormalizeString(input string) string {
-	trimmed := strings.TrimSpace(input)
-	normalized := dc.whitespaceRegex.ReplaceAllString(trimmed, " ")
-	return strings.ToLower(normalized)
+func (dp *DataProcessor) ValidateRow(row []string) bool {
+    if len(row) == 0 {
+        return false
+    }
+    for _, field := range row {
+        if strings.TrimSpace(field) == "" {
+            return false
+        }
+    }
+    return true
 }
 
-func (dc *DataCleaner) RemoveSpecialChars(input string, keepChars string) string {
-	pattern := "[^a-zA-Z0-9"
-	if keepChars != "" {
-		pattern += regexp.QuoteMeta(keepChars)
-	}
-	pattern += "]+"
-	
-	re := regexp.MustCompile(pattern)
-	return re.ReplaceAllString(input, "")
+func (dp *DataProcessor) CleanField(field string) string {
+    cleaned := strings.TrimSpace(field)
+    cleaned = strings.ToUpper(cleaned)
+    return cleaned
 }
 
-func (dc *DataCleaner) Tokenize(input string, delimiter string) []string {
-	normalized := dc.NormalizeString(input)
-	if normalized == "" {
-		return []string{}
-	}
-	
-	return strings.Split(normalized, delimiter)
+func (dp *DataProcessor) Process() error {
+    inputFile, err := os.Open(dp.InputPath)
+    if err != nil {
+        return fmt.Errorf("failed to open input file: %w", err)
+    }
+    defer inputFile.Close()
+
+    outputFile, err := os.Create(dp.OutputPath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
+
+    reader := csv.NewReader(inputFile)
+    reader.Comma = dp.Delimiter
+
+    writer := csv.NewWriter(outputFile)
+    writer.Comma = dp.Delimiter
+    defer writer.Flush()
+
+    for {
+        record, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return fmt.Errorf("error reading CSV: %w", err)
+        }
+
+        if !dp.ValidateRow(record) {
+            continue
+        }
+
+        cleanedRecord := make([]string, len(record))
+        for i, field := range record {
+            cleanedRecord[i] = dp.CleanField(field)
+        }
+
+        if err := writer.Write(cleanedRecord); err != nil {
+            return fmt.Errorf("error writing CSV: %w", err)
+        }
+    }
+
+    return nil
+}
+
+func main() {
+    processor := NewDataProcessor("input.csv", "output.csv")
+    if err := processor.Process(); err != nil {
+        fmt.Printf("Processing failed: %v\n", err)
+        os.Exit(1)
+    }
+    fmt.Println("Data processing completed successfully")
 }
