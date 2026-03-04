@@ -191,4 +191,126 @@ func main() {
 
 	results := processor.GetResults()
 	fmt.Printf("\nTotal files processed: %d\n", len(results))
+}package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "sync"
+)
+
+type RecordProcessor interface {
+    Process(record []string) error
+}
+
+type CSVProcessor struct {
+    filePath    string
+    concurrency int
+    processor   RecordProcessor
+}
+
+func NewCSVProcessor(filePath string, concurrency int, processor RecordProcessor) *CSVProcessor {
+    return &CSVProcessor{
+        filePath:    filePath,
+        concurrency: concurrency,
+        processor:   processor,
+    }
+}
+
+func (cp *CSVProcessor) Process() error {
+    file, err := os.Open(cp.filePath)
+    if err != nil {
+        return fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    _, err = reader.Read()
+    if err != nil {
+        return fmt.Errorf("failed to read header: %w", err)
+    }
+
+    var wg sync.WaitGroup
+    recordChan := make(chan []string, cp.concurrency*2)
+    errorChan := make(chan error, 1)
+
+    for i := 0; i < cp.concurrency; i++ {
+        wg.Add(1)
+        go func(workerID int) {
+            defer wg.Done()
+            for record := range recordChan {
+                if err := cp.processor.Process(record); err != nil {
+                    select {
+                    case errorChan <- fmt.Errorf("worker %d: %w", workerID, err):
+                    default:
+                    }
+                    return
+                }
+            }
+        }(i)
+    }
+
+    go func() {
+        for {
+            record, err := reader.Read()
+            if err == io.EOF {
+                close(recordChan)
+                return
+            }
+            if err != nil {
+                select {
+                case errorChan <- fmt.Errorf("read error: %w", err):
+                default:
+                }
+                close(recordChan)
+                return
+            }
+            recordChan <- record
+        }
+    }()
+
+    wg.Wait()
+    close(errorChan)
+
+    if err := <-errorChan; err != nil {
+        return err
+    }
+    return nil
+}
+
+type StatsProcessor struct {
+    mu    sync.Mutex
+    count int
+}
+
+func (sp *StatsProcessor) Process(record []string) error {
+    sp.mu.Lock()
+    sp.count++
+    sp.mu.Unlock()
+    return nil
+}
+
+func (sp *StatsProcessor) GetCount() int {
+    sp.mu.Lock()
+    defer sp.mu.Unlock()
+    return sp.count
+}
+
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: file_processor <csv_file>")
+        os.Exit(1)
+    }
+
+    processor := &StatsProcessor{}
+    csvProcessor := NewCSVProcessor(os.Args[1], 4, processor)
+
+    if err := csvProcessor.Process(); err != nil {
+        fmt.Printf("Processing failed: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Processed %d records successfully\n", processor.GetCount())
 }
