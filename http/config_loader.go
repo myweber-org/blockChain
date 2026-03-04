@@ -472,4 +472,84 @@ func getEnvAsSlice(key string, defaultValue []string) []string {
         return defaultValue
     }
     return strings.Split(strValue, ",")
+}package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Config struct {
+	Server struct {
+		Port    string `yaml:"port" env:"SERVER_PORT"`
+		Timeout int    `yaml:"timeout" env:"SERVER_TIMEOUT"`
+	} `yaml:"server"`
+	Database struct {
+		Host     string `yaml:"host" env:"DB_HOST"`
+		Port     string `yaml:"port" env:"DB_PORT"`
+		Name     string `yaml:"name" env:"DB_NAME"`
+		User     string `yaml:"user" env:"DB_USER"`
+		Password string `yaml:"password" env:"DB_PASSWORD"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level" env:"LOG_LEVEL"`
+		Output string `yaml:"output" env:"LOG_OUTPUT"`
+	} `yaml:"logging"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	config := &Config{}
+	
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Open(absPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	decoder := yaml.NewDecoder(file)
+	if err := decoder.Decode(config); err != nil {
+		return nil, err
+	}
+
+	overrideWithEnvVars(config)
+	return config, nil
+}
+
+func overrideWithEnvVars(config *Config) {
+	overrideStruct(config.Server, "SERVER_")
+	overrideStruct(config.Database, "DB_")
+	overrideStruct(config.Logging, "LOG_")
+}
+
+func overrideStruct(s interface{}, prefix string) {
+	v := reflect.ValueOf(s).Elem()
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		tag := t.Field(i).Tag.Get("env")
+		if tag == "" {
+			continue
+		}
+
+		envKey := prefix + tag
+		if envValue := os.Getenv(envKey); envValue != "" {
+			switch field.Kind() {
+			case reflect.String:
+				field.SetString(envValue)
+			case reflect.Int:
+				if intVal, err := strconv.Atoi(envValue); err == nil {
+					field.SetInt(int64(intVal))
+				}
+			}
+		}
+	}
 }
