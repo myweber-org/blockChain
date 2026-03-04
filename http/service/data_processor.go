@@ -1,43 +1,60 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
+	"strings"
+	"unicode"
 )
 
-type User struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Active   bool   `json:"active"`
+type UserProfile struct {
+	Username string
+	Email    string
+	Age      int
 }
 
-func ValidateJSON(data []byte) (*User, error) {
-	var user User
-	err := json.Unmarshal(data, &user)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
+func normalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
 
-	if user.Username == "" {
+func validateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validateAge(age int) bool {
+	return age >= 0 && age <= 120
+}
+
+func processUserData(username, email string, age int) (*UserProfile, error) {
+	normalizedUsername := normalizeUsername(username)
+	if normalizedUsername == "" {
 		return nil, fmt.Errorf("username cannot be empty")
 	}
-	if user.Email == "" {
-		return nil, fmt.Errorf("email cannot be empty")
+
+	if !validateEmail(email) {
+		return nil, fmt.Errorf("invalid email format")
 	}
-	if user.ID <= 0 {
-		return nil, fmt.Errorf("ID must be a positive integer")
+	normalizedEmail := normalizeEmail(email)
+
+	if !validateAge(age) {
+		return nil, fmt.Errorf("age must be between 0 and 120")
 	}
 
-	return &user, nil
+	return &UserProfile{
+		Username: normalizedUsername,
+		Email:    normalizedEmail,
+		Age:      age,
+	}, nil
 }
 
 func main() {
-	jsonData := []byte(`{"id": 123, "username": "johndoe", "email": "john@example.com", "active": true}`)
-	user, err := ValidateJSON(jsonData)
+	user, err := processUserData("  JohnDoe  ", "JOHN@EXAMPLE.COM", 30)
 	if err != nil {
-		log.Fatalf("Validation error: %v", err)
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
-	fmt.Printf("Validated user: %+v\n", user)
+	fmt.Printf("Processed user: %+v\n", user)
 }
