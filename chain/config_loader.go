@@ -63,4 +63,58 @@ func ValidateConfig(config *AppConfig) error {
         return fmt.Errorf("database name is required")
     }
     return nil
+}package config
+
+import (
+	"errors"
+	"os"
+	"strconv"
+)
+
+type AppConfig struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+}
+
+func LoadConfig() (*AppConfig, error) {
+	config := &AppConfig{}
+	
+	portStr := os.Getenv("SERVER_PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, errors.New("invalid SERVER_PORT value")
+	}
+	config.ServerPort = port
+	
+	config.DBHost = os.Getenv("DB_HOST")
+	if config.DBHost == "" {
+		config.DBHost = "localhost"
+	}
+	
+	dbPortStr := os.Getenv("DB_PORT")
+	if dbPortStr == "" {
+		dbPortStr = "5432"
+	}
+	dbPort, err := strconv.Atoi(dbPortStr)
+	if err != nil {
+		return nil, errors.New("invalid DB_PORT value")
+	}
+	config.DBPort = dbPort
+	
+	debugStr := os.Getenv("DEBUG_MODE")
+	if debugStr == "" {
+		debugStr = "false"
+	}
+	debug, err := strconv.ParseBool(debugStr)
+	if err != nil {
+		return nil, errors.New("invalid DEBUG_MODE value")
+	}
+	config.DebugMode = debug
+	
+	return config, nil
 }
