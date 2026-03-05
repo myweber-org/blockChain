@@ -98,3 +98,39 @@ func main() {
 	fmt.Println("\nAfter validation:")
 	PrintRecords(validatedRecords)
 }
+package main
+
+import (
+    "strings"
+)
+
+// DataCleaner provides methods for cleaning string data
+type DataCleaner struct{}
+
+// RemoveDuplicates removes duplicate entries from a slice of strings
+func (dc *DataCleaner) RemoveDuplicates(input []string) []string {
+    seen := make(map[string]struct{})
+    result := []string{}
+    for _, item := range input {
+        if _, exists := seen[item]; !exists {
+            seen[item] = struct{}{}
+            result = append(result, item)
+        }
+    }
+    return result
+}
+
+// TrimSpaces trims leading and trailing spaces from all strings in a slice
+func (dc *DataCleaner) TrimSpaces(input []string) []string {
+    result := make([]string, len(input))
+    for i, item := range input {
+        result[i] = strings.TrimSpace(item)
+    }
+    return result
+}
+
+// CleanData performs both duplicate removal and space trimming
+func (dc *DataCleaner) CleanData(input []string) []string {
+    trimmed := dc.TrimSpaces(input)
+    return dc.RemoveDuplicates(trimmed)
+}
