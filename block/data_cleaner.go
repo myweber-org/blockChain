@@ -364,3 +364,73 @@ func main() {
 	testValue := "  APPLE  "
 	fmt.Printf("Is '%s' duplicate? %v\n", testValue, cleaner.IsDuplicate(testValue))
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type DataRecord struct {
+	ID    int
+	Email string
+	Valid bool
+}
+
+func deduplicateEmails(emails []string) []string {
+	seen := make(map[string]bool)
+	result := []string{}
+	for _, email := range emails {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if !seen[email] {
+			seen[email] = true
+			result = append(result, email)
+		}
+	}
+	return result
+}
+
+func validateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func processRecords(records []DataRecord) []DataRecord {
+	emailMap := make(map[string]bool)
+	var validRecords []DataRecord
+
+	for _, record := range records {
+		cleanEmail := strings.ToLower(strings.TrimSpace(record.Email))
+		if validateEmail(cleanEmail) && !emailMap[cleanEmail] {
+			emailMap[cleanEmail] = true
+			record.Valid = true
+			validRecords = append(validRecords, record)
+		}
+	}
+	return validRecords
+}
+
+func main() {
+	emails := []string{
+		"test@example.com",
+		"TEST@example.com",
+		"invalid-email",
+		"another@test.org",
+		"test@example.com",
+	}
+
+	uniqueEmails := deduplicateEmails(emails)
+	fmt.Printf("Unique emails: %v\n", uniqueEmails)
+
+	records := []DataRecord{
+		{1, "user@domain.com", false},
+		{2, "duplicate@test.com", false},
+		{3, "duplicate@test.com", false},
+		{4, "invalid", false},
+	}
+
+	cleanedRecords := processRecords(records)
+	fmt.Printf("Valid records: %d\n", len(cleanedRecords))
+	for _, r := range cleanedRecords {
+		fmt.Printf("ID: %d, Email: %s\n", r.ID, r.Email)
+	}
+}
