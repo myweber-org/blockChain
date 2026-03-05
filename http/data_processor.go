@@ -285,3 +285,117 @@ func main() {
 	fmt.Println("Processed User Profile:")
 	fmt.Println(result)
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+type Record struct {
+	ID    int
+	Name  string
+	Value float64
+}
+
+func ProcessCSV(filename string) ([]Record, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	var records []Record
+
+	for i := 0; ; i++ {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error: %w", err)
+		}
+
+		if i == 0 {
+			continue
+		}
+
+		if len(row) != 3 {
+			return nil, fmt.Errorf("invalid row length at line %d", i+1)
+		}
+
+		id, err := strconv.Atoi(row[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid ID at line %d: %w", i+1, err)
+		}
+
+		name := row[1]
+		if name == "" {
+			return nil, fmt.Errorf("empty name at line %d", i+1)
+		}
+
+		value, err := strconv.ParseFloat(row[2], 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value at line %d: %w", i+1, err)
+		}
+
+		records = append(records, Record{
+			ID:    id,
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return records, nil
+}
+
+func ValidateRecords(records []Record) error {
+	seenIDs := make(map[int]bool)
+	for _, record := range records {
+		if record.ID <= 0 {
+			return fmt.Errorf("invalid ID %d", record.ID)
+		}
+		if seenIDs[record.ID] {
+			return fmt.Errorf("duplicate ID %d", record.ID)
+		}
+		seenIDs[record.ID] = true
+
+		if record.Value < 0 {
+			return fmt.Errorf("negative value for record %d", record.ID)
+		}
+	}
+	return nil
+}
+
+func CalculateStatistics(records []Record) (float64, float64, float64) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
+
+	var sum float64
+	var min, max float64
+	first := true
+
+	for _, record := range records {
+		sum += record.Value
+		if first {
+			min = record.Value
+			max = record.Value
+			first = false
+		} else {
+			if record.Value < min {
+				min = record.Value
+			}
+			if record.Value > max {
+				max = record.Value
+			}
+		}
+	}
+
+	average := sum / float64(len(records))
+	return average, min, max
+}
