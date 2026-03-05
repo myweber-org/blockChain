@@ -331,4 +331,49 @@ func main() {
 	go cleaner.RunCleanupJob(ctx, 5*time.Minute)
 
 	<-ctx.Done()
+}package main
+
+import (
+    "database/sql"
+    "log"
+    "time"
+)
+
+func cleanupExpiredSessions(db *sql.DB) error {
+    query := `DELETE FROM user_sessions WHERE expires_at < ?`
+    result, err := db.Exec(query, time.Now())
+    if err != nil {
+        return err
+    }
+    
+    rowsAffected, err := result.RowsAffected()
+    if err != nil {
+        return err
+    }
+    
+    log.Printf("Cleaned up %d expired sessions", rowsAffected)
+    return nil
+}
+
+func scheduleSessionCleanup(db *sql.DB, interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        if err := cleanupExpiredSessions(db); err != nil {
+            log.Printf("Session cleanup failed: %v", err)
+        }
+    }
+}
+
+func main() {
+    db, err := sql.Open("postgres", "postgresql://user:pass@localhost/dbname")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+    
+    go scheduleSessionCleanup(db, 1*time.Hour)
+    
+    select {}
 }
