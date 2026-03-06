@@ -313,4 +313,146 @@ func main() {
     }
 
     fmt.Printf("Processed %d records successfully\n", processor.GetCount())
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "sync"
+    "time"
+)
+
+type DataRecord struct {
+    ID        string    `json:"id"`
+    Value     float64   `json:"value"`
+    Timestamp time.Time `json:"timestamp"`
+    Processed bool      `json:"processed"`
+}
+
+type Processor struct {
+    mu      sync.RWMutex
+    records map[string]DataRecord
+    logger  *log.Logger
+}
+
+func NewProcessor() *Processor {
+    return &Processor{
+        records: make(map[string]DataRecord),
+        logger:  log.New(os.Stdout, "PROCESSOR: ", log.Ldate|log.Ltime|log.Lshortfile),
+    }
+}
+
+func (p *Processor) AddRecord(id string, value float64) {
+    p.mu.Lock()
+    defer p.mu.Unlock()
+
+    record := DataRecord{
+        ID:        id,
+        Value:     value,
+        Timestamp: time.Now().UTC(),
+        Processed: false,
+    }
+
+    p.records[id] = record
+    p.logger.Printf("Added record: %s", id)
+}
+
+func (p *Processor) ProcessRecord(id string) error {
+    p.mu.Lock()
+    defer p.mu.Unlock()
+
+    record, exists := p.records[id]
+    if !exists {
+        return fmt.Errorf("record not found: %s", id)
+    }
+
+    if record.Processed {
+        return fmt.Errorf("record already processed: %s", id)
+    }
+
+    record.Processed = true
+    record.Value = record.Value * 1.1
+    p.records[id] = record
+
+    p.logger.Printf("Processed record: %s", id)
+    return nil
+}
+
+func (p *Processor) BatchProcess(ids []string) {
+    var wg sync.WaitGroup
+    errorChan := make(chan error, len(ids))
+
+    for _, id := range ids {
+        wg.Add(1)
+        go func(recordID string) {
+            defer wg.Done()
+            if err := p.ProcessRecord(recordID); err != nil {
+                errorChan <- err
+            }
+        }(id)
+    }
+
+    wg.Wait()
+    close(errorChan)
+
+    for err := range errorChan {
+        p.logger.Printf("Processing error: %v", err)
+    }
+}
+
+func (p *Processor) ExportJSON(filename string) error {
+    p.mu.RLock()
+    defer p.mu.RUnlock()
+
+    file, err := os.Create(filename)
+    if err != nil {
+        return fmt.Errorf("failed to create file: %w", err)
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+
+    if err := encoder.Encode(p.records); err != nil {
+        return fmt.Errorf("failed to encode JSON: %w", err)
+    }
+
+    p.logger.Printf("Exported data to: %s", filename)
+    return nil
+}
+
+func (p *Processor) Stats() (int, int) {
+    p.mu.RLock()
+    defer p.mu.RUnlock()
+
+    total := len(p.records)
+    processed := 0
+
+    for _, record := range p.records {
+        if record.Processed {
+            processed++
+        }
+    }
+
+    return total, processed
+}
+
+func main() {
+    processor := NewProcessor()
+
+    processor.AddRecord("rec001", 100.0)
+    processor.AddRecord("rec002", 200.0)
+    processor.AddRecord("rec003", 300.0)
+
+    ids := []string{"rec001", "rec002", "rec003", "rec004"}
+    processor.BatchProcess(ids)
+
+    total, processed := processor.Stats()
+    fmt.Printf("Total records: %d, Processed: %d\n", total, processed)
+
+    if err := processor.ExportJSON("data_export.json"); err != nil {
+        processor.logger.Printf("Export failed: %v", err)
+    }
 }
