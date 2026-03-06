@@ -7,27 +7,29 @@ import (
 	"time"
 )
 
-const daysToKeep = 7
-
 func main() {
 	tempDir := os.TempDir()
-	cutoffTime := time.Now().AddDate(0, 0, -daysToKeep)
+	cutoffTime := time.Now().AddDate(0, 0, -7)
+	var removedCount int
 
 	err := filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
-		if info.IsDir() {
-			return nil
-		}
-		if info.ModTime().Before(cutoffTime) {
-			fmt.Printf("Removing old file: %s\n", path)
-			os.Remove(path)
+
+		if info.ModTime().Before(cutoffTime) && !info.IsDir() {
+			if err := os.Remove(path); err == nil {
+				removedCount++
+				fmt.Printf("Removed: %s\n", path)
+			}
 		}
 		return nil
 	})
 
 	if err != nil {
-		fmt.Printf("Error cleaning temp directory: %v\n", err)
+		fmt.Printf("Error walking directory: %v\n", err)
+		return
 	}
+
+	fmt.Printf("Cleaning completed. Removed %d files.\n", removedCount)
 }
