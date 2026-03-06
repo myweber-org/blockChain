@@ -240,4 +240,54 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type Authenticator struct {
+	secretKey []byte
+}
+
+func NewAuthenticator(secret string) *Authenticator {
+	return &Authenticator{secretKey: []byte(secret)}
+}
+
+func (a *Authenticator) ValidateToken(tokenString string) (bool, error) {
+	if strings.TrimSpace(tokenString) == "" {
+		return false, nil
+	}
+	
+	// Simulated token validation logic
+	// In production, use proper JWT library like github.com/golang-jwt/jwt
+	expectedPrefix := "Bearer valid_"
+	if strings.HasPrefix(tokenString, expectedPrefix) {
+		payload := strings.TrimPrefix(tokenString, expectedPrefix)
+		if len(payload) > 10 {
+			return true, nil
+		}
+	}
+	
+	return false, nil
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		
+		valid, err := a.ValidateToken(authHeader)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		
+		if !valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
 }
