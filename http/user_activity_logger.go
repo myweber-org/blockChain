@@ -305,4 +305,96 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr,
 		duration,
 	)
+}package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "time"
+)
+
+type Activity struct {
+    UserID    string    `json:"user_id"`
+    Action    string    `json:"action"`
+    Timestamp time.Time `json:"timestamp"`
+    Details   string    `json:"details,omitempty"`
+}
+
+type ActivityLogger struct {
+    logFile string
+}
+
+func NewActivityLogger(logFile string) *ActivityLogger {
+    return &ActivityLogger{logFile: logFile}
+}
+
+func (al *ActivityLogger) LogActivity(userID, action, details string) error {
+    activity := Activity{
+        UserID:    userID,
+        Action:    action,
+        Timestamp: time.Now().UTC(),
+        Details:   details,
+    }
+
+    file, err := os.OpenFile(al.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to open log file: %w", err)
+    }
+    defer file.Close()
+
+    encoder := json.NewEncoder(file)
+    if err := encoder.Encode(activity); err != nil {
+        return fmt.Errorf("failed to encode activity: %w", err)
+    }
+
+    return nil
+}
+
+func (al *ActivityLogger) ReadActivities() ([]Activity, error) {
+    data, err := os.ReadFile(al.logFile)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return []Activity{}, nil
+        }
+        return nil, fmt.Errorf("failed to read log file: %w", err)
+    }
+
+    var activities []Activity
+    lines := bytes.Split(data, []byte("\n"))
+    for _, line := range lines {
+        if len(line) == 0 {
+            continue
+        }
+        var activity Activity
+        if err := json.Unmarshal(line, &activity); err != nil {
+            return nil, fmt.Errorf("failed to unmarshal activity: %w", err)
+        }
+        activities = append(activities, activity)
+    }
+
+    return activities, nil
+}
+
+func main() {
+    logger := NewActivityLogger("user_activities.json")
+
+    if err := logger.LogActivity("user123", "login", "Successful authentication"); err != nil {
+        fmt.Printf("Error logging activity: %v\n", err)
+    }
+
+    if err := logger.LogActivity("user123", "upload", "File: report.pdf"); err != nil {
+        fmt.Printf("Error logging activity: %v\n", err)
+    }
+
+    activities, err := logger.ReadActivities()
+    if err != nil {
+        fmt.Printf("Error reading activities: %v\n", err)
+        return
+    }
+
+    fmt.Printf("Total activities logged: %d\n", len(activities))
+    for _, activity := range activities {
+        fmt.Printf("%s - %s: %s\n", activity.Timestamp.Format(time.RFC3339), activity.UserID, activity.Action)
+    }
 }
