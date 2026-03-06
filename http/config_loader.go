@@ -87,3 +87,67 @@ func overrideBool(field *bool, envVar string) {
         *field = val == "true" || val == "1" || val == "yes"
     }
 }
+package config
+
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
+type AppConfig struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+	FeatureFlags map[string]bool
+}
+
+func LoadConfig() (*AppConfig, error) {
+	cfg := &AppConfig{
+		FeatureFlags: make(map[string]bool),
+	}
+
+	port, err := strconv.Atoi(getEnv("SERVER_PORT", "8080"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.ServerPort = port
+
+	cfg.DBHost = getEnv("DB_HOST", "localhost")
+
+	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.DBPort = dbPort
+
+	debug, err := strconv.ParseBool(getEnv("DEBUG_MODE", "false"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.DebugMode = debug
+
+	flags := getEnv("FEATURE_FLAGS", "")
+	if flags != "" {
+		for _, flag := range strings.Split(flags, ",") {
+			parts := strings.Split(strings.TrimSpace(flag), "=")
+			if len(parts) == 2 {
+				enabled, err := strconv.ParseBool(parts[1])
+				if err == nil {
+					cfg.FeatureFlags[parts[0]] = enabled
+				}
+			}
+		}
+	}
+
+	return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
