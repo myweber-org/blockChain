@@ -144,3 +144,68 @@ func main() {
 	fmt.Printf("Average value: %.2f\n", avg)
 	fmt.Printf("Value range: %.2f\n", rangeVal)
 }
+package main
+
+import (
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+type UserData struct {
+	Username string
+	Email    string
+	Age      int
+}
+
+func NormalizeUsername(username string) string {
+	trimmed := strings.TrimSpace(username)
+	var result strings.Builder
+	for _, r := range trimmed {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
+func ValidateEmail(email string) bool {
+	if !strings.Contains(email, "@") {
+		return false
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	return len(parts[0]) > 0 && len(parts[1]) > 0 && strings.Contains(parts[1], ".")
+}
+
+func ProcessUserInput(username, email string, age int) (*UserData, error) {
+	normalizedUsername := NormalizeUsername(username)
+	if normalizedUsername == "" {
+		return nil, fmt.Errorf("invalid username after normalization")
+	}
+
+	if !ValidateEmail(email) {
+		return nil, fmt.Errorf("invalid email format")
+	}
+
+	if age < 0 || age > 150 {
+		return nil, fmt.Errorf("age out of valid range (0-150)")
+	}
+
+	return &UserData{
+		Username: normalizedUsername,
+		Email:    strings.ToLower(strings.TrimSpace(email)),
+		Age:      age,
+	}, nil
+}
+
+func main() {
+	user, err := ProcessUserInput("  John_Doe-123  ", "john@example.com", 30)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	fmt.Printf("Processed user: %+v\n", user)
+}
