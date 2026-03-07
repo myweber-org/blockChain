@@ -196,3 +196,161 @@ func main() {
 	fmt.Printf("Average value: %.2f\n", avg)
 	fmt.Printf("Maximum value: %.2f\n", max)
 }
+package main
+
+import (
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID      int
+	Name    string
+	Value   float64
+	Active  bool
+}
+
+type DataProcessor struct {
+	records []DataRecord
+}
+
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		records: make([]DataRecord, 0),
+	}
+}
+
+func (dp *DataProcessor) LoadCSV(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	lineNumber := 0
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if lineNumber == 1 {
+			continue
+		}
+
+		record, err := parseRow(row)
+		if err != nil {
+			return fmt.Errorf("parse error at line %d: %w", lineNumber, err)
+		}
+
+		dp.records = append(dp.records, record)
+	}
+
+	return nil
+}
+
+func parseRow(row []string) (DataRecord, error) {
+	if len(row) != 4 {
+		return DataRecord{}, errors.New("invalid number of columns")
+	}
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid ID: %w", err)
+	}
+
+	name := strings.TrimSpace(row[1])
+	if name == "" {
+		return DataRecord{}, errors.New("name cannot be empty")
+	}
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid value: %w", err)
+	}
+
+	active, err := strconv.ParseBool(strings.TrimSpace(row[3]))
+	if err != nil {
+		return DataRecord{}, fmt.Errorf("invalid active flag: %w", err)
+	}
+
+	return DataRecord{
+		ID:     id,
+		Name:   name,
+		Value:  value,
+		Active: active,
+	}, nil
+}
+
+func (dp *DataProcessor) FilterActive() []DataRecord {
+	var active []DataRecord
+	for _, record := range dp.records {
+		if record.Active {
+			active = append(active, record)
+		}
+	}
+	return active
+}
+
+func (dp *DataProcessor) CalculateAverage() float64 {
+	if len(dp.records) == 0 {
+		return 0
+	}
+
+	var sum float64
+	for _, record := range dp.records {
+		sum += record.Value
+	}
+	return sum / float64(len(dp.records))
+}
+
+func (dp *DataProcessor) FindByName(name string) *DataRecord {
+	for _, record := range dp.records {
+		if strings.EqualFold(record.Name, name) {
+			return &record
+		}
+	}
+	return nil
+}
+
+func (dp *DataProcessor) Validate() []error {
+	var errors []error
+
+	seenIDs := make(map[int]bool)
+	for i, record := range dp.records {
+		if seenIDs[record.ID] {
+			errors = append(errors, fmt.Errorf("duplicate ID %d at record %d", record.ID, i+1))
+		}
+		seenIDs[record.ID] = true
+
+		if record.Value < 0 {
+			errors = append(errors, fmt.Errorf("negative value %f for ID %d", record.Value, record.ID))
+		}
+	}
+
+	return errors
+}
+
+func (dp *DataProcessor) GetStats() map[string]interface{} {
+	active := dp.FilterActive()
+	average := dp.CalculateAverage()
+
+	return map[string]interface{}{
+		"total_records":   len(dp.records),
+		"active_records":  len(active),
+		"average_value":   average,
+		"validation_errors": len(dp.Validate()),
+	}
+}
