@@ -447,4 +447,122 @@ func main() {
         logger.Write([]byte(msg))
         time.Sleep(100 * time.Millisecond)
     }
+}package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	maxLogSize    = 10 * 1024 * 1024 // 10MB
+	maxBackupLogs = 5
+	logFileName   = "app.log"
+)
+
+type LogRotator struct {
+	currentSize int64
+	file        *os.File
+}
+
+func NewLogRotator() (*LogRotator, error) {
+	f, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+
+	return &LogRotator{
+		currentSize: info.Size(),
+		file:        f,
+	}, nil
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if lr.currentSize+int64(len(p)) > maxLogSize {
+		if err := lr.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := lr.file.Write(p)
+	if err == nil {
+		lr.currentSize += int64(n)
+	}
+	return n, err
+}
+
+func (lr *LogRotator) rotate() error {
+	if err := lr.file.Close(); err != nil {
+		return err
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	backupName := fmt.Sprintf("%s.%s", logFileName, timestamp)
+	if err := os.Rename(logFileName, backupName); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	lr.file = f
+	lr.currentSize = 0
+
+	go cleanupOldLogs()
+
+	return nil
+}
+
+func cleanupOldLogs() {
+	pattern := fmt.Sprintf("%s.*", logFileName)
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return
+	}
+
+	if len(matches) <= maxBackupLogs {
+		return
+	}
+
+	for i := 0; i < len(matches)-maxBackupLogs; i++ {
+		os.Remove(matches[i])
+	}
+}
+
+func (lr *LogRotator) Close() error {
+	if lr.file != nil {
+		return lr.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	rotator, err := NewLogRotator()
+	if err != nil {
+		fmt.Printf("Failed to create log rotator: %v\n", err)
+		os.Exit(1)
+	}
+	defer rotator.Close()
+
+	for i := 0; i < 100; i++ {
+		message := fmt.Sprintf("[%s] Log entry number %d\n", time.Now().Format(time.RFC3339), i)
+		if _, err := rotator.Write([]byte(message)); err != nil {
+			fmt.Printf("Write error: %v\n", err)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	fmt.Println("Log rotation test completed")
 }
