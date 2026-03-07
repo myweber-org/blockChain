@@ -393,4 +393,117 @@ func isValidLogLevel(level string) bool {
 		}
 	}
 	return false
+}package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+type DatabaseConfig struct {
+	Host     string `json:"host" env:"DB_HOST"`
+	Port     int    `json:"port" env:"DB_PORT"`
+	Username string `json:"username" env:"DB_USER"`
+	Password string `json:"password" env:"DB_PASS"`
+	Database string `json:"database" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+	Port         int    `json:"port" env:"SERVER_PORT"`
+	ReadTimeout  int    `json:"read_timeout" env:"READ_TIMEOUT"`
+	WriteTimeout int    `json:"write_timeout" env:"WRITE_TIMEOUT"`
+	DebugMode    bool   `json:"debug_mode" env:"DEBUG_MODE"`
+	LogLevel     string `json:"log_level" env:"LOG_LEVEL"`
+}
+
+type Config struct {
+	Database DatabaseConfig `json:"database"`
+	Server   ServerConfig   `json:"server"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config path: %w", err)
+	}
+
+	file, err := os.Open(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer file.Close()
+
+	var config Config
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, fmt.Errorf("failed to decode config: %w", err)
+	}
+
+	overrideFromEnv(&config)
+
+	if err := validateConfig(&config); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return &config, nil
+}
+
+func overrideFromEnv(config *Config) {
+	envOverrides := map[string]func(string){
+		"DB_HOST":       func(v string) { config.Database.Host = v },
+		"DB_PORT":       func(v string) { config.Database.Port = atoi(v, config.Database.Port) },
+		"DB_USER":       func(v string) { config.Database.Username = v },
+		"DB_PASS":       func(v string) { config.Database.Password = v },
+		"DB_NAME":       func(v string) { config.Database.Database = v },
+		"SERVER_PORT":   func(v string) { config.Server.Port = atoi(v, config.Server.Port) },
+		"READ_TIMEOUT":  func(v string) { config.Server.ReadTimeout = atoi(v, config.Server.ReadTimeout) },
+		"WRITE_TIMEOUT": func(v string) { config.Server.WriteTimeout = atoi(v, config.Server.WriteTimeout) },
+		"DEBUG_MODE":    func(v string) { config.Server.DebugMode = v == "true" },
+		"LOG_LEVEL":     func(v string) { config.Server.LogLevel = v },
+	}
+
+	for envKey, setter := range envOverrides {
+		if val, exists := os.LookupEnv(envKey); exists && val != "" {
+			setter(val)
+		}
+	}
+}
+
+func validateConfig(config *Config) error {
+	if config.Database.Host == "" {
+		return fmt.Errorf("database host is required")
+	}
+	if config.Database.Port <= 0 || config.Database.Port > 65535 {
+		return fmt.Errorf("database port must be between 1 and 65535")
+	}
+	if config.Database.Username == "" {
+		return fmt.Errorf("database username is required")
+	}
+	if config.Server.Port <= 0 || config.Server.Port > 65535 {
+		return fmt.Errorf("server port must be between 1 and 65535")
+	}
+	if config.Server.ReadTimeout < 0 {
+		return fmt.Errorf("read timeout cannot be negative")
+	}
+	if config.Server.WriteTimeout < 0 {
+		return fmt.Errorf("write timeout cannot be negative")
+	}
+	validLogLevels := map[string]bool{
+		"debug": true, "info": true, "warn": true, "error": true, "fatal": true,
+	}
+	if !validLogLevels[config.Server.LogLevel] {
+		return fmt.Errorf("invalid log level: %s", config.Server.LogLevel)
+	}
+	return nil
+}
+
+func atoi(s string, fallback int) int {
+	var result int
+	_, err := fmt.Sscanf(s, "%d", &result)
+	if err != nil {
+		return fallback
+	}
+	return result
 }
