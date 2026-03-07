@@ -241,4 +241,44 @@ func CalculateStatistics(records []DataRecord) (float64, float64, error) {
 
 	average := sum / float64(len(records))
 	return average, max - min, nil
+}package main
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataProcessor struct {
+	emailRegex *regexp.Regexp
+}
+
+func NewDataProcessor() *DataProcessor {
+	return &DataProcessor{
+		emailRegex: regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`),
+	}
+}
+
+func (dp *DataProcessor) ValidateEmail(email string) bool {
+	return dp.emailRegex.MatchString(email)
+}
+
+func (dp *DataProcessor) SanitizeInput(input string) string {
+	input = strings.TrimSpace(input)
+	input = strings.ReplaceAll(input, "<", "&lt;")
+	input = strings.ReplaceAll(input, ">", "&gt;")
+	return input
+}
+
+func (dp *DataProcessor) NormalizeUsername(username string) string {
+	username = strings.ToLower(username)
+	username = strings.TrimSpace(username)
+	return strings.ReplaceAll(username, " ", "_")
+}
+
+func (dp *DataProcessor) ProcessUserData(email, username, comment string) (bool, string, string, string) {
+	isValidEmail := dp.ValidateEmail(email)
+	sanitizedComment := dp.SanitizeInput(comment)
+	normalizedUsername := dp.NormalizeUsername(username)
+	
+	return isValidEmail, normalizedUsername, sanitizedComment, email
 }
