@@ -305,4 +305,58 @@ func main() {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	maxLogFiles = 5
+	logFileName = "app.log"
+)
+
+func rotateLogs() error {
+	for i := maxLogFiles - 1; i > 0; i-- {
+		oldName := fmt.Sprintf("%s.%d", logFileName, i)
+		newName := fmt.Sprintf("%s.%d", logFileName, i+1)
+		
+		if _, err := os.Stat(oldName); err == nil {
+			err := os.Rename(oldName, newName)
+			if err != nil {
+				return fmt.Errorf("failed to rename %s to %s: %v", oldName, newName, err)
+			}
+		}
+	}
+	
+	if _, err := os.Stat(logFileName); err == nil {
+		timestamp := time.Now().Format("20060102_150405")
+		archiveName := fmt.Sprintf("%s.%s", logFileName, timestamp)
+		err := os.Rename(logFileName, archiveName)
+		if err != nil {
+			return fmt.Errorf("failed to archive %s: %v", logFileName, err)
+		}
+	}
+	
+	file, err := os.Create(logFileName)
+	if err != nil {
+		return fmt.Errorf("failed to create new log file: %v", err)
+	}
+	file.Close()
+	
+	fmt.Printf("Log rotation completed. Oldest log archived as %s\n", 
+		filepath.Base(fmt.Sprintf("%s.%s", logFileName, time.Now().Format("20060102_150405"))))
+	
+	return nil
+}
+
+func main() {
+	err := rotateLogs()
+	if err != nil {
+		fmt.Printf("Error rotating logs: %v\n", err)
+		os.Exit(1)
+	}
 }
