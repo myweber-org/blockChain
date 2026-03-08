@@ -1,86 +1,89 @@
+
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"regexp"
-	"strings"
+    "encoding/csv"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
 )
 
-type UserProfile struct {
-	ID        int    `json:"id"`
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Age       int    `json:"age"`
-	Active    bool   `json:"active"`
-	Timestamp string `json:"timestamp"`
+type DataRecord struct {
+    ID    int
+    Name  string
+    Value float64
 }
 
-func ValidateEmail(email string) bool {
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	return emailRegex.MatchString(email)
+func ProcessCSVFile(filename string) ([]DataRecord, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    records := make([]DataRecord, 0)
+
+    for line := 1; ; line++ {
+        row, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, fmt.Errorf("csv read error at line %d: %w", line, err)
+        }
+
+        if len(row) != 3 {
+            return nil, fmt.Errorf("invalid column count at line %d: expected 3, got %d", line, len(row))
+        }
+
+        id, err := strconv.Atoi(row[0])
+        if err != nil {
+            return nil, fmt.Errorf("invalid ID at line %d: %w", line, err)
+        }
+
+        value, err := strconv.ParseFloat(row[2], 64)
+        if err != nil {
+            return nil, fmt.Errorf("invalid value at line %d: %w", line, err)
+        }
+
+        if value < 0 {
+            return nil, fmt.Errorf("negative value not allowed at line %d", line)
+        }
+
+        records = append(records, DataRecord{
+            ID:    id,
+            Name:  row[1],
+            Value: value,
+        })
+    }
+
+    if len(records) == 0 {
+        return nil, errors.New("no valid records found in file")
+    }
+
+    return records, nil
 }
 
-func SanitizeUsername(username string) string {
-	username = strings.TrimSpace(username)
-	username = strings.ToLower(username)
-	return username
-}
+func CalculateStatistics(records []DataRecord) (float64, float64) {
+    if len(records) == 0 {
+        return 0, 0
+    }
 
-func TransformProfile(profile UserProfile) (UserProfile, error) {
-	if profile.Age < 0 || profile.Age > 150 {
-		return profile, fmt.Errorf("invalid age: %d", profile.Age)
-	}
+    var sum float64
+    for _, r := range records {
+        sum += r.Value
+    }
+    average := sum / float64(len(records))
 
-	if !ValidateEmail(profile.Email) {
-		return profile, fmt.Errorf("invalid email format: %s", profile.Email)
-	}
+    var variance float64
+    for _, r := range records {
+        diff := r.Value - average
+        variance += diff * diff
+    }
+    variance = variance / float64(len(records))
 
-	profile.Username = SanitizeUsername(profile.Username)
-
-	if profile.Timestamp == "" {
-		profile.Timestamp = "2024-01-01T00:00:00Z"
-	}
-
-	return profile, nil
-}
-
-func ProcessUserData(inputJSON string) (string, error) {
-	var profile UserProfile
-	err := json.Unmarshal([]byte(inputJSON), &profile)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse JSON: %v", err)
-	}
-
-	transformedProfile, err := TransformProfile(profile)
-	if err != nil {
-		return "", fmt.Errorf("validation failed: %v", err)
-	}
-
-	outputJSON, err := json.MarshalIndent(transformedProfile, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON: %v", err)
-	}
-
-	return string(outputJSON), nil
-}
-
-func main() {
-	sampleInput := `{
-		"id": 1,
-		"username": "  JohnDoe  ",
-		"email": "john@example.com",
-		"age": 30,
-		"active": true,
-		"timestamp": ""
-	}`
-
-	result, err := ProcessUserData(sampleInput)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
-
-	fmt.Println("Processed user profile:")
-	fmt.Println(result)
+    return average, variance
 }
