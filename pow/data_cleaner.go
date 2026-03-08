@@ -480,4 +480,37 @@ func main() {
 	for _, record := range valid {
 		fmt.Printf("ID: %d, Email: %s, Valid: %v\n", record.ID, record.Email, record.Valid)
 	}
+}package csvutil
+
+import (
+	"regexp"
+	"strings"
+)
+
+var (
+	maliciousPattern = regexp.MustCompile(`[<>"'&;]|script|on\w+=`)
+	whitespaceRegex  = regexp.MustCompile(`\s+`)
+)
+
+// SanitizeString removes potentially dangerous characters and normalizes whitespace
+func SanitizeString(input string) string {
+	if input == "" {
+		return input
+	}
+	
+	cleaned := maliciousPattern.ReplaceAllString(input, "")
+	cleaned = strings.TrimSpace(cleaned)
+	cleaned = whitespaceRegex.ReplaceAllString(cleaned, " ")
+	
+	return cleaned
+}
+
+// ValidateCSVRow checks if a row contains safe data before processing
+func ValidateCSVRow(row []string) bool {
+	for _, field := range row {
+		if maliciousPattern.MatchString(field) {
+			return false
+		}
+	}
+	return true
 }
