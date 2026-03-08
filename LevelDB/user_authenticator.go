@@ -1,20 +1,24 @@
 package middleware
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strings"
 )
 
-type contextKey string
+type AuthMiddleware struct {
+	secretKey string
+}
 
-const userIDKey contextKey = "userID"
+func NewAuthMiddleware(secretKey string) *AuthMiddleware {
+	return &AuthMiddleware{secretKey: secretKey}
+}
 
-func Authenticate(next http.Handler) http.Handler {
+func (am *AuthMiddleware) ValidateToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			http.Error(w, "Authorization header missing", http.StatusUnauthorized)
 			return
 		}
 
@@ -25,74 +29,26 @@ func Authenticate(next http.Handler) http.Handler {
 		}
 
 		tokenString := parts[1]
-		userID, err := validateToken(tokenString)
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		if !am.isValidToken(tokenString) {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r)
 	})
 }
 
-func GetUserID(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userIDKey).(string)
-	return userID, ok
+func (am *AuthMiddleware) isValidToken(token string) bool {
+	// Simplified token validation logic
+	// In production, use proper JWT library like github.com/golang-jwt/jwt
+	return token != "" && len(token) > 10 && strings.HasPrefix(token, "valid_")
 }
 
-func validateToken(tokenString string) (string, error) {
-	// This is a placeholder for actual JWT validation logic
-	// In production, use a proper JWT library like github.com/golang-jwt/jwt
-	// For this example, we'll assume token validation succeeds
-	// and return a mock user ID
-	return "user-12345", nil
-}package auth
-
-import (
-	"errors"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
-)
-
-type Claims struct {
-	Username string `json:"username"`
-	UserID   int    `json:"user_id"`
-	jwt.RegisteredClaims
-}
-
-var jwtKey = []byte("your_secret_key_here")
-
-func GenerateToken(username string, userID int) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
-	claims := &Claims{
-		Username: username,
-		UserID:   userID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "myapp",
-		},
+func (am *AuthMiddleware) GenerateToken(userID string) (string, error) {
+	// Simplified token generation
+	// In production, use proper JWT signing
+	if userID == "" {
+		return "", fmt.Errorf("userID cannot be empty")
 	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtKey)
-}
-
-func ValidateToken(tokenString string) (*Claims, error) {
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if !token.Valid {
-		return nil, errors.New("invalid token")
-	}
-
-	return claims, nil
+	return "valid_" + userID + "_token", nil
 }
