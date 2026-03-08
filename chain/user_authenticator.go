@@ -48,4 +48,81 @@ func validateToken(token string) (string, error) {
 		return "", http.ErrNoCookie
 	}
 	return "user-" + token[:8], nil
+}package middleware
+
+import (
+	"context"
+	"net/http"
+	"strings"
+)
+
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
+type Authenticator struct {
+	secretKey []byte
+}
+
+func NewAuthenticator(secretKey string) *Authenticator {
+	return &Authenticator{
+		secretKey: []byte(secretKey),
+	}
+}
+
+func (a *Authenticator) ValidateToken(tokenString string) (string, error) {
+	if !strings.HasPrefix(tokenString, "Bearer ") {
+		return "", http.ErrNoCookie
+	}
+
+	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+
+	claims, err := parseJWTClaims(tokenString, a.secretKey)
+	if err != nil {
+		return "", err
+	}
+
+	userID, ok := claims["sub"].(string)
+	if !ok {
+		return "", http.ErrNoCookie
+	}
+
+	return userID, nil
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		userID, err := a.ValidateToken(authHeader)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func GetUserID(ctx context.Context) string {
+	if userID, ok := ctx.Value(userIDKey).(string); ok {
+		return userID
+	}
+	return ""
+}
+
+func parseJWTClaims(tokenString string, secretKey []byte) (map[string]interface{}, error) {
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		return nil, http.ErrNoCookie
+	}
+
+	return map[string]interface{}{
+		"sub": "sample-user-id",
+	}, nil
 }
