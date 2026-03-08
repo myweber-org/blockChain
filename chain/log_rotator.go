@@ -909,3 +909,115 @@ func main() {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+)
+
+type LogRotator struct {
+	filePath   string
+	maxSize    int64
+	maxBackups int
+	current    *os.File
+	size       int64
+}
+
+func NewLogRotator(filePath string, maxSize int64, maxBackups int) (*LogRotator, error) {
+	lr := &LogRotator{
+		filePath:   filePath,
+		maxSize:    maxSize,
+		maxBackups: maxBackups,
+	}
+
+	if err := lr.openCurrent(); err != nil {
+		return nil, err
+	}
+	return lr, nil
+}
+
+func (lr *LogRotator) openCurrent() error {
+	file, err := os.OpenFile(lr.filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return err
+	}
+
+	lr.current = file
+	lr.size = info.Size()
+	return nil
+}
+
+func (lr *LogRotator) rotate() error {
+	if err := lr.current.Close(); err != nil {
+		return err
+	}
+
+	for i := lr.maxBackups - 1; i >= 0; i-- {
+		oldPath := lr.backupPath(i)
+		newPath := lr.backupPath(i + 1)
+
+		if _, err := os.Stat(oldPath); err == nil {
+			if err := os.Rename(oldPath, newPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := os.Rename(lr.filePath, lr.backupPath(0)); err != nil {
+		return err
+	}
+
+	return lr.openCurrent()
+}
+
+func (lr *LogRotator) backupPath(index int) string {
+	if index == 0 {
+		return lr.filePath + ".1"
+	}
+	return fmt.Sprintf("%s.%d", lr.filePath, index+1)
+}
+
+func (lr *LogRotator) Write(p []byte) (int, error) {
+	if lr.size+int64(len(p)) > lr.maxSize {
+		if err := lr.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := lr.current.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	lr.size += int64(n)
+	return n, nil
+}
+
+func (lr *LogRotator) Close() error {
+	if lr.current != nil {
+		return lr.current.Close()
+	}
+	return nil
+}
+
+func main() {
+	rotator, err := NewLogRotator("app.log", 1024*1024, 5)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create log rotator: %v\n", err)
+		os.Exit(1)
+	}
+	defer rotator.Close()
+
+	io.WriteString(rotator, "Log entry 1\n")
+	io.WriteString(rotator, "Log entry 2\n")
+	fmt.Println("Log entries written successfully")
+}
