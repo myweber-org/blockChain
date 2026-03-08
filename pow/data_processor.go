@@ -282,3 +282,102 @@ func (dp *DataProcessor) ProcessUserData(email, username, comment string) (bool,
 	
 	return isValidEmail, normalizedUsername, sanitizedComment, email
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+type DataRecord struct {
+	ID      string
+	Name    string
+	Email   string
+	Active  string
+}
+
+func ProcessCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+
+	var records []DataRecord
+	headerSkipped := false
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error: %w", err)
+		}
+
+		if !headerSkipped {
+			headerSkipped = true
+			continue
+		}
+
+		if len(row) < 4 {
+			continue
+		}
+
+		record := DataRecord{
+			ID:     strings.TrimSpace(row[0]),
+			Name:   strings.TrimSpace(row[1]),
+			Email:  strings.TrimSpace(row[2]),
+			Active: strings.TrimSpace(row[3]),
+		}
+
+		if record.ID == "" || record.Email == "" {
+			continue
+		}
+
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func ValidateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+func FilterActiveUsers(records []DataRecord) []DataRecord {
+	var active []DataRecord
+	for _, record := range records {
+		if strings.ToLower(record.Active) == "true" && ValidateEmail(record.Email) {
+			active = append(active, record)
+		}
+	}
+	return active
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run data_processor.go <csv_file>")
+		return
+	}
+
+	records, err := ProcessCSVFile(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error processing file: %v\n", err)
+		return
+	}
+
+	activeUsers := FilterActiveUsers(records)
+	fmt.Printf("Total records: %d\n", len(records))
+	fmt.Printf("Active users: %d\n", len(activeUsers))
+
+	for _, user := range activeUsers {
+		fmt.Printf("ID: %s, Name: %s, Email: %s\n", user.ID, user.Name, user.Email)
+	}
+}
