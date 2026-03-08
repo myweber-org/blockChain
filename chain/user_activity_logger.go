@@ -15,52 +15,31 @@ func NewActivityLogger(handler http.Handler) *ActivityLogger {
 }
 
 func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	
-	al.handler.ServeHTTP(w, r)
-	
-	duration := time.Since(start)
-	
-	log.Printf("Activity: %s %s from %s took %v",
+	startTime := time.Now()
+	recorder := &responseRecorder{
+		ResponseWriter: w,
+		statusCode:     http.StatusOK,
+	}
+
+	al.handler.ServeHTTP(recorder, r)
+
+	duration := time.Since(startTime)
+	log.Printf(
+		"Method: %s | Path: %s | Status: %d | Duration: %v | UserAgent: %s",
 		r.Method,
 		r.URL.Path,
-		r.RemoteAddr,
+		recorder.statusCode,
 		duration,
+		r.UserAgent(),
 	)
-}package middleware
+}
 
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type responseWriter struct {
+type responseRecorder struct {
 	http.ResponseWriter
 	statusCode int
 }
 
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-func ActivityLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
-		next.ServeHTTP(rw, r)
-
-		duration := time.Since(start)
-		log.Printf(
-			"Method: %s | Path: %s | Status: %d | Duration: %v | IP: %s | UserAgent: %s",
-			r.Method,
-			r.URL.Path,
-			rw.statusCode,
-			duration,
-			r.RemoteAddr,
-			r.UserAgent(),
-		)
-	})
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.statusCode = code
+	rr.ResponseWriter.WriteHeader(code)
 }
