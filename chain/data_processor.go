@@ -496,3 +496,49 @@ func ValidatePasswordStrength(password string) error {
 
 	return nil
 }
+package data_processor
+
+import (
+	"regexp"
+	"strings"
+)
+
+type DataCleaner struct {
+	whitespaceRegex *regexp.Regexp
+	emailRegex      *regexp.Regexp
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+		emailRegex:      regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`),
+	}
+}
+
+func (dc *DataCleaner) NormalizeWhitespace(input string) string {
+	trimmed := strings.TrimSpace(input)
+	return dc.whitespaceRegex.ReplaceAllString(trimmed, " ")
+}
+
+func (dc *DataCleaner) ValidateEmail(email string) bool {
+	return dc.emailRegex.MatchString(email)
+}
+
+func (dc *DataCleaner) ExtractDomain(email string) string {
+	if !dc.ValidateEmail(email) {
+		return ""
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+func (dc *DataCleaner) SanitizeInput(input string, maxLength int) string {
+	normalized := dc.NormalizeWhitespace(input)
+	if len(normalized) > maxLength {
+		return normalized[:maxLength]
+	}
+	return normalized
+}
