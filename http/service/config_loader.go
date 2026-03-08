@@ -1,58 +1,104 @@
 package config
 
 import (
+    "encoding/json"
     "os"
-    "strconv"
     "strings"
 )
 
-type Config struct {
-    ServerPort int
-    DatabaseURL string
-    EnableDebug bool
-    AllowedOrigins []string
+type DatabaseConfig struct {
+    Host     string `json:"host" env:"DB_HOST"`
+    Port     int    `json:"port" env:"DB_PORT"`
+    Username string `json:"username" env:"DB_USER"`
+    Password string `json:"password" env:"DB_PASS"`
+    SSLMode  string `json:"ssl_mode" env:"DB_SSL_MODE"`
 }
 
-func Load() (*Config, error) {
-    cfg := &Config{}
-    
-    portStr := getEnv("SERVER_PORT", "8080")
-    port, err := strconv.Atoi(portStr)
+type ServerConfig struct {
+    Address      string `json:"address" env:"SERVER_ADDRESS"`
+    Port         int    `json:"port" env:"SERVER_PORT"`
+    ReadTimeout  int    `json:"read_timeout" env:"SERVER_READ_TIMEOUT"`
+    WriteTimeout int    `json:"write_timeout" env:"SERVER_WRITE_TIMEOUT"`
+}
+
+type Config struct {
+    Database DatabaseConfig `json:"database"`
+    Server   ServerConfig   `json:"server"`
+    Debug    bool           `json:"debug" env:"DEBUG"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+    file, err := os.Open(configPath)
     if err != nil {
         return nil, err
     }
-    cfg.ServerPort = port
-    
-    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
-    
-    debugStr := getEnv("ENABLE_DEBUG", "false")
-    cfg.EnableDebug = strings.ToLower(debugStr) == "true"
-    
-    origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000")
-    cfg.AllowedOrigins = strings.Split(origins, ",")
-    
-    if err := validate(cfg); err != nil {
+    defer file.Close()
+
+    var config Config
+    decoder := json.NewDecoder(file)
+    if err := decoder.Decode(&config); err != nil {
         return nil, err
     }
+
+    overrideFromEnv(&config)
     
-    return cfg, nil
+    if err := validateConfig(&config); err != nil {
+        return nil, err
+    }
+
+    return &config, nil
 }
 
-func getEnv(key, defaultValue string) string {
-    if value := os.Getenv(key); value != "" {
-        return value
-    }
-    return defaultValue
+func overrideFromEnv(config *Config) {
+    overrideStruct(config)
 }
 
-func validate(cfg *Config) error {
-    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
-        return strconv.ErrRange
+func overrideStruct(s interface{}) {
+    val := reflect.ValueOf(s).Elem()
+    typ := val.Type()
+
+    for i := 0; i < val.NumField(); i++ {
+        field := val.Field(i)
+        fieldType := typ.Field(i)
+
+        if field.Kind() == reflect.Struct {
+            overrideStruct(field.Addr().Interface())
+            continue
+        }
+
+        envTag := fieldType.Tag.Get("env")
+        if envTag == "" {
+            continue
+        }
+
+        envValue := os.Getenv(envTag)
+        if envValue == "" {
+            continue
+        }
+
+        switch field.Kind() {
+        case reflect.String:
+            field.SetString(envValue)
+        case reflect.Int:
+            if intVal, err := strconv.Atoi(envValue); err == nil {
+                field.SetInt(int64(intVal))
+            }
+        case reflect.Bool:
+            boolVal := strings.ToLower(envValue) == "true" || envValue == "1"
+            field.SetBool(boolVal)
+        }
     }
-    
-    if cfg.DatabaseURL == "" {
-        return strconv.ErrSyntax
+}
+
+func validateConfig(config *Config) error {
+    if config.Database.Host == "" {
+        return errors.New("database host is required")
     }
-    
+    if config.Database.Port <= 0 || config.Database.Port > 65535 {
+        return errors.New("database port must be between 1 and 65535")
+    }
+    if config.Server.Port <= 0 || config.Server.Port > 65535 {
+        return errors.New("server port must be between 1 and 65535")
+    }
     return nil
 }
