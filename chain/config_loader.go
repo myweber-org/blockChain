@@ -506,4 +506,123 @@ func atoi(s string, fallback int) int {
 		return fallback
 	}
 	return result
+}package config
+
+import (
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type DatabaseConfig struct {
+    Host     string
+    Port     int
+    Username string
+    Password string
+    Name     string
+    SSLMode  string
+}
+
+type ServerConfig struct {
+    Port         int
+    ReadTimeout  int
+    WriteTimeout int
+    DebugMode    bool
+}
+
+type Config struct {
+    Database DatabaseConfig
+    Server   ServerConfig
+    LogLevel string
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{}
+
+    dbHost := getEnv("DB_HOST", "localhost")
+    dbPort := getEnvAsInt("DB_PORT", 5432)
+    dbUser := getEnv("DB_USER", "postgres")
+    dbPass := getEnv("DB_PASS", "")
+    dbName := getEnv("DB_NAME", "appdb")
+    dbSSL := getEnv("DB_SSL_MODE", "disable")
+
+    cfg.Database = DatabaseConfig{
+        Host:     dbHost,
+        Port:     dbPort,
+        Username: dbUser,
+        Password: dbPass,
+        Name:     dbName,
+        SSLMode:  dbSSL,
+    }
+
+    srvPort := getEnvAsInt("SERVER_PORT", 8080)
+    readTO := getEnvAsInt("READ_TIMEOUT", 30)
+    writeTO := getEnvAsInt("WRITE_TIMEOUT", 30)
+    debug := getEnvAsBool("DEBUG_MODE", false)
+
+    cfg.Server = ServerConfig{
+        Port:         srvPort,
+        ReadTimeout:  readTO,
+        WriteTimeout: writeTO,
+        DebugMode:    debug,
+    }
+
+    logLevel := getEnv("LOG_LEVEL", "info")
+    allowedLevels := map[string]bool{
+        "debug": true,
+        "info":  true,
+        "warn":  true,
+        "error": true,
+    }
+
+    if !allowedLevels[strings.ToLower(logLevel)] {
+        return nil, fmt.Errorf("invalid log level: %s", logLevel)
+    }
+    cfg.LogLevel = strings.ToLower(logLevel)
+
+    if cfg.Database.Password == "" {
+        return nil, fmt.Errorf("database password must be set")
+    }
+
+    if cfg.Database.Port < 1 || cfg.Database.Port > 65535 {
+        return nil, fmt.Errorf("invalid database port: %d", cfg.Database.Port)
+    }
+
+    if cfg.Server.Port < 1 || cfg.Server.Port > 65535 {
+        return nil, fmt.Errorf("invalid server port: %d", cfg.Server.Port)
+    }
+
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    if value, exists := os.LookupEnv(key); exists {
+        return value
+    }
+    return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+    strValue := getEnv(key, "")
+    if strValue == "" {
+        return defaultValue
+    }
+    value, err := strconv.Atoi(strValue)
+    if err != nil {
+        return defaultValue
+    }
+    return value
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+    strValue := getEnv(key, "")
+    if strValue == "" {
+        return defaultValue
+    }
+    value, err := strconv.ParseBool(strValue)
+    if err != nil {
+        return defaultValue
+    }
+    return value
 }
