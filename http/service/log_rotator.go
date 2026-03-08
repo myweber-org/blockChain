@@ -1097,3 +1097,223 @@ func main() {
         time.Sleep(100 * time.Millisecond)
     }
 }
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+type RotatingLogger struct {
+	mu         sync.Mutex
+	basePath   string
+	maxSize    int64
+	maxBackups int
+	current    *os.File
+	size       int64
+}
+
+func NewRotatingLogger(basePath string, maxSize int64, maxBackups int) (*RotatingLogger, error) {
+	rl := &RotatingLogger{
+		basePath:   basePath,
+		maxSize:    maxSize,
+		maxBackups: maxBackups,
+	}
+
+	if err := rl.openExistingOrCreate(); err != nil {
+		return nil, err
+	}
+
+	return rl, nil
+}
+
+func (rl *RotatingLogger) openExistingOrCreate() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	info, err := os.Stat(rl.basePath)
+	if os.IsNotExist(err) {
+		return rl.openNew()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to stat log file: %w", err)
+	}
+
+	file, err := os.OpenFile(rl.basePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return rl.openNew()
+	}
+
+	rl.current = file
+	rl.size = info.Size()
+	return nil
+}
+
+func (rl *RotatingLogger) openNew() error {
+	if err := os.MkdirAll(filepath.Dir(rl.basePath), 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	file, err := os.OpenFile(rl.basePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create new log file: %w", err)
+	}
+
+	rl.current = file
+	rl.size = 0
+	return nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	writeLen := int64(len(p))
+	if rl.size+writeLen > rl.maxSize {
+		if err := rl.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err = rl.current.Write(p)
+	rl.size += int64(n)
+	return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+	if rl.current != nil {
+		if err := rl.current.Close(); err != nil {
+			return err
+		}
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	backupPath := fmt.Sprintf("%s.%s", rl.basePath, timestamp)
+
+	if err := os.Rename(rl.basePath, backupPath); err != nil {
+		return fmt.Errorf("failed to rename log file: %w", err)
+	}
+
+	if err := rl.cleanOldBackups(); err != nil {
+		log.Printf("warning: failed to clean old backups: %v", err)
+	}
+
+	return rl.openNew()
+}
+
+func (rl *RotatingLogger) cleanOldBackups() error {
+	pattern := rl.basePath + ".*"
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+
+	if len(matches) <= rl.maxBackups {
+		return nil
+	}
+
+	toDelete := matches[:len(matches)-rl.maxBackups]
+	for _, path := range toDelete {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (rl *RotatingLogger) compressOldest() error {
+	pattern := rl.basePath + ".*"
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+
+	for _, path := range matches {
+		if strings.HasSuffix(path, ".gz") {
+			continue
+		}
+
+		if err := compressFile(path); err != nil {
+			return err
+		}
+		break
+	}
+
+	return nil
+}
+
+func compressFile(src string) error {
+	dest := src + ".gz"
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	gzWriter := NewGzipWriter(destFile)
+	defer gzWriter.Close()
+
+	if _, err := io.Copy(gzWriter, srcFile); err != nil {
+		return err
+	}
+
+	if err := os.Remove(src); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (rl *RotatingLogger) Close() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.current != nil {
+		return rl.current.Close()
+	}
+	return nil
+}
+
+type GzipWriter struct {
+	io.WriteCloser
+}
+
+func NewGzipWriter(w io.Writer) *GzipWriter {
+	return &GzipWriter{}
+}
+
+func (gw *GzipWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (gw *GzipWriter) Close() error {
+	return nil
+}
+
+func main() {
+	logger, err := NewRotatingLogger("/var/log/myapp/app.log", 10*1024*1024, 5)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
+
+	log.SetOutput(logger)
+
+	for i := 0; i < 1000; i++ {
+		log.Printf("Log entry %d: Application is running normally", i)
+		time.Sleep(10 * time.Millisecond)
+	}
+}
