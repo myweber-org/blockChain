@@ -375,3 +375,102 @@ func main() {
     }
     fmt.Println("File processing completed successfully")
 }
+package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+type FileProcessor struct {
+	mu          sync.Mutex
+	processed   int
+	errors      []error
+}
+
+func NewFileProcessor() *FileProcessor {
+	return &FileProcessor{
+		errors: make([]error, 0),
+	}
+}
+
+func (fp *FileProcessor) ProcessFile(path string, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	file, err := os.Open(path)
+	if err != nil {
+		fp.recordError(err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		fp.recordError(err)
+		return
+	}
+
+	fp.mu.Lock()
+	fp.processed++
+	fp.mu.Unlock()
+
+	fmt.Printf("Processed %s: %d lines\n", filepath.Base(path), lineCount)
+}
+
+func (fp *FileProcessor) recordError(err error) {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	fp.errors = append(fp.errors, err)
+}
+
+func (fp *FileProcessor) Stats() (int, []error) {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	return fp.processed, fp.errors
+}
+
+func ProcessFiles(paths []string) error {
+	if len(paths) == 0 {
+		return errors.New("no files to process")
+	}
+
+	processor := NewFileProcessor()
+	var wg sync.WaitGroup
+
+	for _, path := range paths {
+		wg.Add(1)
+		go processor.ProcessFile(path, &wg)
+	}
+
+	wg.Wait()
+
+	processed, errs := processor.Stats()
+	fmt.Printf("Total files processed: %d\n", processed)
+	if len(errs) > 0 {
+		fmt.Printf("Encountered %d errors\n", len(errs))
+		for _, err := range errs {
+			fmt.Printf("Error: %v\n", err)
+		}
+		return errors.New("processing completed with errors")
+	}
+
+	return nil
+}
+
+func main() {
+	files := []string{"file1.txt", "file2.txt", "file3.txt"}
+	if err := ProcessFiles(files); err != nil {
+		fmt.Fprintf(os.Stderr, "Processing failed: %v\n", err)
+		os.Exit(1)
+	}
+}
