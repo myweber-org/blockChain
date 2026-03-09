@@ -127,3 +127,52 @@ func getEnv(key, defaultValue string) string {
 	}
 	return value
 }
+package config
+
+import (
+	"errors"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type AppConfig struct {
+	ServerPort int
+	DebugMode  bool
+	APIKey     string
+	Timeout    int
+}
+
+func LoadConfig() (*AppConfig, error) {
+	cfg := &AppConfig{}
+
+	portStr := os.Getenv("SERVER_PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return nil, errors.New("invalid SERVER_PORT value")
+	}
+	cfg.ServerPort = port
+
+	debugStr := os.Getenv("DEBUG_MODE")
+	cfg.DebugMode = strings.ToLower(debugStr) == "true"
+
+	cfg.APIKey = os.Getenv("API_KEY")
+	if cfg.APIKey == "" {
+		return nil, errors.New("API_KEY is required")
+	}
+
+	timeoutStr := os.Getenv("TIMEOUT_SECONDS")
+	if timeoutStr == "" {
+		timeoutStr = "30"
+	}
+	timeout, err := strconv.Atoi(timeoutStr)
+	if err != nil || timeout < 1 {
+		return nil, errors.New("invalid TIMEOUT_SECONDS value")
+	}
+	cfg.Timeout = timeout
+
+	return cfg, nil
+}
