@@ -190,4 +190,117 @@ func main() {
 	avg, max := calculateStats(records)
 	fmt.Printf("Average value: %.2f\n", avg)
 	fmt.Printf("Maximum value: %.2f\n", max)
+}package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+type DataProcessor struct {
+	InputPath  string
+	OutputPath string
+	Delimiter  rune
+}
+
+func NewDataProcessor(input, output string) *DataProcessor {
+	return &DataProcessor{
+		InputPath:  input,
+		OutputPath: output,
+		Delimiter:  ',',
+	}
+}
+
+func (dp *DataProcessor) ValidateAndClean() error {
+	inputFile, err := os.Open(dp.InputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(dp.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	reader := csv.NewReader(inputFile)
+	reader.Comma = dp.Delimiter
+	writer := csv.NewWriter(outputFile)
+	writer.Comma = dp.Delimiter
+
+	headers, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read headers: %w", err)
+	}
+
+	cleanedHeaders := dp.cleanRow(headers)
+	if err := writer.Write(cleanedHeaders); err != nil {
+		return fmt.Errorf("failed to write headers: %w", err)
+	}
+
+	recordCount := 0
+	skippedCount := 0
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			skippedCount++
+			continue
+		}
+
+		if dp.isValidRecord(record) {
+			cleanedRecord := dp.cleanRow(record)
+			if err := writer.Write(cleanedRecord); err != nil {
+				return fmt.Errorf("failed to write record: %w", err)
+			}
+			recordCount++
+		} else {
+			skippedCount++
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("failed to flush writer: %w", err)
+	}
+
+	fmt.Printf("Processing complete. Records written: %d, Records skipped: %d\n", recordCount, skippedCount)
+	return nil
+}
+
+func (dp *DataProcessor) isValidRecord(record []string) bool {
+	for _, field := range record {
+		if strings.TrimSpace(field) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func (dp *DataProcessor) cleanRow(row []string) []string {
+	cleaned := make([]string, len(row))
+	for i, field := range row {
+		cleaned[i] = strings.TrimSpace(field)
+	}
+	return cleaned
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_processor <input_file> <output_file>")
+		os.Exit(1)
+	}
+
+	processor := NewDataProcessor(os.Args[1], os.Args[2])
+	if err := processor.ValidateAndClean(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 }
