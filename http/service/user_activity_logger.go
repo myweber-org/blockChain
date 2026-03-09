@@ -681,4 +681,64 @@ func main() {
     }
 
     fmt.Println("Activity logging completed")
+}package middleware
+
+import (
+	"log"
+	"net/http"
+	"sync"
+	"time"
+)
+
+type ActivityLogger struct {
+	mu          sync.RWMutex
+	rateLimiter map[string]time.Time
+	window      time.Duration
+}
+
+func NewActivityLogger(window time.Duration) *ActivityLogger {
+	return &ActivityLogger{
+		rateLimiter: make(map[string]time.Time),
+		window:      window,
+	}
+}
+
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userIP := r.RemoteAddr
+		path := r.URL.Path
+		method := r.Method
+
+		al.mu.RLock()
+		lastSeen, exists := al.rateLimiter[userIP]
+		al.mu.RUnlock()
+
+		if exists && time.Since(lastSeen) < al.window {
+			http.Error(w, "Too many requests", http.StatusTooManyRequests)
+			return
+		}
+
+		al.mu.Lock()
+		al.rateLimiter[userIP] = time.Now()
+		al.mu.Unlock()
+
+		log.Printf("Activity: %s %s from %s", method, path, userIP)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (al *ActivityLogger) Cleanup() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		al.mu.Lock()
+		for ip, lastSeen := range al.rateLimiter {
+			if time.Since(lastSeen) > 24*time.Hour {
+				delete(al.rateLimiter, ip)
+			}
+		}
+		al.mu.Unlock()
+	}
 }
