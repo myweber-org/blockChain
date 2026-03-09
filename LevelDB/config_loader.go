@@ -162,4 +162,98 @@ func validateConfig(cfg *Config) error {
     }
 
     return nil
+}package config
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+)
+
+type DatabaseConfig struct {
+	Host     string `json:"host" env:"DB_HOST"`
+	Port     int    `json:"port" env:"DB_PORT"`
+	Username string `json:"username" env:"DB_USER"`
+	Password string `json:"password" env:"DB_PASS"`
+	SSLMode  bool   `json:"ssl_mode" env:"DB_SSL"`
+}
+
+type AppConfig struct {
+	Debug    bool           `json:"debug" env:"APP_DEBUG"`
+	LogLevel string         `json:"log_level" env:"LOG_LEVEL"`
+	Database DatabaseConfig `json:"database"`
+}
+
+func LoadConfig(path string) (*AppConfig, error) {
+	config := &AppConfig{}
+	
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(config); err != nil {
+		return nil, err
+	}
+	
+	overrideFromEnv(config)
+	
+	if err := validateConfig(config); err != nil {
+		return nil, err
+	}
+	
+	return config, nil
+}
+
+func overrideFromEnv(config *AppConfig) {
+	overrideStruct(config, "")
+}
+
+func overrideStruct(s interface{}, prefix string) {
+	v := reflect.ValueOf(s).Elem()
+	t := v.Type()
+	
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+		
+		envTag := fieldType.Tag.Get("env")
+		if envTag == "" {
+			if field.Kind() == reflect.Struct {
+				overrideStruct(field.Addr().Interface(), prefix)
+			}
+			continue
+		}
+		
+		envValue := os.Getenv(envTag)
+		if envValue == "" {
+			continue
+		}
+		
+		switch field.Kind() {
+		case reflect.String:
+			field.SetString(envValue)
+		case reflect.Int:
+			if intVal, err := strconv.Atoi(envValue); err == nil {
+				field.SetInt(int64(intVal))
+			}
+		case reflect.Bool:
+			field.SetBool(strings.ToLower(envValue) == "true")
+		}
+	}
+}
+
+func validateConfig(config *AppConfig) error {
+	if config.Database.Host == "" {
+		return errors.New("database host is required")
+	}
+	if config.Database.Port <= 0 || config.Database.Port > 65535 {
+		return errors.New("invalid database port")
+	}
+	if config.LogLevel == "" {
+		config.LogLevel = "info"
+	}
+	return nil
 }
