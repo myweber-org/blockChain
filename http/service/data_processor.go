@@ -3,101 +3,77 @@ package main
 
 import (
 	"encoding/csv"
-	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 )
 
-type DataProcessor struct {
-	InputPath  string
-	OutputPath string
+func readCSVFile(filePath string) ([][]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
-func NewDataProcessor(input, output string) *DataProcessor {
-	return &DataProcessor{
-		InputPath:  input,
-		OutputPath: output,
+func filterRows(records [][]string, filterFunc func([]string) bool) [][]string {
+	var filtered [][]string
+	for _, row := range records {
+		if filterFunc(row) {
+			filtered = append(filtered, row)
+		}
 	}
+	return filtered
 }
 
-func (dp *DataProcessor) Process() error {
-	inputFile, err := os.Open(dp.InputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input file: %w", err)
+func containsKeyword(row []string, keyword string) bool {
+	for _, field := range row {
+		if strings.Contains(strings.ToLower(field), strings.ToLower(keyword)) {
+			return true
+		}
 	}
-	defer inputFile.Close()
+	return false
+}
 
-	outputFile, err := os.Create(dp.OutputPath)
+func writeCSVFile(filePath string, records [][]string) error {
+	file, err := os.Create(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+		return err
 	}
-	defer outputFile.Close()
+	defer file.Close()
 
-	reader := csv.NewReader(inputFile)
-	writer := csv.NewWriter(outputFile)
+	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	headers, err := reader.Read()
-	if err != nil {
-		return fmt.Errorf("failed to read headers: %w", err)
-	}
-
-	if err := writer.Write(headers); err != nil {
-		return fmt.Errorf("failed to write headers: %w", err)
-	}
-
-	recordCount := 0
-	cleanedCount := 0
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			continue
-		}
-
-		recordCount++
-		cleanedRecord := dp.cleanRecord(record)
-		if dp.isValidRecord(cleanedRecord) {
-			if err := writer.Write(cleanedRecord); err != nil {
-				return fmt.Errorf("failed to write record: %w", err)
-			}
-			cleanedCount++
+	for _, record := range records {
+		if err := writer.Write(record); err != nil {
+			return err
 		}
 	}
-
-	fmt.Printf("Processed %d records, wrote %d valid records\n", recordCount, cleanedCount)
 	return nil
 }
 
-func (dp *DataProcessor) cleanRecord(record []string) []string {
-	cleaned := make([]string, len(record))
-	for i, field := range record {
-		cleaned[i] = strings.TrimSpace(field)
-	}
-	return cleaned
-}
-
-func (dp *DataProcessor) isValidRecord(record []string) bool {
-	for _, field := range record {
-		if field == "" {
-			return false
-		}
-	}
-	return true
-}
-
-func main() {
-	if len(os.Args) != 3 {
-		fmt.Println("Usage: data_processor <input.csv> <output.csv>")
-		os.Exit(1)
+func processCSVData(inputPath, outputPath, keyword string) error {
+	records, err := readCSVFile(inputPath)
+	if err != nil {
+		return err
 	}
 
-	processor := NewDataProcessor(os.Args[1], os.Args[2])
-	if err := processor.Process(); err != nil {
-		fmt.Printf("Error processing data: %v\n", err)
-		os.Exit(1)
+	filtered := filterRows(records, func(row []string) bool {
+		return containsKeyword(row, keyword)
+	})
+
+	if len(filtered) == 0 {
+		log.Println("No matching records found")
 	}
+
+	return writeCSVFile(outputPath, filtered)
 }
