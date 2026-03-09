@@ -181,4 +181,94 @@ func main() {
 		return
 	}
 	fmt.Println("File decrypted successfully")
+}package main
+
+import (
+    "crypto/aes"
+    "crypto/cipher"
+    "crypto/rand"
+    "errors"
+    "io"
+    "os"
+)
+
+func generateKey() ([]byte, error) {
+    key := make([]byte, 32)
+    _, err := rand.Read(key)
+    if err != nil {
+        return nil, err
+    }
+    return key, nil
+}
+
+func encryptFile(inputPath, outputPath string, key []byte) error {
+    plaintext, err := os.ReadFile(inputPath)
+    if err != nil {
+        return err
+    }
+
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return err
+    }
+
+    gcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return err
+    }
+
+    nonce := make([]byte, gcm.NonceSize())
+    if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+        return err
+    }
+
+    ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+    return os.WriteFile(outputPath, ciphertext, 0644)
+}
+
+func decryptFile(inputPath, outputPath string, key []byte) error {
+    ciphertext, err := os.ReadFile(inputPath)
+    if err != nil {
+        return err
+    }
+
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return err
+    }
+
+    gcm, err := cipher.NewGCM(block)
+    if err != nil {
+        return err
+    }
+
+    nonceSize := gcm.NonceSize()
+    if len(ciphertext) < nonceSize {
+        return errors.New("ciphertext too short")
+    }
+
+    nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+    plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+    if err != nil {
+        return err
+    }
+
+    return os.WriteFile(outputPath, plaintext, 0644)
+}
+
+func main() {
+    key, err := generateKey()
+    if err != nil {
+        panic(err)
+    }
+
+    err = encryptFile("test.txt", "encrypted.dat", key)
+    if err != nil {
+        panic(err)
+    }
+
+    err = decryptFile("encrypted.dat", "decrypted.txt", key)
+    if err != nil {
+        panic(err)
+    }
 }
