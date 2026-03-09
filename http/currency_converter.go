@@ -157,4 +157,19 @@ func main() {
 	
 	rate, _ := converter.GetRate("USD", "JPY")
 	fmt.Printf("Current USD to JPY rate: %.2f\n", rate)
+}package main
+
+import (
+	"fmt"
+)
+
+func ConvertUSDToEUR(amount float64) float64 {
+	const exchangeRate = 0.85
+	return amount * exchangeRate
+}
+
+func main() {
+	usdAmount := 100.0
+	eurAmount := ConvertUSDToEUR(usdAmount)
+	fmt.Printf("%.2f USD = %.2f EUR\n", usdAmount, eurAmount)
 }
