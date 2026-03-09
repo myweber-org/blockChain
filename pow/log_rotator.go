@@ -3034,4 +3034,73 @@ func main() {
 		logger.Write([]byte(message))
 		time.Sleep(100 * time.Millisecond)
 	}
+}package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "strconv"
+)
+
+const maxLogSize = 1024 * 1024 // 1MB
+const maxBackupFiles = 5
+
+func rotateLogFile(logPath string) error {
+    info, err := os.Stat(logPath)
+    if os.IsNotExist(err) {
+        return nil
+    }
+    if err != nil {
+        return err
+    }
+
+    if info.Size() < maxLogSize {
+        return nil
+    }
+
+    for i := maxBackupFiles - 1; i > 0; i-- {
+        oldName := logPath + "." + strconv.Itoa(i)
+        newName := logPath + "." + strconv.Itoa(i+1)
+        if _, err := os.Stat(oldName); err == nil {
+            os.Rename(oldName, newName)
+        }
+    }
+
+    backupPath := logPath + ".1"
+    os.Rename(logPath, backupPath)
+
+    return nil
+}
+
+func writeLogEntry(logPath, entry string) error {
+    if err := rotateLogFile(logPath); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    _, err = file.WriteString(entry + "\n")
+    return err
+}
+
+func main() {
+    logDir := "./logs"
+    os.MkdirAll(logDir, 0755)
+    logPath := filepath.Join(logDir, "app.log")
+
+    for i := 0; i < 1000; i++ {
+        entry := fmt.Sprintf("Log entry number %d", i)
+        if err := writeLogEntry(logPath, entry); err != nil {
+            fmt.Printf("Failed to write log: %v\n", err)
+            break
+        }
+    }
+
+    fmt.Println("Log rotation test completed")
 }
