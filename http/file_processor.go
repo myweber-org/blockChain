@@ -473,4 +473,155 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Processing failed: %v\n", err)
 		os.Exit(1)
 	}
+}package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileProcessor struct {
+	workers   int
+	batchSize int
+	mu        sync.Mutex
+	results   map[string]int
+}
+
+func NewFileProcessor(workers, batchSize int) *FileProcessor {
+	return &FileProcessor{
+		workers:   workers,
+		batchSize: batchSize,
+		results:   make(map[string]int),
+	}
+}
+
+func (fp *FileProcessor) ProcessFiles(paths []string) error {
+	if len(paths) == 0 {
+		return errors.New("no files to process")
+	}
+
+	var wg sync.WaitGroup
+	fileChan := make(chan string, len(paths))
+
+	for i := 0; i < fp.workers; i++ {
+		wg.Add(1)
+		go fp.worker(&wg, fileChan)
+	}
+
+	for _, path := range paths {
+		fileChan <- path
+	}
+	close(fileChan)
+
+	wg.Wait()
+	return nil
+}
+
+func (fp *FileProcessor) worker(wg *sync.WaitGroup, files <-chan string) {
+	defer wg.Done()
+
+	for file := range files {
+		count, err := fp.countLines(file)
+		if err != nil {
+			fmt.Printf("Error processing %s: %v\n", file, err)
+			continue
+		}
+
+		fp.mu.Lock()
+		fp.results[file] = count
+		fp.mu.Unlock()
+	}
+}
+
+func (fp *FileProcessor) countLines(path string) (int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+		if lineCount%fp.batchSize == 0 {
+			time.Sleep(1 * time.Millisecond)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return lineCount, nil
+}
+
+func (fp *FileProcessor) GetResults() map[string]int {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+
+	copied := make(map[string]int, len(fp.results))
+	for k, v := range fp.results {
+		copied[k] = v
+	}
+	return copied
+}
+
+func findTextFiles(dir string) ([]string, error) {
+	var files []string
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() && filepath.Ext(path) == ".txt" {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	return files, err
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: file_processor <directory>")
+		os.Exit(1)
+	}
+
+	dir := os.Args[1]
+	files, err := findTextFiles(dir)
+	if err != nil {
+		fmt.Printf("Error finding files: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Found %d text files\n", len(files))
+
+	processor := NewFileProcessor(4, 1000)
+	start := time.Now()
+
+	if err := processor.ProcessFiles(files); err != nil {
+		fmt.Printf("Processing error: %v\n", err)
+		os.Exit(1)
+	}
+
+	elapsed := time.Since(start)
+	results := processor.GetResults()
+
+	totalLines := 0
+	for file, count := range results {
+		fmt.Printf("%s: %d lines\n", filepath.Base(file), count)
+		totalLines += count
+	}
+
+	fmt.Printf("\nTotal lines: %d\n", totalLines)
+	fmt.Printf("Processing time: %v\n", elapsed)
 }
