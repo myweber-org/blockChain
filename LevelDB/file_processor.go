@@ -340,4 +340,162 @@ func main() {
 	fmt.Printf("Processed %d files with %d errors\n", processed, errors)
 	
 	time.Sleep(100 * time.Millisecond)
+}package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type FileStats struct {
+	Path        string
+	Size        int64
+	LineCount   int
+	ProcessTime time.Duration
+	Error       error
+}
+
+func ProcessFile(path string) (FileStats, error) {
+	start := time.Now()
+	stats := FileStats{Path: path}
+
+	file, err := os.Open(path)
+	if err != nil {
+		stats.Error = err
+		return stats, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		stats.Error = err
+		return stats, err
+	}
+	stats.Size = info.Size()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+	if err := scanner.Err(); err != nil {
+		stats.Error = err
+		return stats, err
+	}
+	stats.LineCount = lineCount
+	stats.ProcessTime = time.Since(start)
+
+	return stats, nil
+}
+
+func ProcessFilesConcurrently(paths []string, maxWorkers int) ([]FileStats, error) {
+	if maxWorkers <= 0 {
+		return nil, errors.New("maxWorkers must be positive")
+	}
+
+	var wg sync.WaitGroup
+	workChan := make(chan string, len(paths))
+	resultsChan := make(chan FileStats, len(paths))
+	stats := make([]FileStats, 0, len(paths))
+
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range workChan {
+				fileStats, _ := ProcessFile(path)
+				resultsChan <- fileStats
+			}
+		}()
+	}
+
+	for _, path := range paths {
+		workChan <- path
+	}
+	close(workChan)
+
+	wg.Wait()
+	close(resultsChan)
+
+	for stat := range resultsChan {
+		stats = append(stats, stat)
+	}
+
+	return stats, nil
+}
+
+func FindFilesByExtension(dir, ext string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ext {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files, err
+}
+
+func PrintStats(stats []FileStats) {
+	totalSize := int64(0)
+	totalLines := 0
+	var totalTime time.Duration
+
+	fmt.Println("File Processing Results:")
+	fmt.Println("=======================")
+	for _, s := range stats {
+		fmt.Printf("Path: %s\n", s.Path)
+		fmt.Printf("  Size: %d bytes\n", s.Size)
+		fmt.Printf("  Lines: %d\n", s.LineCount)
+		fmt.Printf("  Process Time: %v\n", s.ProcessTime)
+		if s.Error != nil {
+			fmt.Printf("  Error: %v\n", s.Error)
+		}
+		fmt.Println()
+
+		totalSize += s.Size
+		totalLines += s.LineCount
+		totalTime += s.ProcessTime
+	}
+
+	fmt.Printf("Total Files: %d\n", len(stats))
+	fmt.Printf("Total Size: %d bytes\n", totalSize)
+	fmt.Printf("Total Lines: %d\n", totalLines)
+	fmt.Printf("Total Process Time: %v\n", totalTime)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run file_processor.go <directory>")
+		os.Exit(1)
+	}
+
+	dir := os.Args[1]
+	files, err := FindFilesByExtension(dir, ".txt")
+	if err != nil {
+		fmt.Printf("Error finding files: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(files) == 0 {
+		fmt.Println("No .txt files found in directory")
+		return
+	}
+
+	fmt.Printf("Found %d .txt files\n", len(files))
+	stats, err := ProcessFilesConcurrently(files, 4)
+	if err != nil {
+		fmt.Printf("Error processing files: %v\n", err)
+		os.Exit(1)
+	}
+
+	PrintStats(stats)
 }
