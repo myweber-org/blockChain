@@ -359,3 +359,118 @@ func main() {
 	validRecords := FilterValidRecords(records)
 	fmt.Printf("Total records: %d, Valid records: %d\n", len(records), len(validRecords))
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type DataRecord struct {
+	ID        int
+	Name      string
+	Value     float64
+	Validated bool
+}
+
+func ProcessCSVFile(filename string) ([]DataRecord, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records := []DataRecord{}
+	lineNumber := 0
+
+	for {
+		lineNumber++
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("csv read error at line %d: %w", lineNumber, err)
+		}
+
+		if len(row) < 3 {
+			continue
+		}
+
+		record, err := parseRecord(row)
+		if err != nil {
+			fmt.Printf("Skipping invalid record at line %d: %v\n", lineNumber, err)
+			continue
+		}
+
+		record.Validated = validateRecord(record)
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+func parseRecord(row []string) (DataRecord, error) {
+	var record DataRecord
+
+	id, err := strconv.Atoi(strings.TrimSpace(row[0]))
+	if err != nil {
+		return record, fmt.Errorf("invalid ID: %w", err)
+	}
+	record.ID = id
+
+	record.Name = strings.TrimSpace(row[1])
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+	if err != nil {
+		return record, fmt.Errorf("invalid value: %w", err)
+	}
+	record.Value = value
+
+	return record, nil
+}
+
+func validateRecord(record DataRecord) bool {
+	if record.ID <= 0 {
+		return false
+	}
+	if len(record.Name) == 0 {
+		return false
+	}
+	if record.Value < 0 {
+		return false
+	}
+	return true
+}
+
+func CalculateStatistics(records []DataRecord) (float64, float64, int) {
+	if len(records) == 0 {
+		return 0, 0, 0
+	}
+
+	var sum float64
+	var validCount int
+	var maxValue float64
+
+	for _, record := range records {
+		if record.Validated {
+			sum += record.Value
+			validCount++
+			if record.Value > maxValue {
+				maxValue = record.Value
+			}
+		}
+	}
+
+	if validCount == 0 {
+		return 0, 0, 0
+	}
+
+	average := sum / float64(validCount)
+	return average, maxValue, validCount
+}
