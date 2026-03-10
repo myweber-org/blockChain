@@ -175,4 +175,77 @@ func LoadConfig() (*AppConfig, error) {
 	cfg.Timeout = timeout
 
 	return cfg, nil
+}package config
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+)
+
+type Config struct {
+	ServerPort int    `json:"server_port"`
+	LogLevel   string `json:"log_level"`
+	CacheSize  int    `json:"cache_size"`
+	EnableTLS  bool   `json:"enable_tls"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+	if configPath == "" {
+		configPath = filepath.Join("config", "settings.json")
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config Config
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	if err := validateConfig(&config); err != nil {
+		return nil, err
+	}
+
+	setDefaults(&config)
+	return &config, nil
+}
+
+func validateConfig(c *Config) error {
+	if c.ServerPort < 1 || c.ServerPort > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
+
+	validLogLevels := map[string]bool{
+		"debug": true,
+		"info":  true,
+		"warn":  true,
+		"error": true,
+	}
+	if !validLogLevels[c.LogLevel] {
+		return errors.New("invalid log level")
+	}
+
+	if c.CacheSize < 0 {
+		return errors.New("cache size cannot be negative")
+	}
+
+	return nil
+}
+
+func setDefaults(c *Config) {
+	if c.ServerPort == 0 {
+		c.ServerPort = 8080
+	}
+	if c.LogLevel == "" {
+		c.LogLevel = "info"
+	}
+	if c.CacheSize == 0 {
+		c.CacheSize = 100
+	}
 }
