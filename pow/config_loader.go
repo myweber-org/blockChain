@@ -263,4 +263,96 @@ func (c *AppConfig) Validate() error {
         return fmt.Errorf("write timeout cannot be negative")
     }
     return nil
+}package config
+
+import (
+    "encoding/json"
+    "os"
+    "path/filepath"
+)
+
+type DatabaseConfig struct {
+    Host     string `json:"host"`
+    Port     int    `json:"port"`
+    Username string `json:"username"`
+    Password string `json:"password"`
+    Database string `json:"database"`
+}
+
+type ServerConfig struct {
+    Port         int    `json:"port"`
+    ReadTimeout  int    `json:"read_timeout"`
+    WriteTimeout int    `json:"write_timeout"`
+}
+
+type Config struct {
+    Database DatabaseConfig `json:"database"`
+    Server   ServerConfig   `json:"server"`
+    Debug    bool           `json:"debug"`
+}
+
+func LoadConfig(configPath string) (*Config, error) {
+    if configPath == "" {
+        configPath = "config.json"
+    }
+
+    absPath, err := filepath.Abs(configPath)
+    if err != nil {
+        return nil, err
+    }
+
+    data, err := os.ReadFile(absPath)
+    if err != nil {
+        return nil, err
+    }
+
+    var config Config
+    if err := json.Unmarshal(data, &config); err != nil {
+        return nil, err
+    }
+
+    config.applyDefaults()
+    
+    if err := config.validate(); err != nil {
+        return nil, err
+    }
+
+    return &config, nil
+}
+
+func (c *Config) applyDefaults() {
+    if c.Server.Port == 0 {
+        c.Server.Port = 8080
+    }
+    if c.Server.ReadTimeout == 0 {
+        c.Server.ReadTimeout = 30
+    }
+    if c.Server.WriteTimeout == 0 {
+        c.Server.WriteTimeout = 30
+    }
+    if c.Database.Port == 0 {
+        c.Database.Port = 5432
+    }
+}
+
+func (c *Config) validate() error {
+    if c.Database.Host == "" {
+        return &ConfigError{Field: "database.host", Message: "host is required"}
+    }
+    if c.Database.Database == "" {
+        return &ConfigError{Field: "database.database", Message: "database name is required"}
+    }
+    if c.Server.Port < 1 || c.Server.Port > 65535 {
+        return &ConfigError{Field: "server.port", Message: "port must be between 1 and 65535"}
+    }
+    return nil
+}
+
+type ConfigError struct {
+    Field   string
+    Message string
+}
+
+func (e *ConfigError) Error() string {
+    return e.Field + ": " + e.Message
 }
