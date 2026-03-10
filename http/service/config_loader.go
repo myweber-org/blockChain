@@ -101,4 +101,132 @@ func validateConfig(config *Config) error {
         return errors.New("server port must be between 1 and 65535")
     }
     return nil
+}package config
+
+import (
+	"errors"
+	"fmt"
+	"gopkg.in/yaml.v3"
+	"os"
+	"path/filepath"
+	"reflect"
+)
+
+type Config struct {
+	Server struct {
+		Host string `yaml:"host" validate:"required"`
+		Port int    `yaml:"port" validate:"min=1,max=65535"`
+	} `yaml:"server"`
+	Database struct {
+		Driver   string `yaml:"driver" validate:"required"`
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		Name     string `yaml:"name"`
+	} `yaml:"database"`
+	Logging struct {
+		Level  string `yaml:"level" validate:"oneof=debug info warn error"`
+		Output string `yaml:"output"`
+	} `yaml:"logging"`
+}
+
+type Loader struct {
+	configPaths []string
+	strictMode  bool
+}
+
+func NewLoader(paths []string) *Loader {
+	return &Loader{
+		configPaths: paths,
+		strictMode:  true,
+	}
+}
+
+func (l *Loader) Load() (*Config, error) {
+	var configData []byte
+	var configFile string
+
+	for _, path := range l.configPaths {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			configData = data
+			configFile = path
+			break
+		}
+	}
+
+	if configData == nil {
+		return nil, errors.New("no configuration file found in specified paths")
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(configData, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML from %s: %w", configFile, err)
+	}
+
+	if l.strictMode {
+		if err := l.validate(&cfg); err != nil {
+			return nil, fmt.Errorf("configuration validation failed: %w", err)
+		}
+	}
+
+	return &cfg, nil
+}
+
+func (l *Loader) validate(cfg *Config) error {
+	v := reflect.ValueOf(cfg).Elem()
+	return l.validateStruct(v)
+}
+
+func (l *Loader) validateStruct(v reflect.Value) error {
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		tag := fieldType.Tag.Get("validate")
+		if tag == "" {
+			continue
+		}
+
+		if field.Kind() == reflect.Struct {
+			if err := l.validateStruct(field); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := l.validateField(field, tag); err != nil {
+			return fmt.Errorf("field %s: %w", fieldType.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (l *Loader) validateField(field reflect.Value, rules string) error {
+	if rules == "required" {
+		if field.IsZero() {
+			return errors.New("required field is empty")
+		}
+	}
+	return nil
+}
+
+func (l *Loader) SetStrictMode(strict bool) {
+	l.strictMode = strict
+}
+
+func LoadDefault() (*Config, error) {
+	paths := []string{
+		"config.yaml",
+		"config.yml",
+		filepath.Join("config", "config.yaml"),
+		filepath.Join("config", "config.yml"),
+	}
+
+	loader := NewLoader(paths)
+	return loader.Load()
 }
