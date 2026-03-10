@@ -477,3 +477,134 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+package main
+
+import (
+    "compress/gzip"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "sync"
+    "time"
+)
+
+const (
+    maxFileSize = 10 * 1024 * 1024 // 10MB
+    maxBackups  = 5
+)
+
+type RotatingWriter struct {
+    filename   string
+    current    *os.File
+    size       int64
+    mu         sync.Mutex
+}
+
+func NewRotatingWriter(filename string) (*RotatingWriter, error) {
+    w := &RotatingWriter{filename: filename}
+    if err := w.openFile(); err != nil {
+        return nil, err
+    }
+    return w, nil
+}
+
+func (w *RotatingWriter) Write(p []byte) (n int, err error) {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+
+    if w.size+int64(len(p)) >= maxFileSize {
+        if err := w.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err = w.current.Write(p)
+    w.size += int64(n)
+    return n, err
+}
+
+func (w *RotatingWriter) openFile() error {
+    file, err := os.OpenFile(w.filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+    if err != nil {
+        return err
+    }
+    stat, err := file.Stat()
+    if err != nil {
+        return err
+    }
+    w.current = file
+    w.size = stat.Size()
+    return nil
+}
+
+func (w *RotatingWriter) rotate() error {
+    if w.current != nil {
+        w.current.Close()
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    backupName := fmt.Sprintf("%s.%s", w.filename, timestamp)
+    if err := os.Rename(w.filename, backupName); err != nil {
+        return err
+    }
+
+    if err := w.compressBackup(backupName); err != nil {
+        return err
+    }
+
+    if err := w.cleanOldBackups(); err != nil {
+        return err
+    }
+
+    return w.openFile()
+}
+
+func (w *RotatingWriter) compressBackup(src string) error {
+    srcFile, err := os.Open(src)
+    if err != nil {
+        return err
+    }
+    defer srcFile.Close()
+
+    dstFile, err := os.Create(src + ".gz")
+    if err != nil {
+        return err
+    }
+    defer dstFile.Close()
+
+    gz := gzip.NewWriter(dstFile)
+    defer gz.Close()
+
+    if _, err := io.Copy(gz, srcFile); err != nil {
+        return err
+    }
+
+    os.Remove(src)
+    return nil
+}
+
+func (w *RotatingWriter) cleanOldBackups() error {
+    pattern := w.filename + ".*.gz"
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return err
+    }
+
+    if len(matches) > maxBackups {
+        toDelete := matches[:len(matches)-maxBackups]
+        for _, file := range toDelete {
+            os.Remove(file)
+        }
+    }
+    return nil
+}
+
+func (w *RotatingWriter) Close() error {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+    if w.current != nil {
+        return w.current.Close()
+    }
+    return nil
+}
