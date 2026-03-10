@@ -126,3 +126,153 @@ func main() {
 	fmt.Println("Original:", strings)
 	fmt.Println("Unique:", uniqueStrings)
 }
+package main
+
+import (
+    "encoding/csv"
+    "fmt"
+    "io"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type DataRecord struct {
+    ID        int
+    Name      string
+    Email     string
+    Age       int
+    Active    bool
+}
+
+func cleanEmail(email string) string {
+    return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validateAge(age int) bool {
+    return age >= 0 && age <= 120
+}
+
+func parseCSVFile(filename string) ([]DataRecord, error) {
+    file, err := os.Open(filename)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+
+    reader := csv.NewReader(file)
+    var records []DataRecord
+    lineNumber := 0
+
+    for {
+        line, err := reader.Read()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
+
+        lineNumber++
+        if lineNumber == 1 {
+            continue
+        }
+
+        if len(line) != 5 {
+            continue
+        }
+
+        id, err := strconv.Atoi(line[0])
+        if err != nil {
+            continue
+        }
+
+        name := strings.TrimSpace(line[1])
+        email := cleanEmail(line[2])
+
+        age, err := strconv.Atoi(line[3])
+        if err != nil || !validateAge(age) {
+            continue
+        }
+
+        active := strings.ToLower(line[4]) == "true"
+
+        record := DataRecord{
+            ID:     id,
+            Name:   name,
+            Email:  email,
+            Age:    age,
+            Active: active,
+        }
+        records = append(records, record)
+    }
+
+    return records, nil
+}
+
+func removeDuplicates(records []DataRecord) []DataRecord {
+    seen := make(map[string]bool)
+    var unique []DataRecord
+
+    for _, record := range records {
+        key := fmt.Sprintf("%s|%s", record.Email, record.Name)
+        if !seen[key] {
+            seen[key] = true
+            unique = append(unique, record)
+        }
+    }
+    return unique
+}
+
+func filterActiveUsers(records []DataRecord) []DataRecord {
+    var active []DataRecord
+    for _, record := range records {
+        if record.Active {
+            active = append(active, record)
+        }
+    }
+    return active
+}
+
+func calculateAverageAge(records []DataRecord) float64 {
+    if len(records) == 0 {
+        return 0
+    }
+
+    total := 0
+    for _, record := range records {
+        total += record.Age
+    }
+    return float64(total) / float64(len(records))
+}
+
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: data_cleaner <csv_file>")
+        os.Exit(1)
+    }
+
+    filename := os.Args[1]
+    records, err := parseCSVFile(filename)
+    if err != nil {
+        fmt.Printf("Error reading file: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Original records: %d\n", len(records))
+
+    uniqueRecords := removeDuplicates(records)
+    fmt.Printf("After deduplication: %d\n", len(uniqueRecords))
+
+    activeUsers := filterActiveUsers(uniqueRecords)
+    fmt.Printf("Active users: %d\n", len(activeUsers))
+
+    avgAge := calculateAverageAge(activeUsers)
+    fmt.Printf("Average age of active users: %.2f\n", avgAge)
+
+    for i, user := range activeUsers {
+        if i < 3 {
+            fmt.Printf("User %d: %s (%s) - Age: %d\n", user.ID, user.Name, user.Email, user.Age)
+        }
+    }
+}
