@@ -455,4 +455,55 @@ func main() {
     if err := processor.ExportJSON("data_export.json"); err != nil {
         processor.logger.Printf("Export failed: %v", err)
     }
+}package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+type Config struct {
+	Server   string `json:"server"`
+	Port     int    `json:"port"`
+	Timeout  int    `json:"timeout"`
+	LogLevel string `json:"log_level"`
+}
+
+func loadConfig(filename string) (*Config, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	if config.Server == "" {
+		return nil, fmt.Errorf("server address is required")
+	}
+	if config.Port <= 0 || config.Port > 65535 {
+		return nil, fmt.Errorf("invalid port number: %d", config.Port)
+	}
+	if config.Timeout < 0 {
+		return nil, fmt.Errorf("timeout cannot be negative")
+	}
+
+	return &config, nil
+}
+
+func main() {
+	config, err := loadConfig("config.json")
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Configuration loaded successfully:\n")
+	fmt.Printf("Server: %s\n", config.Server)
+	fmt.Printf("Port: %d\n", config.Port)
+	fmt.Printf("Timeout: %d seconds\n", config.Timeout)
+	fmt.Printf("Log Level: %s\n", config.LogLevel)
 }
