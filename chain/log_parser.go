@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -9,81 +8,33 @@ import (
 	"strings"
 )
 
-type LogEntry struct {
-	Timestamp string
-	Level     string
-	Message   string
-}
-
-func parseLogLine(line string) (*LogEntry, error) {
-	pattern := `^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.+)$`
-	re := regexp.MustCompile(pattern)
-	matches := re.FindStringSubmatch(line)
-
-	if matches == nil {
-		return nil, fmt.Errorf("invalid log format")
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: log_parser <logfile>")
+		return
 	}
 
-	return &LogEntry{
-		Timestamp: matches[1],
-		Level:     strings.ToUpper(matches[2]),
-		Message:   matches[3],
-	}, nil
-}
-
-func filterLogsByLevel(entries []LogEntry, level string) []LogEntry {
-	var filtered []LogEntry
-	for _, entry := range entries {
-		if entry.Level == strings.ToUpper(level) {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
-}
-
-func readLogFile(filename string) ([]LogEntry, error) {
-	file, err := os.Open(filename)
+	filePath := os.Args[1]
+	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		fmt.Printf("Error opening file: %v\n", err)
+		return
 	}
 	defer file.Close()
 
-	var entries []LogEntry
+	errorPattern := regexp.MustCompile(`(?i)error|exception|fail|fatal`)
 	scanner := bufio.NewScanner(file)
 
+	lineNumber := 0
 	for scanner.Scan() {
-		entry, err := parseLogLine(scanner.Text())
-		if err == nil {
-			entries = append(entries, *entry)
+		lineNumber++
+		line := scanner.Text()
+		if errorPattern.MatchString(line) {
+			fmt.Printf("Line %d: %s\n", lineNumber, strings.TrimSpace(line))
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return entries, nil
-}
-
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: log_parser <logfile> [level]")
-		os.Exit(1)
-	}
-
-	filename := os.Args[1]
-	entries, err := readLogFile(filename)
-	if err != nil {
-		fmt.Printf("Error reading log file: %v\n", err)
-		os.Exit(1)
-	}
-
-	if len(os.Args) > 2 {
-		level := os.Args[2]
-		entries = filterLogsByLevel(entries, level)
-	}
-
-	for _, entry := range entries {
-		fmt.Printf("%s [%s] %s\n", entry.Timestamp, entry.Level, entry.Message)
+		fmt.Printf("Error reading file: %v\n", err)
 	}
 }
