@@ -769,4 +769,61 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr,
 		duration,
 	)
+}package middleware
+
+import (
+    "context"
+    "fmt"
+    "net/http"
+    "time"
+
+    "github.com/go-redis/redis/v8"
+    "golang.org/x/time/rate"
+)
+
+type ActivityLogger struct {
+    redisClient *redis.Client
+    limiter     *rate.Limiter
+}
+
+func NewActivityLogger(redisAddr string) *ActivityLogger {
+    rdb := redis.NewClient(&redis.Options{
+        Addr:     redisAddr,
+        Password: "",
+        DB:       0,
+    })
+
+    return &ActivityLogger{
+        redisClient: rdb,
+        limiter:     rate.NewLimiter(rate.Every(time.Minute), 10),
+    }
+}
+
+func (al *ActivityLogger) LogActivity(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if !al.limiter.Allow() {
+            http.Error(w, "Too many requests", http.StatusTooManyRequests)
+            return
+        }
+
+        userID := r.Header.Get("X-User-ID")
+        if userID == "" {
+            userID = "anonymous"
+        }
+
+        activity := fmt.Sprintf("%s %s %s", time.Now().Format(time.RFC3339), r.Method, r.URL.Path)
+        key := fmt.Sprintf("user:%s:activity", userID)
+
+        ctx := context.Background()
+        al.redisClient.LPush(ctx, key, activity)
+        al.redisClient.LTrim(ctx, key, 0, 99)
+
+        next.ServeHTTP(w, r)
+    })
+}
+
+func (al *ActivityLogger) GetRecentActivities(userID string) ([]string, error) {
+    ctx := context.Background()
+    key := fmt.Sprintf("user:%s:activity", userID)
+    return al.redisClient.LRange(ctx, key, 0, 9).Result()
 }
