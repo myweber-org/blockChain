@@ -229,4 +229,89 @@ func LoadDefault() (*Config, error) {
 
 	loader := NewLoader(paths)
 	return loader.Load()
+}package config
+
+import (
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort int
+    DatabaseURL string
+    CacheEnabled bool
+    MaxConnections int
+    LogLevel string
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{}
+    
+    var err error
+    cfg.ServerPort, err = getIntEnv("SERVER_PORT", 8080)
+    if err != nil {
+        return nil, fmt.Errorf("invalid SERVER_PORT: %w", err)
+    }
+    
+    cfg.DatabaseURL = getStringEnv("DATABASE_URL", "postgres://localhost:5432/app")
+    cfg.CacheEnabled = getBoolEnv("CACHE_ENABLED", true)
+    
+    cfg.MaxConnections, err = getIntEnv("MAX_CONNECTIONS", 100)
+    if err != nil {
+        return nil, fmt.Errorf("invalid MAX_CONNECTIONS: %w", err)
+    }
+    
+    cfg.LogLevel = getStringEnv("LOG_LEVEL", "info")
+    
+    if err := validateConfig(cfg); err != nil {
+        return nil, fmt.Errorf("config validation failed: %w", err)
+    }
+    
+    return cfg, nil
+}
+
+func getStringEnv(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+
+func getIntEnv(key string, defaultValue int) (int, error) {
+    if value := os.Getenv(key); value != "" {
+        return strconv.Atoi(value)
+    }
+    return defaultValue, nil
+}
+
+func getBoolEnv(key string, defaultValue bool) bool {
+    if value := os.Getenv(key); value != "" {
+        return strings.ToLower(value) == "true" || value == "1"
+    }
+    return defaultValue
+}
+
+func validateConfig(cfg *Config) error {
+    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+        return fmt.Errorf("server port must be between 1 and 65535")
+    }
+    
+    if cfg.MaxConnections < 1 {
+        return fmt.Errorf("max connections must be positive")
+    }
+    
+    validLogLevels := map[string]bool{
+        "debug": true,
+        "info": true,
+        "warn": true,
+        "error": true,
+    }
+    
+    if !validLogLevels[strings.ToLower(cfg.LogLevel)] {
+        return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
+    }
+    
+    return nil
 }
