@@ -1,140 +1,4 @@
-package session
-
-import (
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
-	"time"
-)
-
-type Session struct {
-	ID        string
-	UserID    int
-	ExpiresAt time.Time
-}
-
-type Manager struct {
-	sessions map[string]Session
-}
-
-func NewManager() *Manager {
-	return &Manager{
-		sessions: make(map[string]Session),
-	}
-}
-
-func (m *Manager) CreateSession(userID int) (string, error) {
-	token, err := generateToken()
-	if err != nil {
-		return "", err
-	}
-
-	session := Session{
-		ID:        token,
-		UserID:    userID,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-	}
-
-	m.sessions[token] = session
-	return token, nil
-}
-
-func (m *Manager) ValidateSession(token string) (Session, error) {
-	session, exists := m.sessions[token]
-	if !exists {
-		return Session{}, errors.New("session not found")
-	}
-
-	if time.Now().After(session.ExpiresAt) {
-		delete(m.sessions, token)
-		return Session{}, errors.New("session expired")
-	}
-
-	return session, nil
-}
-
-func (m *Manager) InvalidateSession(token string) {
-	delete(m.sessions, token)
-}
-
-func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
-}package session
-
-import (
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
-	"time"
-)
-
-type Session struct {
-	ID        string
-	UserID    int
-	CreatedAt time.Time
-	ExpiresAt time.Time
-}
-
-type Manager struct {
-	sessions map[string]Session
-	duration time.Duration
-}
-
-func NewManager(sessionDuration time.Duration) *Manager {
-	return &Manager{
-		sessions: make(map[string]Session),
-		duration: sessionDuration,
-	}
-}
-
-func (m *Manager) Create(userID int) (string, error) {
-	token, err := generateToken()
-	if err != nil {
-		return "", err
-	}
-
-	session := Session{
-		ID:        token,
-		UserID:    userID,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(m.duration),
-	}
-
-	m.sessions[token] = session
-	return token, nil
-}
-
-func (m *Manager) Validate(token string) (Session, error) {
-	session, exists := m.sessions[token]
-	if !exists {
-		return Session{}, errors.New("session not found")
-	}
-
-	if time.Now().After(session.ExpiresAt) {
-		delete(m.sessions, token)
-		return Session{}, errors.New("session expired")
-	}
-
-	return session, nil
-}
-
-func (m *Manager) Invalidate(token string) {
-	delete(m.sessions, token)
-}
-
-func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
-}package session
+package main
 
 import (
     "sync"
@@ -143,160 +7,82 @@ import (
 
 type Session struct {
     ID        string
+    UserID    int
     Data      map[string]interface{}
     ExpiresAt time.Time
-    mu        sync.RWMutex
 }
 
-type Manager struct {
+type SessionManager struct {
     sessions map[string]*Session
     mu       sync.RWMutex
     ttl      time.Duration
 }
 
-func NewManager(ttl time.Duration) *Manager {
-    m := &Manager{
+func NewSessionManager(ttl time.Duration) *SessionManager {
+    sm := &SessionManager{
         sessions: make(map[string]*Session),
         ttl:      ttl,
     }
-    go m.cleanupLoop()
-    return m
+    go sm.cleanupLoop()
+    return sm
 }
 
-func (m *Manager) CreateSession() *Session {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+func (sm *SessionManager) CreateSession(userID int) *Session {
+    sm.mu.Lock()
+    defer sm.mu.Unlock()
 
-    id := generateID()
+    sessionID := generateSessionID()
     session := &Session{
-        ID:        id,
+        ID:        sessionID,
+        UserID:    userID,
         Data:      make(map[string]interface{}),
-        ExpiresAt: time.Now().Add(m.ttl),
+        ExpiresAt: time.Now().Add(sm.ttl),
     }
-    m.sessions[id] = session
+    sm.sessions[sessionID] = session
     return session
 }
 
-func (m *Manager) GetSession(id string) *Session {
-    m.mu.RLock()
-    session, exists := m.sessions[id]
-    m.mu.RUnlock()
+func (sm *SessionManager) GetSession(sessionID string) *Session {
+    sm.mu.RLock()
+    defer sm.mu.RUnlock()
 
+    session, exists := sm.sessions[sessionID]
     if !exists || time.Now().After(session.ExpiresAt) {
         return nil
     }
     return session
 }
 
-func (m *Manager) cleanupLoop() {
+func (sm *SessionManager) cleanupLoop() {
     ticker := time.NewTicker(time.Minute)
     defer ticker.Stop()
 
     for range ticker.C {
-        m.mu.Lock()
-        now := time.Now()
-        for id, session := range m.sessions {
-            if now.After(session.ExpiresAt) {
-                delete(m.sessions, id)
-            }
-        }
-        m.mu.Unlock()
+        sm.cleanupExpired()
     }
 }
 
-func (s *Session) Set(key string, value interface{}) {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    s.Data[key] = value
+func (sm *SessionManager) cleanupExpired() {
+    sm.mu.Lock()
+    defer sm.mu.Unlock()
+
+    now := time.Now()
+    for id, session := range sm.sessions {
+        if now.After(session.ExpiresAt) {
+            delete(sm.sessions, id)
+        }
+    }
 }
 
-func (s *Session) Get(key string) interface{} {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
-    return s.Data[key]
+func generateSessionID() string {
+    return "sess_" + time.Now().Format("20060102150405") + "_" + randomString(8)
 }
 
-func (s *Session) Extend(duration time.Duration) {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    s.ExpiresAt = time.Now().Add(duration)
-}
-
-func generateID() string {
-    return "session_" + time.Now().Format("20060102150405") + "_" + randomString(8)
-}
-
-func randomString(n int) string {
-    const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    b := make([]byte, n)
+func randomString(length int) string {
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    b := make([]byte, length)
     for i := range b {
-        b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+        b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
     }
     return string(b)
-}package session
-
-import (
-    "sync"
-    "time"
-)
-
-type Session struct {
-    ID        string
-    Data      map[string]interface{}
-    ExpiresAt time.Time
-}
-
-type Manager struct {
-    sessions map[string]*Session
-    mu       sync.RWMutex
-    ttl      time.Duration
-}
-
-func NewManager(ttl time.Duration) *Manager {
-    m := &Manager{
-        sessions: make(map[string]*Session),
-        ttl:      ttl,
-    }
-    go m.cleanup()
-    return m
-}
-
-func (m *Manager) Create(id string) *Session {
-    m.mu.Lock()
-    defer m.mu.Unlock()
-    
-    session := &Session{
-        ID:        id,
-        Data:      make(map[string]interface{}),
-        ExpiresAt: time.Now().Add(m.ttl),
-    }
-    m.sessions[id] = session
-    return session
-}
-
-func (m *Manager) Get(id string) *Session {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    
-    session, exists := m.sessions[id]
-    if !exists || time.Now().After(session.ExpiresAt) {
-        return nil
-    }
-    return session
-}
-
-func (m *Manager) cleanup() {
-    ticker := time.NewTicker(time.Minute)
-    defer ticker.Stop()
-    
-    for range ticker.C {
-        m.mu.Lock()
-        now := time.Now()
-        for id, session := range m.sessions {
-            if now.After(session.ExpiresAt) {
-                delete(m.sessions, id)
-            }
-        }
-        m.mu.Unlock()
-    }
 }
