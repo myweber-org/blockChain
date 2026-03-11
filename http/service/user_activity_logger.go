@@ -826,4 +826,32 @@ func (al *ActivityLogger) GetRecentActivities(userID string) ([]string, error) {
     ctx := context.Background()
     key := fmt.Sprintf("user:%s:activity", userID)
     return al.redisClient.LRange(ctx, key, 0, 9).Result()
+}package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+type ActivityLogger struct {
+	handler http.Handler
+}
+
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
+}
+
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	al.handler.ServeHTTP(w, r)
+	duration := time.Since(start)
+
+	log.Printf(
+		"Activity: %s %s from %s completed in %v",
+		r.Method,
+		r.URL.Path,
+		r.RemoteAddr,
+		duration,
+	)
 }
