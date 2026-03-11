@@ -116,3 +116,164 @@ func main() {
 
 	fmt.Println("Log rotation test completed")
 }
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "sync"
+    "time"
+)
+
+type Rotator struct {
+    mu          sync.Mutex
+    file        *os.File
+    basePath    string
+    maxSize     int64
+    maxAge      time.Duration
+    currentSize int64
+    createdAt   time.Time
+}
+
+func NewRotator(basePath string, maxSize int64, maxAge time.Duration) (*Rotator, error) {
+    dir := filepath.Dir(basePath)
+    if err := os.MkdirAll(dir, 0755); err != nil {
+        return nil, err
+    }
+
+    file, err := os.OpenFile(basePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &Rotator{
+        file:        file,
+        basePath:    basePath,
+        maxSize:     maxSize,
+        maxAge:      maxAge,
+        currentSize: info.Size(),
+        createdAt:   time.Now(),
+    }, nil
+}
+
+func (r *Rotator) Write(p []byte) (int, error) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+
+    if err := r.rotateIfNeeded(); err != nil {
+        return 0, err
+    }
+
+    n, err := r.file.Write(p)
+    if err == nil {
+        r.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (r *Rotator) rotateIfNeeded() error {
+    needsRotation := false
+    var reason string
+
+    if r.maxSize > 0 && r.currentSize >= r.maxSize {
+        needsRotation = true
+        reason = "size"
+    }
+
+    if r.maxAge > 0 && time.Since(r.createdAt) >= r.maxAge {
+        needsRotation = true
+        reason = "age"
+    }
+
+    if !needsRotation {
+        return nil
+    }
+
+    if err := r.file.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    backupPath := fmt.Sprintf("%s.%s_%s", r.basePath, reason, timestamp)
+
+    if err := os.Rename(r.basePath, backupPath); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(r.basePath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    r.file = file
+    r.currentSize = 0
+    r.createdAt = time.Now()
+
+    go r.cleanOldFiles()
+    return nil
+}
+
+func (r *Rotator) cleanOldFiles() {
+    if r.maxAge <= 0 {
+        return
+    }
+
+    dir := filepath.Dir(r.basePath)
+    baseName := filepath.Base(r.basePath)
+
+    entries, err := os.ReadDir(dir)
+    if err != nil {
+        return
+    }
+
+    cutoff := time.Now().Add(-r.maxAge * 2)
+
+    for _, entry := range entries {
+        if entry.IsDir() {
+            continue
+        }
+
+        name := entry.Name()
+        if !isBackupFile(name, baseName) {
+            continue
+        }
+
+        info, err := entry.Info()
+        if err != nil {
+            continue
+        }
+
+        if info.ModTime().Before(cutoff) {
+            os.Remove(filepath.Join(dir, name))
+        }
+    }
+}
+
+func isBackupFile(name, baseName string) bool {
+    return len(name) > len(baseName) && name[:len(baseName)] == baseName
+}
+
+func (r *Rotator) Close() error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    return r.file.Close()
+}
+
+func main() {
+    rotator, err := NewRotator("logs/app.log", 1024*1024, 24*time.Hour)
+    if err != nil {
+        panic(err)
+    }
+    defer rotator.Close()
+
+    io.WriteString(rotator, "Test log entry\n")
+    fmt.Println("Log rotation system initialized")
+}
