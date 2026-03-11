@@ -86,4 +86,78 @@ func parseInt(s string) (int, error) {
 	var result int
 	_, err := fmt.Sscanf(s, "%d", &result)
 	return result, err
+}package config
+
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+type Config struct {
+    ServerPort int
+    DatabaseURL string
+    EnableDebug bool
+    AllowedOrigins []string
+}
+
+func Load() (*Config, error) {
+    cfg := &Config{}
+    
+    portStr := getEnv("SERVER_PORT", "8080")
+    port, err := strconv.Atoi(portStr)
+    if err != nil {
+        return nil, err
+    }
+    cfg.ServerPort = port
+    
+    cfg.DatabaseURL = getEnv("DATABASE_URL", "postgres://localhost:5432/app")
+    
+    debugStr := getEnv("ENABLE_DEBUG", "false")
+    cfg.EnableDebug = strings.ToLower(debugStr) == "true"
+    
+    originsStr := getEnv("ALLOWED_ORIGINS", "http://localhost:3000")
+    cfg.AllowedOrigins = strings.Split(originsStr, ",")
+    
+    if err := validateConfig(cfg); err != nil {
+        return nil, err
+    }
+    
+    return cfg, nil
+}
+
+func getEnv(key, defaultValue string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return defaultValue
+}
+
+func validateConfig(cfg *Config) error {
+    if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+        return ErrInvalidPort
+    }
+    
+    if cfg.DatabaseURL == "" {
+        return ErrMissingDatabaseURL
+    }
+    
+    return nil
+}
+
+var (
+    ErrInvalidPort = newConfigError("server port must be between 1 and 65535")
+    ErrMissingDatabaseURL = newConfigError("database URL is required")
+)
+
+type ConfigError struct {
+    message string
+}
+
+func newConfigError(msg string) *ConfigError {
+    return &ConfigError{message: msg}
+}
+
+func (e *ConfigError) Error() string {
+    return e.message
 }
