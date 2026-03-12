@@ -745,3 +745,45 @@ func ProcessUserProfile(profile UserProfile) (UserProfile, error) {
 
 	return profile, nil
 }
+package data_processor
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+type DataCleaner struct {
+	whitespaceRegex *regexp.Regexp
+	emailRegex      *regexp.Regexp
+}
+
+func NewDataCleaner() *DataCleaner {
+	return &DataCleaner{
+		whitespaceRegex: regexp.MustCompile(`\s+`),
+		emailRegex:      regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`),
+	}
+}
+
+func (dc *DataCleaner) NormalizeWhitespace(input string) string {
+	return dc.whitespaceRegex.ReplaceAllString(strings.TrimSpace(input), " ")
+}
+
+func (dc *DataCleaner) RemoveSpecialCharacters(input string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return -1
+	}, input)
+}
+
+func (dc *DataCleaner) ValidateEmail(email string) bool {
+	return dc.emailRegex.MatchString(email)
+}
+
+func (dc *DataCleaner) ProcessString(input string) string {
+	normalized := dc.NormalizeWhitespace(input)
+	cleaned := dc.RemoveSpecialCharacters(normalized)
+	return strings.ToLower(cleaned)
+}
