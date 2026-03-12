@@ -256,4 +256,58 @@ func validateConfig(config *AppConfig) error {
 		config.LogLevel = "info"
 	}
 	return nil
+}package config
+
+import (
+	"errors"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type AppConfig struct {
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+	APIKey     string
+}
+
+func LoadConfig() (*AppConfig, error) {
+	config := &AppConfig{}
+
+	portStr := os.Getenv("SERVER_PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, errors.New("invalid SERVER_PORT value")
+	}
+	config.ServerPort = port
+
+	config.DBHost = os.Getenv("DB_HOST")
+	if config.DBHost == "" {
+		config.DBHost = "localhost"
+	}
+
+	dbPortStr := os.Getenv("DB_PORT")
+	if dbPortStr == "" {
+		dbPortStr = "5432"
+	}
+	dbPort, err := strconv.Atoi(dbPortStr)
+	if err != nil {
+		return nil, errors.New("invalid DB_PORT value")
+	}
+	config.DBPort = dbPort
+
+	debugStr := os.Getenv("DEBUG_MODE")
+	config.DebugMode = strings.ToLower(debugStr) == "true"
+
+	config.APIKey = os.Getenv("API_KEY")
+	if config.APIKey == "" {
+		return nil, errors.New("API_KEY is required")
+	}
+
+	return config, nil
 }
