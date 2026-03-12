@@ -1,59 +1,45 @@
-
-package main
+package middleware
 
 import (
-    "encoding/json"
-    "fmt"
-    "log"
-    "os"
-    "time"
+	"log"
+	"net/http"
+	"time"
 )
 
-type UserActivity struct {
-    UserID    string    `json:"user_id"`
-    Action    string    `json:"action"`
-    Timestamp time.Time `json:"timestamp"`
-    Details   string    `json:"details,omitempty"`
+type ActivityLogger struct {
+	handler http.Handler
 }
 
-func logActivity(userID, action, details string) error {
-    activity := UserActivity{
-        UserID:    userID,
-        Action:    action,
-        Timestamp: time.Now().UTC(),
-        Details:   details,
-    }
-
-    file, err := os.OpenFile("activity.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    if err != nil {
-        return fmt.Errorf("failed to open log file: %w", err)
-    }
-    defer file.Close()
-
-    encoder := json.NewEncoder(file)
-    if err := encoder.Encode(activity); err != nil {
-        return fmt.Errorf("failed to encode activity: %w", err)
-    }
-
-    return nil
+func NewActivityLogger(handler http.Handler) *ActivityLogger {
+	return &ActivityLogger{handler: handler}
 }
 
-func main() {
-    activities := []struct {
-        userID  string
-        action  string
-        details string
-    }{
-        {"user_123", "login", "Successful authentication"},
-        {"user_456", "purchase", "Order ID: ORD-78910"},
-        {"user_123", "logout", "Session duration: 15m"},
-    }
+func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	recorder := &responseRecorder{
+		ResponseWriter: w,
+		statusCode:     http.StatusOK,
+	}
 
-    for _, a := range activities {
-        if err := logActivity(a.userID, a.action, a.details); err != nil {
-            log.Printf("Failed to log activity: %v", err)
-        } else {
-            fmt.Printf("Logged %s for user %s\n", a.action, a.userID)
-        }
-    }
+	al.handler.ServeHTTP(recorder, r)
+
+	duration := time.Since(start)
+	log.Printf(
+		"Method: %s | Path: %s | Status: %d | Duration: %v | User-Agent: %s",
+		r.Method,
+		r.URL.Path,
+		recorder.statusCode,
+		duration,
+		r.UserAgent(),
+	)
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.statusCode = code
+	rr.ResponseWriter.WriteHeader(code)
 }
