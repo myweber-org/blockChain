@@ -2,105 +2,97 @@ package config
 
 import (
 	"errors"
-	"io"
 	"os"
-
-	"gopkg.in/yaml.v3"
-)
-
-type Config struct {
-	Server struct {
-		Host string `yaml:"host"`
-		Port int    `yaml:"port"`
-	} `yaml:"server"`
-	Database struct {
-		DSN      string `yaml:"dsn"`
-		MaxConns int    `yaml:"max_connections"`
-	} `yaml:"database"`
-	LogLevel string `yaml:"log_level"`
-}
-
-func LoadConfig(path string) (*Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-
-	if err := validateConfig(&cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
-}
-
-func validateConfig(cfg *Config) error {
-	if cfg.Server.Host == "" {
-		return errors.New("server host cannot be empty")
-	}
-	if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
-		return errors.New("server port must be between 1 and 65535")
-	}
-	if cfg.Database.DSN == "" {
-		return errors.New("database DSN cannot be empty")
-	}
-	if cfg.Database.MaxConns < 1 {
-		return errors.New("database max connections must be at least 1")
-	}
-	return nil
-}package config
-
-import (
-	"os"
+	"strconv"
 	"strings"
 )
 
 type Config struct {
-	DatabaseURL string
-	APIKey      string
-	LogLevel    string
+	ServerPort int
+	DBHost     string
+	DBPort     int
+	DebugMode  bool
+	APIKeys    []string
 }
 
-func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+func LoadConfig() (*Config, error) {
+	cfg := &Config{}
+	var err error
+
+	cfg.ServerPort, err = getEnvInt("SERVER_PORT", 8080)
 	if err != nil {
 		return nil, err
 	}
 
-	content := string(data)
-	content = os.ExpandEnv(content)
+	cfg.DBHost = getEnvString("DB_HOST", "localhost")
+	
+	cfg.DBPort, err = getEnvInt("DB_PORT", 5432)
+	if err != nil {
+		return nil, err
+	}
 
-	lines := strings.Split(content, "\n")
-	cfg := &Config{}
+	cfg.DebugMode, err = getEnvBool("DEBUG_MODE", false)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, line := range lines {
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
+	cfg.APIKeys = getEnvSlice("API_KEYS", []string{}, ",")
 
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "DATABASE_URL":
-			cfg.DatabaseURL = value
-		case "API_KEY":
-			cfg.APIKey = value
-		case "LOG_LEVEL":
-			cfg.LogLevel = value
-		}
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
+}
+
+func getEnvString(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) (int, error) {
+	if value := os.Getenv(key); value != "" {
+		intValue, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, errors.New("invalid integer value for " + key)
+		}
+		return intValue, nil
+	}
+	return defaultValue, nil
+}
+
+func getEnvBool(key string, defaultValue bool) (bool, error) {
+	if value := os.Getenv(key); value != "" {
+		boolValue, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, errors.New("invalid boolean value for " + key)
+		}
+		return boolValue, nil
+	}
+	return defaultValue, nil
+}
+
+func getEnvSlice(key string, defaultValue []string, sep string) []string {
+	if value := os.Getenv(key); value != "" {
+		return strings.Split(value, sep)
+	}
+	return defaultValue
+}
+
+func validateConfig(cfg *Config) error {
+	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+		return errors.New("server port must be between 1 and 65535")
+	}
+	
+	if cfg.DBPort < 1 || cfg.DBPort > 65535 {
+		return errors.New("database port must be between 1 and 65535")
+	}
+	
+	if len(cfg.APIKeys) == 0 {
+		return errors.New("at least one API key must be provided")
+	}
+	
+	return nil
 }
