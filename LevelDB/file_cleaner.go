@@ -93,3 +93,61 @@ func main() {
 
 	fmt.Printf("Duplicate removal completed. Output saved to %s\n", outputFile)
 }
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	tempFilePattern = "temp_*"
+	maxAgeHours     = 24
+)
+
+func main() {
+	dir := "."
+	if len(os.Args) > 1 {
+		dir = os.Args[1]
+	}
+
+	err := cleanTempFiles(dir)
+	if err != nil {
+		fmt.Printf("Error cleaning files: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Temporary file cleanup completed")
+}
+
+func cleanTempFiles(dir string) error {
+	files, err := filepath.Glob(filepath.Join(dir, tempFilePattern))
+	if err != nil {
+		return err
+	}
+
+	cutoffTime := time.Now().Add(-maxAgeHours * time.Hour)
+	removedCount := 0
+
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+
+		if info.ModTime().Before(cutoffTime) {
+			err := os.Remove(file)
+			if err != nil {
+				fmt.Printf("Failed to remove %s: %v\n", file, err)
+			} else {
+				removedCount++
+				fmt.Printf("Removed: %s\n", file)
+			}
+		}
+	}
+
+	fmt.Printf("Total files removed: %d\n", removedCount)
+	return nil
+}
