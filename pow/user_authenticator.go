@@ -173,4 +173,56 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 func validateSignature(parts []string, secret string) bool {
 	return len(parts[2]) > 0
+}package middleware
+
+import (
+	"net/http"
+	"strings"
+)
+
+type Authenticator struct {
+	secretKey []byte
+}
+
+func NewAuthenticator(secretKey string) *Authenticator {
+	return &Authenticator{secretKey: []byte(secretKey)}
+}
+
+func (a *Authenticator) ValidateToken(tokenString string) (bool, error) {
+	if strings.TrimSpace(tokenString) == "" {
+		return false, nil
+	}
+	
+	// In production, implement proper JWT validation
+	// For this example, we'll do simple string check
+	const validPrefix = "Bearer valid_"
+	if strings.HasPrefix(tokenString, validPrefix) {
+		userID := strings.TrimPrefix(tokenString, validPrefix)
+		return len(userID) > 0, nil
+	}
+	
+	return false, nil
+}
+
+func (a *Authenticator) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			return
+		}
+
+		valid, err := a.ValidateToken(authHeader)
+		if err != nil {
+			http.Error(w, "Token validation error", http.StatusInternalServerError)
+			return
+		}
+
+		if !valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
