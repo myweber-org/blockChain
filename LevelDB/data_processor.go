@@ -451,3 +451,105 @@ func ProcessUserData(data UserData) (UserData, error) {
 
 	return data, nil
 }
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+type DataProcessor struct {
+	InputPath  string
+	OutputPath string
+}
+
+func NewDataProcessor(input, output string) *DataProcessor {
+	return &DataProcessor{
+		InputPath:  input,
+		OutputPath: output,
+	}
+}
+
+func (dp *DataProcessor) Process() error {
+	inputFile, err := os.Open(dp.InputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(dp.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	reader := csv.NewReader(inputFile)
+	writer := csv.NewWriter(outputFile)
+	defer writer.Flush()
+
+	lineCount := 0
+	cleanedCount := 0
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("error reading CSV: %w", err)
+		}
+
+		lineCount++
+		cleanedRecord := dp.cleanRecord(record)
+
+		if dp.isValidRecord(cleanedRecord) {
+			if err := writer.Write(cleanedRecord); err != nil {
+				return fmt.Errorf("error writing CSV: %w", err)
+			}
+			cleanedCount++
+		}
+	}
+
+	fmt.Printf("Processed %d lines, wrote %d valid records\n", lineCount, cleanedCount)
+	return nil
+}
+
+func (dp *DataProcessor) cleanRecord(record []string) []string {
+	cleaned := make([]string, len(record))
+	for i, field := range record {
+		cleaned[i] = strings.TrimSpace(field)
+	}
+	return cleaned
+}
+
+func (dp *DataProcessor) isValidRecord(record []string) bool {
+	if len(record) == 0 {
+		return false
+	}
+
+	for _, field := range record {
+		if field == "" {
+			return false
+		}
+	}
+
+	return true
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: data_processor <input.csv> <output.csv>")
+		os.Exit(1)
+	}
+
+	processor := NewDataProcessor(os.Args[1], os.Args[2])
+	if err := processor.Process(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Data processing completed successfully")
+}
