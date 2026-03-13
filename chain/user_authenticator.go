@@ -8,9 +8,14 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type Claims struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+type contextKey string
+
+const userContextKey contextKey = "user"
+
+type UserClaims struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -30,7 +35,7 @@ func AuthMiddleware(secretKey string) func(http.Handler) http.Handler {
 			}
 
 			tokenStr := parts[1]
-			claims := &Claims{}
+			claims := &UserClaims{}
 
 			token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 				return []byte(secretKey), nil
@@ -41,10 +46,15 @@ func AuthMiddleware(secretKey string) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "user_id", claims.UserID)
-			ctx = context.WithValue(ctx, "user_role", claims.Role)
-
+			ctx := context.WithValue(r.Context(), userContextKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func GetUserFromContext(ctx context.Context) *UserClaims {
+	if user, ok := ctx.Value(userContextKey).(*UserClaims); ok {
+		return user
+	}
+	return nil
 }
