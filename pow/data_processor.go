@@ -47,3 +47,48 @@ func ProcessUserInput(username, email string, age int) (UserData, error) {
 	}
 	return userData, nil
 }
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "strings"
+)
+
+type UserData struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+    Age   int    `json:"age"`
+}
+
+func ValidateAndTransform(data []byte) (*UserData, error) {
+    var user UserData
+    if err := json.Unmarshal(data, &user); err != nil {
+        return nil, fmt.Errorf("invalid JSON format: %w", err)
+    }
+
+    user.Name = strings.TrimSpace(user.Name)
+    if user.Name == "" {
+        return nil, fmt.Errorf("name cannot be empty")
+    }
+
+    if !strings.Contains(user.Email, "@") {
+        return nil, fmt.Errorf("invalid email format")
+    }
+
+    if user.Age < 0 || user.Age > 150 {
+        return nil, fmt.Errorf("age must be between 0 and 150")
+    }
+
+    return &user, nil
+}
+
+func main() {
+    rawData := []byte(`{"name":"John Doe","email":"john@example.com","age":30}`)
+    processedUser, err := ValidateAndTransform(rawData)
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+        return
+    }
+    fmt.Printf("Validated user: %+v\n", processedUser)
+}
