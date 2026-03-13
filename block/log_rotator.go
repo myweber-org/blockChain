@@ -766,3 +766,156 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "strconv"
+    "sync"
+    "time"
+)
+
+type RotatingLogger struct {
+    mu          sync.Mutex
+    file        *os.File
+    basePath    string
+    maxSize     int64
+    currentSize int64
+    maxArchives int
+}
+
+func NewRotatingLogger(basePath string, maxSizeMB int, maxArchives int) (*RotatingLogger, error) {
+    maxSize := int64(maxSizeMB) * 1024 * 1024
+
+    file, err := os.OpenFile(basePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return nil, err
+    }
+
+    info, err := file.Stat()
+    if err != nil {
+        file.Close()
+        return nil, err
+    }
+
+    return &RotatingLogger{
+        file:        file,
+        basePath:    basePath,
+        maxSize:     maxSize,
+        currentSize: info.Size(),
+        maxArchives: maxArchives,
+    }, nil
+}
+
+func (rl *RotatingLogger) Write(p []byte) (n int, err error) {
+    rl.mu.Lock()
+    defer rl.mu.Unlock()
+
+    if rl.currentSize+int64(len(p)) > rl.maxSize {
+        if err := rl.rotate(); err != nil {
+            return 0, err
+        }
+    }
+
+    n, err = rl.file.Write(p)
+    if err == nil {
+        rl.currentSize += int64(n)
+    }
+    return n, err
+}
+
+func (rl *RotatingLogger) rotate() error {
+    if err := rl.file.Close(); err != nil {
+        return err
+    }
+
+    timestamp := time.Now().Format("20060102_150405")
+    archivePath := fmt.Sprintf("%s.%s", rl.basePath, timestamp)
+
+    if err := os.Rename(rl.basePath, archivePath); err != nil {
+        return err
+    }
+
+    file, err := os.OpenFile(rl.basePath, os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+
+    rl.file = file
+    rl.currentSize = 0
+
+    go rl.cleanupOldArchives()
+
+    return nil
+}
+
+func (rl *RotatingLogger) cleanupOldArchives() {
+    pattern := rl.basePath + ".*"
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return
+    }
+
+    if len(matches) <= rl.maxArchives {
+        return
+    }
+
+    archives := make([]struct {
+        path string
+        time time.Time
+    }, 0, len(matches))
+
+    for _, match := range matches {
+        suffix := filepath.Ext(match)
+        if len(suffix) < 1 {
+            continue
+        }
+        timestampStr := suffix[1:]
+        t, err := time.Parse("20060102_150405", timestampStr)
+        if err != nil {
+            continue
+        }
+        archives = append(archives, struct {
+            path string
+            time time.Time
+        }{path: match, time: t})
+    }
+
+    if len(archives) <= rl.maxArchives {
+        return
+    }
+
+    for i := 0; i < len(archives)-rl.maxArchives; i++ {
+        os.Remove(archives[i].path)
+    }
+}
+
+func (rl *RotatingLogger) Close() error {
+    rl.mu.Lock()
+    defer rl.mu.Unlock()
+    return rl.file.Close()
+}
+
+func main() {
+    logger, err := NewRotatingLogger("app.log", 10, 5)
+    if err != nil {
+        fmt.Printf("Failed to create logger: %v\n", err)
+        return
+    }
+    defer logger.Close()
+
+    for i := 0; i < 1000; i++ {
+        logEntry := fmt.Sprintf("Log entry %d: %s\n", i, time.Now().Format(time.RFC3339))
+        _, err := logger.Write([]byte(logEntry))
+        if err != nil {
+            fmt.Printf("Write error: %v\n", err)
+            break
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
+
+    fmt.Println("Log rotation test completed.")
+}
