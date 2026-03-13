@@ -506,4 +506,80 @@ func main() {
 	fmt.Printf("Port: %d\n", config.Port)
 	fmt.Printf("Timeout: %d seconds\n", config.Timeout)
 	fmt.Printf("Log Level: %s\n", config.LogLevel)
+}package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type FileProcessor struct {
+	mu       sync.Mutex
+	wg       sync.WaitGroup
+	queue    chan string
+	results  map[string]string
+}
+
+func NewFileProcessor(workerCount int) *FileProcessor {
+	return &FileProcessor{
+		queue:   make(chan string, 100),
+		results: make(map[string]string),
+	}
+}
+
+func (fp *FileProcessor) ProcessFile(filename string) string {
+	time.Sleep(50 * time.Millisecond)
+	return fmt.Sprintf("processed_%s", filename)
+}
+
+func (fp *FileProcessor) worker(id int) {
+	defer fp.wg.Done()
+	for filename := range fp.queue {
+		result := fp.ProcessFile(filename)
+		
+		fp.mu.Lock()
+		fp.results[filename] = result
+		fp.mu.Unlock()
+		
+		fmt.Printf("Worker %d processed: %s -> %s\n", id, filename, result)
+	}
+}
+
+func (fp *FileProcessor) AddFile(filename string) {
+	fp.queue <- filename
+}
+
+func (fp *FileProcessor) StartWorkers(count int) {
+	fp.wg.Add(count)
+	for i := 1; i <= count; i++ {
+		go fp.worker(i)
+	}
+}
+
+func (fp *FileProcessor) Wait() {
+	close(fp.queue)
+	fp.wg.Wait()
+}
+
+func (fp *FileProcessor) GetResults() map[string]string {
+	return fp.results
+}
+
+func main() {
+	processor := NewFileProcessor(3)
+	processor.StartWorkers(3)
+	
+	files := []string{"document1.txt", "image2.jpg", "data3.csv", "report4.pdf"}
+	
+	for _, file := range files {
+		processor.AddFile(file)
+	}
+	
+	processor.Wait()
+	
+	fmt.Println("\nProcessing complete. Results:")
+	for filename, result := range processor.GetResults() {
+		fmt.Printf("%s: %s\n", filename, result)
+	}
 }
