@@ -857,3 +857,44 @@ func main() {
     fmt.Printf("Data: %v\n", sampleData)
     fmt.Printf("Moving average (window=%d): %v\n", window, averages)
 }
+package main
+
+import (
+    "regexp"
+    "strings"
+)
+
+type DataProcessor struct {
+    emailRegex *regexp.Regexp
+}
+
+func NewDataProcessor() *DataProcessor {
+    return &DataProcessor{
+        emailRegex: regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`),
+    }
+}
+
+func (dp *DataProcessor) SanitizeInput(input string) string {
+    trimmed := strings.TrimSpace(input)
+    return strings.ToValidUTF8(trimmed, "")
+}
+
+func (dp *DataProcessor) ValidateEmail(email string) bool {
+    return dp.emailRegex.MatchString(email)
+}
+
+func (dp *DataProcessor) ProcessUserData(name, email string) (string, bool) {
+    cleanName := dp.SanitizeInput(name)
+    cleanEmail := dp.SanitizeInput(email)
+
+    if cleanName == "" || cleanEmail == "" {
+        return "", false
+    }
+
+    if !dp.ValidateEmail(cleanEmail) {
+        return "", false
+    }
+
+    result := "Processed: " + cleanName + " <" + cleanEmail + ">"
+    return result, true
+}
