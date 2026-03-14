@@ -79,4 +79,15 @@ func main() {
 	}
 
 	fmt.Printf("Successfully cleaned data. Output saved to %s\n", outputFile)
+}package main
+
+import (
+	"strings"
+)
+
+func CleanText(input string) string {
+	trimmed := strings.TrimSpace(input)
+	normalized := strings.ReplaceAll(trimmed, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return normalized
 }
