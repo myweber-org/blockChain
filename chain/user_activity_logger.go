@@ -1,3 +1,4 @@
+
 package middleware
 
 import (
@@ -19,127 +20,11 @@ func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	al.handler.ServeHTTP(w, r)
 	duration := time.Since(start)
 
-	log.Printf("Activity: %s %s from %s took %v",
-		r.Method,
-		r.URL.Path,
-		r.RemoteAddr,
-		duration,
-	)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-func ActivityLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
-		next.ServeHTTP(rw, r)
-
-		duration := time.Since(start)
-		log.Printf(
-			"%s %s %d %s %s",
-			r.Method,
-			r.URL.Path,
-			rw.statusCode,
-			duration,
-			r.RemoteAddr,
-		)
-	})
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLogger struct {
-	handler http.Handler
-}
-
-func NewActivityLogger(handler http.Handler) *ActivityLogger {
-	return &ActivityLogger{handler: handler}
-}
-
-func (al *ActivityLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	al.handler.ServeHTTP(w, r)
-	duration := time.Since(start)
-
 	log.Printf(
-		"Activity: %s %s | IP: %s | Duration: %v",
+		"Method: %s | Path: %s | Duration: %v | Timestamp: %s",
 		r.Method,
 		r.URL.Path,
-		r.RemoteAddr,
 		duration,
+		time.Now().Format(time.RFC3339),
 	)
-}package middleware
-
-import (
-	"log"
-	"net/http"
-	"time"
-)
-
-type ActivityLog struct {
-	Timestamp  time.Time
-	Method     string
-	Path       string
-	RemoteAddr string
-	UserAgent  string
-	StatusCode int
-	Duration   time.Duration
-}
-
-func ActivityLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		
-		next.ServeHTTP(lrw, r)
-		
-		duration := time.Since(start)
-		activity := ActivityLog{
-			Timestamp:  start,
-			Method:     r.Method,
-			Path:       r.URL.Path,
-			RemoteAddr: r.RemoteAddr,
-			UserAgent:  r.UserAgent(),
-			StatusCode: lrw.statusCode,
-			Duration:   duration,
-		}
-		
-		log.Printf("ACTIVITY: %s %s %d %s %s", 
-			activity.Method, 
-			activity.Path, 
-			activity.StatusCode,
-			activity.Duration,
-			activity.RemoteAddr,
-		)
-	})
-}
-
-type loggingResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (lrw *loggingResponseWriter) WriteHeader(code int) {
-	lrw.statusCode = code
-	lrw.ResponseWriter.WriteHeader(code)
 }
