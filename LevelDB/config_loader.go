@@ -310,4 +310,134 @@ func LoadConfig() (*AppConfig, error) {
 	}
 
 	return config, nil
+}package config
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
+    "strings"
+)
+
+type DatabaseConfig struct {
+    Host     string `json:"host" env:"DB_HOST"`
+    Port     int    `json:"port" env:"DB_PORT"`
+    Username string `json:"username" env:"DB_USER"`
+    Password string `json:"password" env:"DB_PASS"`
+    Name     string `json:"name" env:"DB_NAME"`
+}
+
+type ServerConfig struct {
+    Port         int    `json:"port" env:"SERVER_PORT"`
+    ReadTimeout  int    `json:"read_timeout" env:"READ_TIMEOUT"`
+    WriteTimeout int    `json:"write_timeout" env:"WRITE_TIMEOUT"`
+    DebugMode    bool   `json:"debug_mode" env:"DEBUG_MODE"`
+}
+
+type AppConfig struct {
+    Database DatabaseConfig `json:"database"`
+    Server   ServerConfig   `json:"server"`
+    LogLevel string         `json:"log_level" env:"LOG_LEVEL"`
+}
+
+func LoadConfig(configPath string) (*AppConfig, error) {
+    var config AppConfig
+
+    if configPath == "" {
+        configPath = "config.json"
+    }
+
+    absPath, err := filepath.Abs(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("invalid config path: %w", err)
+    }
+
+    fileData, err := os.ReadFile(absPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    if err := json.Unmarshal(fileData, &config); err != nil {
+        return nil, fmt.Errorf("failed to parse config JSON: %w", err)
+    }
+
+    if err := overrideFromEnv(&config); err != nil {
+        return nil, fmt.Errorf("failed to apply environment variables: %w", err)
+    }
+
+    if err := validateConfig(&config); err != nil {
+        return nil, fmt.Errorf("config validation failed: %w", err)
+    }
+
+    return &config, nil
+}
+
+func overrideFromEnv(config *AppConfig) error {
+    overrideString(&config.LogLevel, "LOG_LEVEL")
+
+    overrideString(&config.Database.Host, "DB_HOST")
+    overrideInt(&config.Database.Port, "DB_PORT")
+    overrideString(&config.Database.Username, "DB_USER")
+    overrideString(&config.Database.Password, "DB_PASS")
+    overrideString(&config.Database.Name, "DB_NAME")
+
+    overrideInt(&config.Server.Port, "SERVER_PORT")
+    overrideInt(&config.Server.ReadTimeout, "READ_TIMEOUT")
+    overrideInt(&config.Server.WriteTimeout, "WRITE_TIMEOUT")
+    overrideBool(&config.Server.DebugMode, "DEBUG_MODE")
+
+    return nil
+}
+
+func overrideString(field *string, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        *field = val
+    }
+}
+
+func overrideInt(field *int, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        var intVal int
+        if _, err := fmt.Sscanf(val, "%d", &intVal); err == nil {
+            *field = intVal
+        }
+    }
+}
+
+func overrideBool(field *bool, envVar string) {
+    if val := os.Getenv(envVar); val != "" {
+        lowerVal := strings.ToLower(val)
+        *field = lowerVal == "true" || lowerVal == "1" || lowerVal == "yes"
+    }
+}
+
+func validateConfig(config *AppConfig) error {
+    if config.Database.Host == "" {
+        return fmt.Errorf("database host is required")
+    }
+    if config.Database.Port <= 0 || config.Database.Port > 65535 {
+        return fmt.Errorf("database port must be between 1 and 65535")
+    }
+    if config.Database.Name == "" {
+        return fmt.Errorf("database name is required")
+    }
+    if config.Server.Port <= 0 || config.Server.Port > 65535 {
+        return fmt.Errorf("server port must be between 1 and 65535")
+    }
+    if config.Server.ReadTimeout < 0 {
+        return fmt.Errorf("read timeout cannot be negative")
+    }
+    if config.Server.WriteTimeout < 0 {
+        return fmt.Errorf("write timeout cannot be negative")
+    }
+
+    validLogLevels := map[string]bool{
+        "debug": true, "info": true, "warn": true, "error": true, "fatal": true,
+    }
+    if !validLogLevels[strings.ToLower(config.LogLevel)] {
+        return fmt.Errorf("invalid log level: %s", config.LogLevel)
+    }
+
+    return nil
 }
